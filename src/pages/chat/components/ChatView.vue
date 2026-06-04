@@ -92,13 +92,28 @@
 										v-if="message.content"
 										:key="`assistant-md-${index}-${MARKDOWN_RENDERER_REVISION}`"
 										class="assistant-answer message-md"
-										v-html="
-											renderMarkdown(
-												message.content +
-													(isActiveAssistantTurn(index) ? '...' : '')
-											)
-										"
-									/>
+									>
+										<div
+											v-for="(seg, segIdx) in splitStreamingSegments(
+												message.content
+											)"
+											:key="segIdx"
+											class="assistant-stream-segment"
+											:data-md-stream-tail="
+												isActiveAssistantTurn(index) && !seg.complete
+													? ''
+													: null
+											"
+											v-html="
+												renderMarkdown(
+													seg.text +
+														(isActiveAssistantTurn(index) && !seg.complete
+															? '...'
+															: '')
+												)
+											"
+										/>
+									</div>
 									<div
 										v-show="message.srcFile && message.srcFile.length > 0"
 										class="src-file message-md"
@@ -176,7 +191,7 @@
 			<div
 				v-if="!isAtBottom"
 				class="scroll-to-bottom-button"
-				@click="scrollToBottom"
+				@click="handleScrollToBottomClick"
 			>
 				<ElIcon>
 					<ArrowDown />
@@ -309,6 +324,8 @@ const chatViewRef = ref<HTMLElement>()
 /** 底部悬浮层（状态 / 推荐追问 / 输入框）容器 */
 const bottomDockRef = ref<HTMLElement>()
 let bottomDockResizeObserver: ResizeObserver | undefined
+/** 监听消息列表高度变化（图片/iframe/图表异步撑高），跟随态下瞬时贴底 */
+let messageListResizeObserver: ResizeObserver | undefined
 const contextId = ref<string>()
 let keepAliveWsClient: WebSocket
 const scrollbarRef = ref()
@@ -583,27 +600,73 @@ const onWsClose = () => {
 const getScrollBottomEpsilon = (clientHeight: number) =>
 	Math.max(160, Math.floor(clientHeight * 0.18))
 
-// 滚动到底部
-const scrollToBottom = () => {
-	nextTick(() => {
-		if (scrollbarRef.value) {
-			scrollbarRef.value.wrapRef.scrollTo({
-				top: scrollbarRef.value.wrapRef.scrollHeight,
-				behavior: 'smooth'
-			})
+/** 上一次滚动位置，用于区分「用户主动上滑」与「内容异步撑高」 */
+let lastScrollTop = 0
+/** 合并多源滚动触发的 rAF 句柄，避免多个平滑动画互相打断造成抽搐 */
+let scrollRafId: number | null = null
+
+/**
+ * 滚动到底部。
+ * - 流式 / 异步撑高场景用 'auto' 瞬时贴底：每次都精确落到「当前实时」底部，消除追逐过时目标导致的抽搐。
+ * - 仅用户主动发送消息那一次用 'smooth'。
+ * 所有触发合并进单个 rAF，DOM 更新（nextTick 的微任务）后、绘制前执行，能读到最新 scrollHeight。
+ */
+const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
+	if (scrollRafId !== null) {
+		cancelAnimationFrame(scrollRafId)
+	}
+	scrollRafId = requestAnimationFrame(() => {
+		scrollRafId = null
+		const wrap = scrollbarRef.value?.wrapRef
+		if (!wrap) {
+			return
 		}
+		wrap.scrollTo({ top: wrap.scrollHeight, behavior })
+		// 程序滚动后同步基准，避免 checkScroll 把这次贴底误判为用户上滑
+		lastScrollTop = wrap.scrollTop
 	})
 }
 
-/** 用户消息入列后等待 DOM / v-html 布局稳定再滚动，避免 scrollHeight 未更新 */
+/** 点击「回到底部」按钮：恢复跟随态并平滑回到底部 */
+const handleScrollToBottomClick = () => {
+	stickToBottom.value = true
+	isAtBottom.value = true
+	scrollToBottom('smooth')
+}
+
+/** 用户消息入列后等待 DOM / v-html 布局稳定再平滑滚动，避免 scrollHeight 未更新 */
 const scrollToBottomAfterMessageFlush = () => {
 	nextTick(() => {
 		nextTick(() => {
 			requestAnimationFrame(() => {
-				scrollToBottom()
+				scrollToBottom('smooth')
 			})
 		})
 	})
+}
+
+/** 已闭合的围栏代码块（``` 或 ~~~，含信息行与配对结束行），用于切分稳定段与流式尾段 */
+const FENCE_BLOCK_RE = /^([ \t]*)(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n\1\2[ \t]*(?:\n|$)/gm
+
+type StreamSegment = { text: string; complete: boolean }
+
+/**
+ * 将（流式）消息切分为若干「已完成段」（各自以一个已闭合代码块结尾）加末尾一个「流式尾段」。
+ * 已完成段的内容在后续 token 中不再变化，渲染出的字符串恒定 → Vue 不重建其 DOM →
+ * 段内 iframe / 图表渲染后保持稳定，既能「围栏一闭合就当场渲染」，又不会逐 token 重载抽搐。
+ */
+const splitStreamingSegments = (content: string): StreamSegment[] => {
+	const segments: StreamSegment[] = []
+	let lastIndex = 0
+	let match: RegExpExecArray | null
+	FENCE_BLOCK_RE.lastIndex = 0
+	while ((match = FENCE_BLOCK_RE.exec(content)) !== null) {
+		const end = match.index + match[0].length
+		segments.push({ text: content.slice(lastIndex, end), complete: true })
+		lastIndex = end
+	}
+	segments.push({ text: content.slice(lastIndex), complete: false })
+	return segments
 }
 
 const activateMarkdownBlocks = () => {
@@ -631,10 +694,14 @@ const checkScroll = () => {
 	const { scrollTop, scrollHeight, clientHeight } = scrollbarRef.value.wrapRef
 	const epsilon = getScrollBottomEpsilon(clientHeight)
 	const distFromBottom = scrollHeight - clientHeight - scrollTop
-	isAtBottom.value = distFromBottom <= epsilon
-	if (distFromBottom > epsilon) {
+	// 仅当用户主动上滑（scrollTop 明显减小）才解除跟随；
+	// 内容异步撑高只增大 distFromBottom 而不减小 scrollTop，不应被误判为离开底部。
+	if (scrollTop < lastScrollTop - 2 && distFromBottom > epsilon) {
 		stickToBottom.value = false
 	}
+	// 跟随态下保持按钮隐藏，避免内容撑高的瞬间闪现「回到底部」
+	isAtBottom.value = distFromBottom <= epsilon || stickToBottom.value
+	lastScrollTop = scrollTop
 }
 
 let send: boolean = true
@@ -904,6 +971,7 @@ const newChat = () => {
 	messageContext.value = []
 	isAtBottom.value = true
 	stickToBottom.value = false
+	lastScrollTop = 0
 	getNewContextId().then((contextIdDto) => {
 		contextId.value = contextIdDto.data.contextId
 	})
@@ -931,6 +999,23 @@ watch(
 	}
 )
 
+/**
+ * 监听消息列表的高度变化：图片 / iframe / 图表等高度不定的元素是异步、分多帧确定高度的，
+ * 任何一次撑高都会移动「底部」位置。处于跟随态时立即瞬时贴底，从根上消除「追逐过时目标」造成的抽搐。
+ */
+watch(messageListRef, (el) => {
+	messageListResizeObserver?.disconnect()
+	messageListResizeObserver = undefined
+	if (el && typeof ResizeObserver !== 'undefined') {
+		messageListResizeObserver = new ResizeObserver(() => {
+			if (stickToBottom.value || isAtBottom.value) {
+				scrollToBottom('auto')
+			}
+		})
+		messageListResizeObserver.observe(el)
+	}
+})
+
 watch(
 	messageContext,
 	() => {
@@ -939,7 +1024,7 @@ watch(
 	{ deep: true, flush: 'post' }
 )
 
-/** 流式结束但 content 不再变化时，补渲染推迟的 mermaid/plantuml/vegalite 块 */
+/** 流式结束但 content 不再变化时，补渲染推迟的 mermaid/plantuml/vegalite/html 块 */
 watch(isBusyByState, () => {
 	activateMarkdownBlocks()
 })
@@ -1024,6 +1109,12 @@ onMounted(() => {
 onUnmounted(() => {
 	bottomDockResizeObserver?.disconnect()
 	bottomDockResizeObserver = undefined
+	messageListResizeObserver?.disconnect()
+	messageListResizeObserver = undefined
+	if (scrollRafId !== null) {
+		cancelAnimationFrame(scrollRafId)
+		scrollRafId = null
+	}
 	interruptChat()
 	revokePreviewBlobUrls()
 })
@@ -1620,6 +1711,11 @@ defineExpose({
 				.assistant-answer {
 					font-size: var(--n-font-size-2);
 					color: inherit;
+				}
+
+				/* 流式分段仅为渲染稳定性服务，不应产生额外盒子/间距 */
+				.assistant-stream-segment {
+					display: contents;
 				}
 
 				.src-file {
