@@ -88,10 +88,11 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
+@use '@/styles/platform' as *;
+
 .mcp-config-page {
 	padding: 20px;
-	background-color: color-mix(in srgb, var(--n-color-neutral-w), transparent 30%);
-	backdrop-filter: blur(10px);
+	@include n-glass-surface(2);
 	border-radius: var(--n-radius-triple);
 }
 
@@ -103,7 +104,7 @@ onMounted(() => {
 
 	h2 {
 		margin: 0;
-		color: var(--n-color-font-dark);
+		color: var(--n-color-text-primary);
 		font-weight: 600;
 	}
 }

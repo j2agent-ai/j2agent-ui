@@ -84,6 +84,35 @@ export function formatDateTime(t: number): string {
 	)
 }
 
+export function isTableCellEmpty(value: unknown): boolean {
+	if (value == null || value === '') return true
+	if (Array.isArray(value) && value.length === 0) return true
+	return false
+}
+
+export function formatTableCell(value: unknown): string {
+	return isTableCellEmpty(value) ? '-' : String(value)
+}
+
+export function getOutlineItems(
+	outline: string[] | string | undefined | null
+): string[] {
+	if (Array.isArray(outline)) return outline
+	if (typeof outline === 'string' && outline.trim()) return [outline]
+	return []
+}
+
+export function getOutlineDisplay(
+	outline: string[] | string | undefined | null
+): string {
+	const items = getOutlineItems(outline)
+	if (items.length === 0) return '-'
+	if (items.length <= 3) {
+		return items.join(' | ')
+	}
+	return `${items.slice(0, 3).join(', ')}... (+${items.length - 3}项)`
+}
+
 /**
  * RGB 颜色值转换为 十六进制颜色值.
  * r, g, 和 b 需要在 [0, 255] 范围内

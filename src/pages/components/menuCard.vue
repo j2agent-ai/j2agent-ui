@@ -1,22 +1,33 @@
 <template>
-	<div v-show="showMenuCard" ref="menuCardRef" class="menu-card-card">
+	<div v-show="showMenuCard" ref="menuCardRef" class="menu-card-card glass-card">
 		<div class="menu-card-card-header">
 			<div class="menu-card-card-header-title">
 				<div class="menu-card-card-header-title-text">
-					<div class="menu-card-card-header-title-text-title">
-						{{ t('common.system.options') }}
-					</div>
+					<el-tooltip
+						:content="menuTitle"
+						placement="top"
+						effect="dark"
+						:disabled="!menuTitleOverflow"
+					>
+						<div
+							ref="menuTitleRef"
+							class="menu-card-card-header-title-text-title"
+							@mouseenter="syncMenuTitleOverflow"
+						>
+							{{ menuTitle }}
+						</div>
+					</el-tooltip>
 				</div>
 			</div>
 		</div>
 		<div class="menu-card-content">
-			<ul class="menu-card-list">
+			<ul v-if="props.mode === 'system'" class="menu-card-list">
 				<hr />
 				<li class="menu-card-item" @click="goTo('/')">
 					{{ '🏠 ' + t('homepage') }}
 				</li>
 				<hr />
-				<li class="menu-card-item" v-if="canAccessChat" @click="goTo('/chat/assistant')">
+				<li class="menu-card-item" v-if="canAccessChat" @click="goTo('/agents')">
 					{{ '🤖 ' + t('ai.assistant') }}
 				</li>
 				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/kb')">
@@ -28,21 +39,15 @@
 				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/settings')">
 					{{ '⚙️ ' + t('settings.title') }}
 				</li>
-				<li class="menu-card-item" @click="toggleDarkMode">
-					<span v-show="currentDarkMode === 'disabled'"
-					>☀️ {{ t('dark.mode.light') }}</span
-					>
-					<span v-show="currentDarkMode === 'enabled'"
-					>🌙 {{ t('dark.mode.dark') }}</span
-					>
-					<span v-show="currentDarkMode === 'auto'">🌓 {{ t('dark.mode.auto') }}</span>
-				</li>
+			</ul>
+			<ul v-else class="menu-card-list">
 				<hr />
 				<li class="menu-card-item" @click="goTo('/account')">
-					{{ '🔐 ' + t('account.title') }}
+					{{ t('account.title') }}
 				</li>
+				<hr />
 				<li class="menu-card-item" @click="goTo('/logout')">
-					{{ '⏏️ ' + t('logout') }}
+					{{ t('logout') }}
 				</li>
 			</ul>
 		</div>
@@ -50,65 +55,41 @@
 </template>
 <script setup lang="ts">
 import { t } from '@ai-system/lib'
-import { computed, ref, onUnmounted, watch, onMounted } from 'vue'
+import { ElTooltip } from 'element-plus'
+import { computed, ref, onUnmounted, watch } from 'vue'
 import { goTo } from '@/routes'
-import { hasRoleAccess } from '@/utils/role'
+import { hasRoleAccess, ROLE_ADMIN, ROLE_USER } from '@/utils/role'
 
 defineExpose({
-	show
+	show,
+	hide
 })
+
+const props = withDefaults(
+	defineProps<{
+		mode?: 'system' | 'user'
+		title?: string
+	}>(),
+	{
+		mode: 'system',
+		title: ''
+	}
+)
 
 const emit = defineEmits(['show-change'])
 
 const showMenuCard = ref(false)
 const menuCardRef = ref<HTMLElement | null>(null)
 const isClickOutsideEnabled = ref(false)
-const currentDarkMode = ref<'enabled' | 'disabled' | 'auto'>('auto')
-const canAccessChat = computed(() => hasRoleAccess(2))
-const canAccessAdmin = computed(() => hasRoleAccess(1))
+const canAccessChat = computed(() => hasRoleAccess(ROLE_USER))
+const canAccessAdmin = computed(() => hasRoleAccess(ROLE_ADMIN))
+const menuTitle = computed(() => props.title || t('common.system.options'))
+const menuTitleRef = ref<HTMLElement | null>(null)
+const menuTitleOverflow = ref(false)
 
-const initDarkMode = () => {
-	const savedDarkMode = localStorage.getItem('dark-mode') as
-		| 'enabled'
-		| 'disabled'
-		| 'auto'
-		| null
-	currentDarkMode.value = savedDarkMode || 'auto'
-	applyDarkMode(currentDarkMode.value)
-}
-
-const applyDarkMode = (darkMode: 'enabled' | 'disabled' | 'auto') => {
-	if (darkMode === 'auto') {
-		const systemDarkMode = window.matchMedia('(prefers-color-scheme: dark)')
-			.matches
-			? 'enabled'
-			: 'disabled'
-		document.documentElement.classList.toggle(
-			'dark',
-			systemDarkMode === 'enabled'
-		)
-	} else {
-		document.documentElement.classList.toggle('dark', darkMode === 'enabled')
-	}
-}
-
-const toggleDarkMode = () => {
-	const darkModes: Array<'enabled' | 'disabled' | 'auto'> = [
-		'enabled',
-		'disabled',
-		'auto'
-	]
-	const currentIndex = darkModes.indexOf(currentDarkMode.value)
-	const nextIndex = (currentIndex + 1) % darkModes.length
-	currentDarkMode.value = darkModes[nextIndex]
-	localStorage.setItem('dark-mode', currentDarkMode.value)
-	applyDarkMode(currentDarkMode.value)
-}
-
-const handleSystemDarkModeChange = (e: MediaQueryListEvent) => {
-	if (currentDarkMode.value === 'auto') {
-		document.documentElement.classList.toggle('dark', e.matches)
-	}
+function syncMenuTitleOverflow() {
+	const el = menuTitleRef.value
+	menuTitleOverflow.value = el ? el.scrollWidth > el.clientWidth : false
 }
 
 function show() {
@@ -118,7 +99,15 @@ function show() {
 			isClickOutsideEnabled.value = true
 			document.addEventListener('click', handleClickOutside)
 		}, 0)
+	} else {
+		hide()
 	}
+}
+
+function hide() {
+	showMenuCard.value = false
+	isClickOutsideEnabled.value = false
+	document.removeEventListener('click', handleClickOutside)
 }
 
 const handleClickOutside = (event: MouseEvent) => {
@@ -132,17 +121,8 @@ const handleClickOutside = (event: MouseEvent) => {
 	}
 }
 
-onMounted(() => {
-	initDarkMode()
-	window.matchMedia('(prefers-color-scheme: dark)')
-		.addEventListener('change', handleSystemDarkModeChange)
-})
-
 onUnmounted(() => {
 	document.removeEventListener('click', handleClickOutside)
-	window
-		.matchMedia('(prefers-color-scheme: dark)')
-		.removeEventListener('change', handleSystemDarkModeChange)
 })
 
 watch(showMenuCard, (newValue) => {
@@ -152,12 +132,7 @@ watch(showMenuCard, (newValue) => {
 </script>
 <style lang="scss" scoped>
 .menu-card-card {
-	background: color-mix(in srgb, var(--n-color-neutral-w), transparent 50%);
-	backdrop-filter: blur(10px);
 	border-radius: var(--n-radius-quadruple);
-	border: 1px solid
-	color-mix(in srgb, var(--n-color-neutral-4), transparent 50%);
-	box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
 	display: flex;
 	flex-direction: column;
 	padding: 20px;
@@ -167,13 +142,27 @@ watch(showMenuCard, (newValue) => {
 	width: 250px;
 	max-height: 80vh;
 	z-index: 1000;
+	box-sizing: border-box;
+
+	.menu-card-card-header-title-text :deep(.el-tooltip__trigger) {
+		display: block;
+		min-width: 0;
+		max-width: 100%;
+	}
 
 	.menu-card-card-header-title-text-title {
 		padding-left: var(--n-padding-basic);
 		font-size: 18px;
 		font-weight: bold;
-		color: var(--n-color-neutral-b);
+		line-height: var(--n-font-line-height-3);
+		color: var(--n-color-text-primary);
 		margin-bottom: 15px;
+		max-width: 100%;
+		box-sizing: border-box;
+		overflow-x: hidden;
+		overflow-y: visible;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.menu-card-content {
@@ -187,13 +176,13 @@ watch(showMenuCard, (newValue) => {
 		hr {
 			border: none;
 			height: 1px;
-			background-color: var(--n-color-neutral-5);
+			background-color: var(--n-color-border);
 			margin: 4px 0;
 		}
 	}
 
 	.menu-card-item {
-		color: var(--n-color-font-dark);
+		color: var(--n-color-text-primary);
 		cursor: pointer;
 		border-radius: var(--n-radius-triple);
 		padding: var(--n-padding-basic);

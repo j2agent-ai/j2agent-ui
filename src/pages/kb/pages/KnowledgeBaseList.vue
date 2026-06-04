@@ -1,32 +1,44 @@
 <template>
 	<div class="kb-table-container">
 		<div class="header-actions">
-			<div class="btn-area">
-				<el-button type="primary" @click="loadKnowledge">
-					{{ '🔄 ' + t('common.refresh') }}
-				</el-button>
-				<el-button type="primary" @click="handleAdd">
-					{{ '➕ ' + t('common.add') }}
-				</el-button>
-				<el-button
-					type="danger"
-					:disabled="selectedRows.length === 0"
-					@click="handleDelete"
+			<div class="toolbar-primary">
+				<el-select
+					v-model="selectedCollection"
+					class="action-collection"
+					placeholder="请选择 Collection"
+					clearable
+					filterable
+					:loading="collectionLoading"
+					@change="handleCollectionChange"
+					@clear="handleCollectionClear"
 				>
-					{{ '🗑️ ' + t('common.delete') }}
-				</el-button>
+					<el-option
+						v-for="collection in collectionOptions"
+						:key="collection"
+						:label="collection"
+						:value="collection"
+					/>
+				</el-select>
+				<div class="toolbar-buttons">
+					<el-button type="primary" :icon="Refresh" @click="loadKnowledge">
+						{{ t('common.refresh') }}
+					</el-button>
+					<el-button type="warning" :loading="syncing" @click="handleRebuild">
+						{{ t('kb.knowledge.rebuild') }}
+					</el-button>
+				</div>
 			</div>
-			<div class="search-area">
+			<div class="toolbar-search">
 				<el-input
 					v-model="searchKeyword"
+					class="action-search"
 					:placeholder="t('common.search.placeholder.keyword')"
 					clearable
-					style="width: 240px"
 					@keyup.enter="handleSearch"
 					@clear="handleSearch"
 				/>
 				<el-button type="primary" @click="handleSearch">
-					{{ '🔍️ ' + t('common.search') }}
+					{{ t('common.search') }}
 				</el-button>
 			</div>
 		</div>
@@ -34,106 +46,111 @@
 			<el-table
 				ref="tableRef"
 				:data="knowledgeList"
+				class="kb-data-table"
 				style="width: 100%; height: 100%"
 				v-loading="loading"
-				border
-				@selection-change="handleSelectionChange"
+				stripe
 			>
-				<el-table-column type="selection" width="55" align="center" />
-				<el-table-column :label="t('kb.outline')" width="300">
+				<el-table-column :label="t('kb.outline')" width="300" align="center">
 					<template #default="scope">
-						<el-popover effect="dark" trigger="hover" placement="top" width="400">
-							<template #reference>
-								<div class="outline-preview">
-									{{ getOutlineDisplay(scope.row.outline) }}
+						<template v-if="!isTableCellEmpty(scope.row.outline)">
+							<el-popover effect="dark" trigger="hover" placement="top" width="400">
+								<template #reference>
+									<div class="outline-preview">
+										{{ getOutlineDisplay(scope.row.outline) }}
+									</div>
+								</template>
+								<div class="outline-full">
+									<div v-for="(item, index) in scope.row.outline" :key="index">
+										{{ index + 1 }}. {{ item }}
+									</div>
 								</div>
-							</template>
-							<div class="outline-full">
-								<div v-for="(item, index) in scope.row.outline" :key="index">
-									{{ index + 1 }}. {{ item }}
-								</div>
-							</div>
-						</el-popover>
+							</el-popover>
+						</template>
+						<span v-else class="empty-text">-</span>
 					</template>
 				</el-table-column>
 				<el-table-column :label="t('kb.textChunk')" width="300">
 					<template #default="scope">
-						<el-popover
-							effect="dark"
-							trigger="hover"
-							placement="top"
-							width="400"
-						>
-							<template #reference>
-								<div class="text-chunk-preview">{{ scope.row.textChunk }}</div>
-							</template>
-							<div class="text-chunk-full">{{ scope.row.textChunk }}</div>
-						</el-popover>
+						<template v-if="!isTableCellEmpty(scope.row.textChunk)">
+							<el-popover
+								effect="dark"
+								trigger="hover"
+								placement="top"
+								width="400"
+							>
+								<template #reference>
+									<div class="text-chunk-preview">{{ scope.row.textChunk }}</div>
+								</template>
+								<div class="text-chunk-full">{{ scope.row.textChunk }}</div>
+							</el-popover>
+						</template>
+						<span v-else class="empty-text">-</span>
 					</template>
 				</el-table-column>
 				<el-table-column
-					prop="description"
 					:label="t('kb.description')"
 					min-width="150"
 					show-overflow-tooltip
-				/>
+				>
+					<template #default="{ row }">
+						<span v-if="isTableCellEmpty(row.description)" class="empty-text">-</span>
+						<span v-else>{{ row.description }}</span>
+					</template>
+				</el-table-column>
+				<el-table-column :label="t('kb.dimension')" width="130" align="center">
+					<template #default="{ row }">
+						<span v-if="isTableCellEmpty(row.dimension)" class="empty-text">-</span>
+						<span v-else>{{ row.dimension }}</span>
+					</template>
+				</el-table-column>
+				<el-table-column :label="t('kb.embeddingModel')" width="150">
+					<template #default="{ row }">
+						<span v-if="isTableCellEmpty(row.embeddingModel)" class="empty-text">-</span>
+						<span v-else>{{ row.embeddingModel }}</span>
+					</template>
+				</el-table-column>
+				<el-table-column :label="t('kb.embeddingProvider')" width="150">
+					<template #default="{ row }">
+						<span v-if="isTableCellEmpty(row.embeddingProvider)" class="empty-text">-</span>
+						<span v-else>{{ row.embeddingProvider }}</span>
+					</template>
+				</el-table-column>
+				<el-table-column label="源文件" min-width="220" show-overflow-tooltip>
+					<template #default="{ row }">
+						<span v-if="isTableCellEmpty(row.sourceFile)" class="empty-text">-</span>
+						<span v-else>{{ row.sourceFile }}</span>
+					</template>
+				</el-table-column>
 				<el-table-column
-					prop="dimension"
-					:label="t('kb.dimension')"
-					width="130"
-				/>
-				<el-table-column
-					prop="embeddingModel"
-					:label="t('kb.embeddingModel')"
-					width="150"
-				/>
-				<el-table-column
-					prop="embeddingProvider"
-					:label="t('kb.embeddingProvider')"
-					width="150"
-				/>
-				<el-table-column
-					prop="createTime"
 					:label="t('common.create.time')"
 					width="180"
+					align="center"
 				>
 					<template #default="scope">
-						{{ formatDateTime(scope.row.createTime) }}
+						<span v-if="!formatDateTime(scope.row.createTime)" class="empty-text">-</span>
+						<span v-else>{{ formatDateTime(scope.row.createTime) }}</span>
 					</template>
 				</el-table-column>
 				<el-table-column
-					prop="updateTime"
 					:label="t('common.update.time')"
 					width="180"
-				>
-					<template #default="scope">
-						{{ formatDateTime(scope.row.updateTime) }}
-					</template>
-				</el-table-column>
-				<el-table-column
-					prop="createUsername"
-					:label="t('kb.create.username')"
-					width="150"
-				/>
-				<el-table-column
-					:label="t('common.action')"
-					width="120"
 					align="center"
-					fixed="right"
 				>
 					<template #default="scope">
-						<el-button type="primary" link @click="handleEdit(scope.row)">
-							{{ t('common.edit') }}
-						</el-button>
-						<el-button
-							type="danger"
-							link
-							@click="handleDeleteSingle(scope.row)"
-						>
-							{{ t('common.delete') }}
-						</el-button>
+						<span v-if="!formatDateTime(scope.row.updateTime)" class="empty-text">-</span>
+						<span v-else>{{ formatDateTime(scope.row.updateTime) }}</span>
 					</template>
 				</el-table-column>
+				<el-table-column :label="t('kb.create.username')" width="150">
+					<template #default="{ row }">
+						<span v-if="isTableCellEmpty(row.createUsername)" class="empty-text">-</span>
+						<span v-else>{{ row.createUsername }}</span>
+					</template>
+				</el-table-column>
+				<template #empty>
+					<span class="table-empty-hint">{{ emptyTableMessage }}</span>
+				</template>
 			</el-table>
 		</div>
 		<div class="pagination-wrapper">
@@ -147,58 +164,127 @@
 				@current-change="handleCurrentChange"
 			/>
 		</div>
-		<KbAddDialog v-model="addDialogVisible" @addSuccess="addSuccess" />
-		<KbEditDialog
-			v-model="editDialogVisible"
-			:knowledge="editingRow"
-			@edit-success="editSuccess"
-		/>
+		<el-dialog
+			v-model="rebuildDialogVisible"
+			:title="t('kb.knowledge.rebuild.confirm.title')"
+			class="rebuild-dialog n-dialog--danger"
+			width="520px"
+			align-center
+			append-to-body
+			draggable
+			destroy-on-close
+		>
+			<div class="rebuild-dialog-content">
+				<p class="rebuild-intro">{{ t('kb.knowledge.rebuild.confirm') }}</p>
+				<el-form class="rebuild-form" label-width="120px">
+					<el-form-item :label="t('kb.knowledge.rebuild.full.switch')">
+						<el-switch v-model="fullRebuildEnabled" />
+					</el-form-item>
+					<el-form-item
+						v-if="fullRebuildEnabled"
+						:label="t('kb.knowledge.rebuild.full.confirm.label')"
+					>
+						<div class="full-rebuild-confirm-area">
+							<el-input
+								v-model="fullRebuildConfirmText"
+								class="full-rebuild-input"
+								:placeholder="t('kb.knowledge.rebuild.full.confirm.placeholder')"
+							/>
+							<div class="full-rebuild-tip">
+								{{ t('kb.knowledge.rebuild.full.confirm.tip') }}
+							</div>
+						</div>
+					</el-form-item>
+				</el-form>
+			</div>
+			<template #footer>
+				<div class="dialog-footer">
+					<el-button @click="closeRebuildDialog">
+						{{ t('kb.knowledge.rebuild.confirm.cancel') }}
+					</el-button>
+					<el-button
+						type="warning"
+						:disabled="isRebuildSubmitDisabled"
+						@click="confirmRebuild"
+					>
+						{{ t('kb.knowledge.rebuild.confirm.ok') }}
+					</el-button>
+				</div>
+			</template>
+		</el-dialog>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { defineAsyncComponent, nextTick, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
 	ElButton,
+	ElDialog,
+	ElForm,
+	ElFormItem,
 	ElInput,
 	ElMessage,
-	ElMessageBox,
+	ElOption,
 	ElPagination,
 	ElPopover,
+	ElSelect,
+	ElSwitch,
 	ElTable,
 	ElTableColumn
 } from 'element-plus'
-import { deleteKnowledge, getKnowledge } from '@/api/kb/kb.api'
-import { formatDateTime, t } from '@ai-system/lib'
+import { Refresh } from '@element-plus/icons-vue'
+import { getKnowledge, getKnowledgeCollections, syncKnowledge } from '@/api/kb/kb.api'
+import type { KnowledgeSyncResult } from '@/types/kb.model'
+import { formatDateTime, getOutlineDisplay, isTableCellEmpty, t } from '@ai-system/lib'
+import { KnowledgeDto } from '@/types/kb.model'
 
 // 状态定义
-const knowledgeList = ref([])
+const knowledgeList = ref<KnowledgeDto[]>([])
 const loading = ref(false)
+const syncing = ref(false)
+const collectionLoading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 const searchKeyword = ref('') // 搜索关键词
-const selectedRows = ref<any[]>([]) // 选中的行数据
-const KbAddDialog = defineAsyncComponent(
-	() => import('../components/KbAddDialog.vue')
-)
-const KbEditDialog = defineAsyncComponent(
-	() => import('../components/KbEditDialog.vue')
+const selectedCollection = ref('')
+const collectionOptions = ref<string[]>([])
+const rebuildDialogVisible = ref(false)
+const fullRebuildEnabled = ref(false)
+const fullRebuildConfirmText = ref('')
+const FULL_REBUILD_CONFIRM_TEXT = '完全重建'
+
+const emptyTableMessage = computed(() =>
+	selectedCollection.value ? '暂无数据' : '请先选择 Collection'
 )
 
-const addDialogVisible = ref(false)
-const editDialogVisible = ref(false)
-const editingRow = ref<any | null>(null)
+// 加载 collection 列表
+const loadCollections = async () => {
+	collectionLoading.value = true
+	try {
+		const response = await getKnowledgeCollections()
+		collectionOptions.value = response.data?.data || []
+	} catch (error) {
+		console.error('Failed to load knowledge collections:', error)
+		collectionOptions.value = []
+	} finally {
+		collectionLoading.value = false
+	}
+}
 
 // 加载数据
 const loadKnowledge = async () => {
+	if (!selectedCollection.value) {
+		knowledgeList.value = []
+		total.value = 0
+		return
+	}
 	loading.value = true
 	try {
-		// 注意：这里假设 getKnowledge API 支持传递 searchKeyword 参数
-		// 如果 API 不支持，需要在前端过滤或者修改 API 定义
 		const response = await getKnowledge(
 			(currentPage.value - 1) * pageSize.value,
 			pageSize.value + 1,
+			selectedCollection.value,
 			searchKeyword.value
 		)
 		const data = response.data?.data || []
@@ -221,13 +307,15 @@ const loadKnowledge = async () => {
 	}
 }
 
-const getOutlineDisplay = (outline: string[]) => {
-	if (!outline || outline.length === 0) return '-'
-	if (outline.length <= 3) {
-		return outline.join(' | ')
-	} else {
-		return `${outline.slice(0, 3).join(', ')}... (+${outline.length - 3}项)`
-	}
+const handleCollectionChange = () => {
+	currentPage.value = 1
+	loadKnowledge()
+}
+
+const handleCollectionClear = () => {
+	currentPage.value = 1
+	knowledgeList.value = []
+	total.value = 0
 }
 
 // 事件处理：分页
@@ -247,119 +335,108 @@ const handleSearch = () => {
 	loadKnowledge()
 }
 
-// 事件处理：新增
-const handleAdd = async () => {
+const isRebuildSubmitDisabled = computed(
+	() => fullRebuildEnabled.value && fullRebuildConfirmText.value.trim() !== FULL_REBUILD_CONFIRM_TEXT
+)
+
+// 打开重建弹窗
+const handleRebuild = async () => {
+	rebuildDialogVisible.value = true
+}
+
+// 关闭重建弹窗并重置状态
+const closeRebuildDialog = () => {
+	rebuildDialogVisible.value = false
+	fullRebuildEnabled.value = false
+	fullRebuildConfirmText.value = ''
+}
+
+// 确认执行重建
+const confirmRebuild = async () => {
+	if (isRebuildSubmitDisabled.value) {
+		return
+	}
+	const fullRebuild = fullRebuildEnabled.value
+	closeRebuildDialog()
 	try {
-		// 确保异步组件加载完成
-		await nextTick()
-		addDialogVisible.value = true
-	} catch (error) {
-		console.error('Failed to load dialog component:', error)
+		syncing.value = true
+		const res = await syncKnowledge(fullRebuild)
+		const result: KnowledgeSyncResult = res.data ?? { success: false }
+		if (result.success) {
+			ElMessage.success(t('kb.knowledge.rebuild.success'))
+			await loadCollections()
+			await loadKnowledge()
+		} else {
+			ElMessage.error(result.message || t('kb.knowledge.rebuild.failed'))
+		}
+	} catch (err: unknown) {
+		const data = (err as { response?: { data?: KnowledgeSyncResult } })?.response?.data
+		ElMessage.error(data?.message || t('kb.knowledge.rebuild.failed'))
+	} finally {
+		syncing.value = false
 	}
-}
-
-const addSuccess = () => {
-	addDialogVisible.value = false
-	loadKnowledge()
-}
-
-const editSuccess = () => {
-	editDialogVisible.value = false
-	loadKnowledge()
-}
-
-// 事件处理：多选变化
-const handleSelectionChange = (selection: any[]) => {
-	selectedRows.value = selection
-}
-
-// 事件处理：删除
-const handleDelete = () => {
-	if (selectedRows.value.length === 0) return
-
-	ElMessageBox.confirm(
-		`确认删除选中的 ${selectedRows.value.length} 项数据吗？`,
-		'警告',
-		{ confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
-	).then(async () => {
-			const ids = selectedRows.value.map(row => row.textChunkId)
-			await deleteKnowledge(ids)
-			ElMessage.success('删除成功')
-			loadKnowledge()
-		})
-		.catch(() => {})
-}
-
-const handleDeleteSingle = (row: any) => {
-	if (!row?.textChunkId) return
-	ElMessageBox.confirm(
-		'确认删除该条数据吗？',
-		'警告',
-		{ confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
-	).then(async () => {
-			await deleteKnowledge([row.textChunkId])
-			ElMessage.success('删除成功')
-			loadKnowledge()
-		})
-		.catch(() => {})
-}
-
-// 事件处理：单行编辑
-const handleEdit = (row: any) => {
-	editingRow.value = {
-		...row,
-		outline: row.outline ? [...row.outline] : []
-	}
-	editDialogVisible.value = true
 }
 
 onMounted(() => {
-	loadKnowledge()
+	loadCollections()
 })
 </script>
 
 <style scoped lang="scss">
+@use '@/styles/platform' as *;
+
 .kb-table-container {
 	font-family: Arial, sans-serif;
-	padding: 20px;
-	height: 100%; /* 关键：撑满父容器高度 */
-	min-width: 800px;
-	display: flex; /* 关键：使用 Flex 布局 */
+	height: 100%;
+	min-width: 0;
+	display: flex;
 	flex-direction: column;
 	box-sizing: border-box;
-	background-color: color-mix(
-		in srgb,
-		var(--n-color-neutral-w),
-		transparent 30%
-	);
-	backdrop-filter: blur(10px);
-	border-radius: var(--n-radius-triple);
-	// 1. 顶部工具栏样式
+	@include n-data-table-panel;
+	// 1. 顶部工具栏
 	.header-actions {
 		display: flex;
-		justify-content: space-between;
+		flex-wrap: wrap;
 		align-items: center;
-		margin-bottom: 16px;
-		flex-shrink: 0; // 防止头部被压缩
-		.search-area {
+		justify-content: space-between;
+		gap: 12px 16px;
+		padding-bottom: 12px;
+		margin-bottom: 12px;
+		border-bottom: 1px solid var(--n-color-border-soft);
+		flex-shrink: 0;
+
+		.toolbar-primary {
 			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
 			gap: 10px;
+			min-width: 0;
+			flex: 1 1 360px;
 		}
 
-		.btn-area {
+		.toolbar-buttons {
 			display: flex;
-			gap: 10px;
+			flex-wrap: wrap;
+			gap: 8px;
 		}
-	}
 
-	// 2. 表格区域样式
-	.table-wrapper {
-		border-radius: var(--n-radius-triple);
-		flex: 1; // 占据剩余所有高度
-		overflow: hidden; // 防止溢出，强制在内部滚动
-		// 穿透 element-plus 样式，确保表格高度占满
-		:deep(.el-table) {
-			height: 100% !important;
+		.action-collection {
+			width: 260px;
+			max-width: 100%;
+		}
+
+		.toolbar-search {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			flex: 0 1 auto;
+			min-width: 0;
+			max-width: 100%;
+		}
+
+		.action-search {
+			width: 240px;
+			max-width: 100%;
 		}
 	}
 
@@ -369,6 +446,12 @@ onMounted(() => {
 		display: flex;
 		justify-content: flex-end;
 		flex-shrink: 0; // 防止分页被压缩
+	}
+
+	.dialog-footer {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
 	}
 
 	// 内容预览样式

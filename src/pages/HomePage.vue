@@ -3,10 +3,10 @@
 		class="ai-assistant-page"
 		:class="{ 'full-page': isFullscreen, 'mobile-page': isMobile }"
 	>
-		<topo-bar/>
+		<top-bar/>
 		<!-- 功能导航卡片 -->
 		<div class="feature-cards">
-			<div class="feature-card" v-if="canAccessChat" @click="goTo('/chat/assistant')">
+			<div class="feature-card" v-if="canAccessChat" @click="goTo('/agents')">
 				<div class="card-icon">🤖</div>
 				<h3>{{ t('ai.assistant') }}</h3>
 				<p>{{ t('ai.assistant.desc') }}</p>
@@ -33,16 +33,16 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { debounce, t } from '@ai-system/lib'
-import TopoBar from '@/pages/components/topoBar.vue'
+import topBar from '@/pages/components/topBar.vue'
 import { getNewContextId } from '@/api/ai.api'
 import { goTo } from '@/routes'
-import { hasRoleAccess } from '@/utils/role'
+import { hasRoleAccess, ROLE_ADMIN, ROLE_USER } from '@/utils/role'
 
 const route = useRoute()
 const isFullscreen = ref(true)
 const isMobile = ref(false)
-const canAccessChat = computed(() => hasRoleAccess(2))
-const canAccessAdmin = computed(() => hasRoleAccess(1))
+const canAccessChat = computed(() => hasRoleAccess(ROLE_USER))
+const canAccessAdmin = computed(() => hasRoleAccess(ROLE_ADMIN))
 
 const resize = () => {
 	const width =
@@ -122,17 +122,13 @@ onUnmounted(() => {
 
 		.feature-card {
 			width: 220px;
-			background: var(--n-color-neutral-1);
-			border-radius: 12px;
+			border-radius: var(--n-radius-quadruple);
 			padding: 24px 20px;
 			text-align: center;
-			box-shadow: var(--n-color-opacity-3);
 			cursor: pointer;
-			transition: all 0.3s ease;
 
 			&:hover {
 				transform: translateY(-5px);
-				box-shadow: 0px 0px 12px var(--el-color-primary-light-7);
 			}
 
 			.card-icon {
@@ -143,13 +139,13 @@ onUnmounted(() => {
 			h3 {
 				font-size: 18px;
 				font-weight: 600;
-				color: var(--n-color-font-dark);
+				color: var(--n-color-text-primary);
 				margin-bottom: 8px;
 			}
 
 			p {
 				font-size: 14px;
-				color: var(--n-color-neutral-5);
+				color: var(--n-color-text-primary);
 				line-height: 1.5;
 			}
 		}

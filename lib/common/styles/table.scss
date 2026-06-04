@@ -1,0 +1,67 @@
+/* 表格：实色中性样式，单一来源，不使用毛玻璃/color-mix 透明叠加 */
+.el-table {
+  .el-form-item {
+    margin-bottom: 0;
+  }
+
+  background: transparent;
+  color: var(--n-color-text-primary);
+
+  thead tr,
+  th.el-table__cell {
+    background-color: var(--n-table-header-bg);
+    color: var(--el-table-header-text-color);
+    font-weight: var(--n-font-weight-bold);
+    border-bottom-color: var(--n-table-border);
+  }
+
+  tbody tr {
+    background-color: var(--n-table-row-bg);
+  }
+
+  td.el-table__cell {
+    background-color: var(--n-table-row-bg);
+    border-color: var(--n-table-border);
+    border-right: none;
+
+    .el-button {
+      .iconfont {
+        font-size: 14px;
+        --color: inherit;
+        color: var(--color);
+      }
+    }
+  }
+
+  tbody tr:hover > td.el-table__cell {
+    background-color: var(--n-table-row-hover-bg);
+  }
+
+  tbody tr.current-row > td.el-table__cell {
+    background-color: var(--n-table-row-current-bg);
+  }
+
+  &.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+    background-color: var(--n-table-row-stripe-bg);
+  }
+
+  &.el-table--striped .el-table__body tr.el-table__row--striped:hover > td.el-table__cell,
+  &.el-table--striped .el-table__body tr.el-table__row--striped.current-row > td.el-table__cell {
+    background-color: var(--n-table-row-hover-bg);
+  }
+
+  .el-table__empty-block {
+    min-height: 120px;
+    background: transparent;
+  }
+
+  .el-table__empty-text {
+    color: var(--n-color-text-primary);
+    line-height: 1.5;
+  }
+}
+
+.kb-data-table,
+.model-config-table {
+  width: 100%;
+}

@@ -6,6 +6,7 @@ export interface UserDto {
 	username: string
 	role: number
 	createTime?: number
+	email?: string
 }
 
 export interface UserListDto {

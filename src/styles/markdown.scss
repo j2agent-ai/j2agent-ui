@@ -1,0 +1,385 @@
+@use '@/styles/platform' as *;
+
+.message-md {
+  --md-diagram-max-height: min(360px, 42vh);
+  --md-diagram-body-padding-vertical: 28px;
+  color: var(--n-color-text-primary);
+
+  p,
+  li,
+  strong,
+  em,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  th,
+  td {
+    color: inherit;
+  }
+
+  h1 {
+    font-size: var(--n-font-size-6);
+    margin-bottom: calc(var(--n-font-size-6) / 2);
+  }
+
+  h2 {
+    font-size: var(--n-font-size-5);
+    margin-bottom: calc(var(--n-font-size-5) / 2);
+  }
+
+  h3 {
+    font-size: var(--n-font-size-4);
+    margin-bottom: calc(var(--n-font-size-4) / 2);
+  }
+
+  h4 {
+    font-size: var(--n-font-size-3);
+    margin-bottom: calc(var(--n-font-size-3) / 2);
+  }
+
+  h5 {
+    font-size: var(--n-font-size-2);
+    margin-bottom: calc(var(--n-font-size-2) / 2);
+  }
+
+  h6 {
+    font-size: var(--n-font-size-1);
+    margin-bottom: calc(var(--n-font-size-1) / 2);
+  }
+
+  ol {
+    list-style: none;
+    padding-left: calc(3 * var(--n-font-size-2));
+  }
+
+  ol li {
+    list-style: decimal;
+  }
+
+  ul {
+    padding-left: calc(3 * var(--n-font-size-2));
+  }
+
+  ul li {
+    list-style: disc;
+  }
+
+  a {
+    color: var(--n-color-link);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  /* 行内 `code`：浅色标签（围栏块见 pre；勿用 backdrop-filter，避免气泡上脏影） */
+  code:not(pre code) {
+    display: inline;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.92em;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    color: var(--n-inline-code-text);
+    background: var(--n-inline-code-bg);
+    border: 1px solid var(--n-inline-code-border);
+    box-shadow: none;
+    vertical-align: baseline;
+  }
+
+  /* 围栏代码块：与深度思考同款深色玻璃 */
+  pre {
+    margin: 10px 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--n-dark-panel-bg);
+    backdrop-filter: blur(var(--n-dark-panel-blur)) saturate(var(--n-dark-panel-saturate));
+    -webkit-backdrop-filter: blur(var(--n-dark-panel-blur))
+      saturate(var(--n-dark-panel-saturate));
+    border: 1px solid var(--n-dark-panel-border);
+    box-shadow: var(--n-dark-panel-shadow);
+    color: var(--n-dark-panel-text);
+    overflow-x: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: var(--n-font-size-1);
+    line-height: 1.55;
+    isolation: isolate;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--n-dark-panel-text) 40%, transparent) transparent;
+  }
+
+  pre::-webkit-scrollbar {
+    height: 6px;
+    width: 0;
+  }
+
+  pre::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--n-dark-panel-text) 40%, transparent);
+    border-radius: 3px;
+  }
+
+  pre code {
+    color: var(--n-dark-panel-text);
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    white-space: pre;
+    word-wrap: normal;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: opacity 0.2s ease;
+  }
+
+  img:hover {
+    opacity: 0.92;
+  }
+
+  /* 表格：与状态栏同款白色玻璃卡片 */
+  .md-table-wrap {
+    width: 100%;
+    max-width: 100%;
+    margin: 12px 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 10px;
+    border: none;
+    @include n-glass-surface(2);
+    background: var(--n-color-bg-glass);
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, var(--n-glass-highlight) 95%, transparent),
+      0 4px 10px rgba(0, 0, 0, 0.06),
+      0 12px 32px rgba(0, 0, 0, 0.1);
+    isolation: isolate;
+    scrollbar-width: thin;
+    scrollbar-color: var(--n-color-scrollbar-thumb) transparent;
+  }
+
+  /* 仅保留横向滚动条，避免右侧出现竖向 gutter/轨道 */
+  .md-table-wrap::-webkit-scrollbar {
+    height: 6px;
+    width: 0;
+  }
+
+  .md-table-wrap::-webkit-scrollbar-thumb {
+    background-color: var(--n-color-scrollbar-thumb);
+    border-radius: 3px;
+  }
+
+  .md-table-wrap::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  table.md-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-spacing: 0;
+    word-break: normal;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  thead.md-thead .md-th {
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+    line-height: var(--n-font-line-height-2);
+    font-size: var(--n-font-size-1);
+    font-weight: var(--n-font-weight-bold);
+    color: var(--n-color-text-primary);
+    background: var(--n-color-bg-glass-strong);
+    border-bottom: 1px solid var(--n-glass-border-2);
+    white-space: nowrap;
+  }
+
+  tbody.md-tbody .md-td {
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+    line-height: var(--n-font-line-height-2);
+    border-bottom: 1px solid var(--n-glass-border-1);
+    background: transparent;
+  }
+
+  tbody.md-tbody .md-tr:nth-child(even) .md-td {
+    background: color-mix(in srgb, var(--n-glass-highlight) 40%, transparent);
+  }
+
+  tbody.md-tbody .md-tr:last-child .md-td {
+    border-bottom: none;
+  }
+
+  .md-diagram,
+  .md-html-block {
+    width: 100%;
+    max-width: 100%;
+    max-height: var(--md-diagram-max-height);
+    height: auto;
+    margin: 10px 0;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  .md-diagram-body {
+    min-height: 80px;
+    max-height: var(--md-diagram-max-height);
+    height: auto;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: var(--n-color-diagram-bg);
+    backdrop-filter: blur(var(--n-glass-blur-1));
+    border: 1px solid var(--n-color-diagram-border);
+    color: var(--n-color-diagram-text);
+    overflow: hidden;
+    text-align: center;
+    box-sizing: border-box;
+    transition:
+            border-color 120ms ease,
+            box-shadow 160ms ease,
+            background 160ms ease;
+  }
+
+  .md-diagram-body:hover {
+    border-color: color-mix(in srgb, var(--n-color-diagram-border) 80%, var(--n-glass-highlight));
+    box-shadow: var(--n-shadow-elevation-1);
+  }
+
+  /* 横向 xychart：左侧类目竖排，行数多时可纵向滚动 */
+  .md-diagram-xychart--horizontal .md-diagram-body {
+    overflow-y: auto;
+    text-align: left;
+  }
+
+  /* 竖向 xychart 底部标签换行后允许容器增高；极高时纵向滚动 */
+  .md-diagram-xychart--vertical .md-diagram-body {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .md-diagram:has(.md-diagram-xychart--vertical) {
+    height: auto;
+    max-height: none;
+  }
+
+  .md-diagram-fit {
+    width: 100%;
+    overflow: hidden;
+    line-height: 0;
+  }
+
+  .md-diagram-body svg {
+    display: block;
+    box-sizing: border-box;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
+    shape-rendering: geometricPrecision;
+    text-rendering: geometricPrecision;
+    filter: none;
+  }
+
+  /* 图表 SVG 兜底：尽量统一 PlantUML / Mermaid 的观感（主要仍由 Mermaid 主题变量控制） */
+  .md-diagram-body svg text {
+    fill: currentColor;
+  }
+
+  .md-diagram-body svg a {
+    cursor: pointer;
+  }
+
+  /* 饼图去掉扇区/外圈描边，避免默认黑边 */
+  .md-diagram-mermaid svg .slice path,
+  .md-diagram-mermaid svg .pieCircle,
+  .md-diagram-mermaid svg .pieOuterCircle {
+    stroke: none;
+    stroke-width: 0;
+  }
+
+  /* xychart 柱/条：横竖向统一主色（与 var --n-color-diagram-bar、pie1 一致） */
+  .md-diagram-xychart svg g[class*='bar-plot-0'] rect {
+    fill: var(--n-color-diagram-bar);
+    stroke: var(--n-color-diagram-bar);
+    stroke-width: 0;
+  }
+
+  .md-diagram-vegalite .md-vegalite-host,
+  .md-diagram-vegalite .vega-embed {
+    max-width: 100%;
+    margin: 0 auto;
+  }
+
+  .md-diagram-body > :first-child {
+    margin-top: 0;
+  }
+
+  .md-html-preview {
+    display: block;
+    width: 100%;
+    min-height: 160px;
+    border: 1px solid var(--n-color-preview-border);
+    border-radius: 6px;
+    background: var(--n-color-preview-bg);
+    color: var(--n-color-preview-text);
+    transform-origin: top center;
+  }
+
+  .md-diagram-error .md-diagram-body {
+    background: var(--el-color-danger-light-9);
+    border-color: var(--el-color-danger-light-5);
+    color: var(--el-color-danger);
+    /* 错误栈可能很长：允许滚动，避免看起来“空白/看不见” */
+    overflow: auto;
+    text-align: left;
+    scrollbar-gutter: stable;
+  }
+
+  .md-diagram-error .md-diagram-error-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+
+  .md-diagram-error .md-diagram-error-details {
+    background: var(--n-color-bg-glass-weak);
+    border: 1px solid color-mix(in srgb, var(--el-color-danger) 22%, transparent);
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+
+  .md-diagram-error .md-diagram-error-summary {
+    cursor: pointer;
+    font-weight: 600;
+    user-select: none;
+    outline: none;
+  }
+
+  .md-diagram-error pre {
+    margin-bottom: 0;
+    white-space: pre-wrap;
+  }
+
+  .md-diagram-error .md-diagram-error-pre {
+    background: var(--n-color-bg-glass);
+    color: var(--n-color-preview-text);
+    border: 1px solid var(--n-color-preview-border);
+    margin-top: 8px;
+    max-height: 180px;
+    overflow: auto;
+  }
+}

@@ -79,12 +79,13 @@ const handleClose = () => {
 </script>
 
 <style scoped lang="scss">
+@use '@/styles/platform' as *;
+
 .container {
 	width: 100%;
 	min-height: 320px;
 	padding: 20px;
-	background: color-mix(in srgb, var(--n-color-neutral-w), transparent 20%);
-	backdrop-filter: blur(10px);
+	@include n-glass-surface(2);
 	border-radius: var(--n-radius-triple);
 }
 </style>

@@ -148,14 +148,11 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
+@use '@/styles/platform' as *;
+
 .rag-settings-page {
 	padding: 20px;
-	background-color: color-mix(
-			in srgb,
-			var(--n-color-neutral-w),
-			transparent 30%
-	);
-	backdrop-filter: blur(10px);
+	@include n-glass-surface(2);
 	border-radius: var(--n-radius-triple);
 }
 </style>

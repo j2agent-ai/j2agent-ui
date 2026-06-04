@@ -14,20 +14,25 @@ http.interceptors.response.use(
 		return response
 	},
 	(error) => {
-		const { status } = error.response
+		const { status } = error.response || {}
 
-		// 判断状态码是否为 401
-		if (status === 401) {
-			goTo('login')
-		}
-		if (status === 403) {
-			ElMessage.error('无权限访问')
-			goTo('/chat/assistant')
+		// 仅对已登录业务接口的 401/403 跳转登录；公开 auth（注册/登录/验证码等）不跳转
+		const requestUrl = error.config?.url ?? ''
+		const isPublicAuthApi = requestUrl.includes('/auth/')
+		if ((status === 401 || status === 403) && !isPublicAuthApi) {
+			goTo('/login')
 		}
 
-		if (status === 400 || status === 500 || status === 503) {
-			if (error.response.data.message) {
-				ElMessage.error(status + ' : ' + error.response.data.message)
+		const suppressErrorToast = (error.config as { suppressErrorToast?: boolean })
+			?.suppressErrorToast
+		if (
+			!suppressErrorToast &&
+			(status === 400 || status === 429 || status === 500 || status === 502 || status === 503)
+		) {
+			const data = error.response?.data
+			const msg = data?.message || data?.error
+			if (msg) {
+				ElMessage.error(`${status}: ${msg}`)
 			}
 		}
 

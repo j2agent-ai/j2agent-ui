@@ -176,12 +176,12 @@ function clearForm() {
 
 		p {
 			margin-bottom: 15px;
-			color: #606266;
+			color: var(--n-color-text-muted);
 		}
 	}
 
 	.upload-section {
-		border: 1px dashed #d9d9d9;
+		border: 1px dashed var(--n-color-border);
 		border-radius: 6px;
 		padding: 20px;
 		text-align: center;
@@ -194,10 +194,10 @@ function clearForm() {
 
 	.file-info {
 		padding: 10px;
-		background-color: #f5f7fa;
+		background: var(--n-color-bg-glass-weak);
 		border-radius: 4px;
 		font-size: 14px;
-		color: #606266;
+		color: var(--n-color-text-muted);
 		display: flex;
 		align-items: center;
 		justify-content: space-between;

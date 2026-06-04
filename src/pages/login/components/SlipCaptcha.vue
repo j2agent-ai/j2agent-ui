@@ -174,7 +174,7 @@ const sliderMove = (e: MouseEvent | TouchEvent) => {
 	const maxMoveX = slideInfo.value.width - slideInfo.value.sliderSize
 	const clampedX = Math.max(0, Math.min(moveX, maxMoveX))
 	block.value &&
-		(block.value.style.transform = `translate3d(${clampedX}px,0,0)`)
+	(block.value.style.transform = `translate3d(${clampedX}px,0,0)`)
 	slideInfo.value.sliderLeft = clampedX
 	// 记录真实光标位置
 	track.value.push({ pointerX: pageX, pointerY: pageY, t: Date.now() })
@@ -234,7 +234,7 @@ function updateSlideInfo() {
 			sliderY: number
 		}>(
 			`/v1${globalUrlPrefix}auth/${programTag}/captcha/slide?` +
-				new Date().getTime()
+			new Date().getTime()
 		)
 		.then((res) => {
 			slideInfo.value.hash = res.data.hash
@@ -272,8 +272,8 @@ onDeactivated(() => {
 	margin: 0 auto;
 	padding: 16px;
 	border-radius: var(--n-radius-triple);
-	background: #fff;
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+	background: var(--n-color-bg-glass-weak);
+	box-shadow: var(--n-box-shadow-large);
 
 	.slider-canvas {
 		position: relative;
@@ -321,11 +321,11 @@ onDeactivated(() => {
 }
 
 .slider-square {
-	background-color: #f7f9fa;
+	background: var(--n-color-bg-glass-weak);
 	height: 36px;
 	text-align: center;
 	line-height: 36px;
-	border: 2px solid rgba(221, 221, 221, 0.17);
+	border: 2px solid var(--n-color-border-soft);
 	position: relative;
 	border-radius: 4px;
 	z-index: 10;
@@ -341,7 +341,7 @@ onDeactivated(() => {
 		span {
 			flex: 1;
 			text-align: center;
-			color: #666;
+			color: var(--n-color-text-muted);
 			font-size: 14px;
 		}
 	}

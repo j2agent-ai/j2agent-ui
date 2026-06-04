@@ -2,6 +2,9 @@ const ROLE_STORAGE_KEY = 'user-role'
 const USERNAME_STORAGE_KEY = 'user-name'
 const USERID_STORAGE_KEY = 'user-id'
 
+export const ROLE_ADMIN = 1
+export const ROLE_USER = 2
+
 export const setUserRole = (role: number | null) => {
 	if (role === null || role === undefined || Number.isNaN(role)) {
 		localStorage.removeItem(ROLE_STORAGE_KEY)
@@ -60,6 +63,5 @@ export const getSessionInfo = () => {
 }
 
 export const isAdminUser = () => {
-	const info = getSessionInfo()
-	return info.username === 'admin'
+	return hasRoleAccess(ROLE_ADMIN)
 }

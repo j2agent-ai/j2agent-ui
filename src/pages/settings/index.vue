@@ -1,72 +1,51 @@
 <template>
 	<div class="settings-page">
-		<topo-bar />
+		<top-bar />
 		<div class="settings-content" v-loading="loading">
-			<div class="settings-header">
-				<h2>{{ t('settings.title') }}</h2>
-			</div>
-		<el-tabs v-model="activeTab" class="settings-tabs">
-			<el-tab-pane :label="t('settings.llm.section')" name="llm">
-				<LlmSettingsPanel :form="llmForm" :saving="saving" @save="saveSettings" />
-			</el-tab-pane>
-			<el-tab-pane :label="t('settings.embedding.section')" name="embedding">
-				<EmbeddingSettingsPanel
-					:form="embeddingForm"
-					:saving="saving"
-					@save="saveSettings"
-				/>
-			</el-tab-pane>
-			<el-tab-pane :label="t('settings.rag.section')" name="rag">
-				<RagSettingsPanel :form="ragForm" :saving="saving" @save="saveSettings" />
-			</el-tab-pane>
-			<el-tab-pane :label="t('user.management.title')" name="user">
-				<UserManagementPanel />
-			</el-tab-pane>
-		</el-tabs>
+			<el-tabs v-model="activeTab" class="settings-tabs">
+				<el-tab-pane :label="t('settings.llm.section')" name="llm">
+					<!-- 仅激活 Tab 时挂载面板组件，避免进入设置页就预打接口 -->
+					<LlmSettingsPanel v-if="activeTab === 'llm'" />
+				</el-tab-pane>
+				<el-tab-pane :label="t('settings.embedding.section')" name="embedding">
+					<!-- 仅激活 Tab 时挂载面板组件，避免进入设置页就预打接口 -->
+					<EmbeddingSettingsPanel v-if="activeTab === 'embedding'" />
+				</el-tab-pane>
+				<el-tab-pane :label="t('settings.rag.section')" name="rag">
+					<RagSettingsPanel
+						v-if="activeTab === 'rag'"
+						:form="ragForm"
+						:saving="saving"
+						@save="saveSettings"
+					/>
+				</el-tab-pane>
+				<el-tab-pane :label="t('settings.agentPlugin.section')" name="agent-plugin">
+					<AgentPluginSettingsPanel v-if="activeTab === 'agent-plugin'" />
+				</el-tab-pane>
+				<el-tab-pane :label="t('settings.nms.section')" name="nms">
+					<NmsSettingsPanel v-if="activeTab === 'nms'" />
+				</el-tab-pane>
+				<el-tab-pane v-if="canManageUsers" :label="t('user.management.title')" name="user">
+					<UserManagementPanel v-if="activeTab === 'user'" />
+				</el-tab-pane>
+			</el-tabs>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import {
-	ElTabPane,
-	ElTabs,
-	ElMessage,
-	ElMessageBox
-} from 'element-plus'
+import { computed, ref, watch } from 'vue'
+import { ElTabPane, ElTabs, ElMessage, ElMessageBox } from 'element-plus'
 import { t } from '@ai-system/lib'
-import TopoBar from '@/pages/components/topoBar.vue'
+import topBar from '@/pages/components/topBar.vue'
 import EmbeddingSettingsPanel from './components/EmbeddingSettingsPanel.vue'
 import LlmSettingsPanel from './components/LlmSettingsPanel.vue'
 import RagSettingsPanel from './components/RagSettingsPanel.vue'
+import AgentPluginSettingsPanel from './components/AgentPluginSettingsPanel.vue'
+import NmsSettingsPanel from './components/NmsSettingsPanel.vue'
 import UserManagementPanel from './components/UserManagementPanel.vue'
 import { getProperties, putProperties } from '@/api/property.api'
-
-const KEY_LLM_PROVIDER = 'llm-provider'
-const KEY_LLM_USE_RAG = 'llm-use-rag'
-const KEY_LLM_USE_TOOLS = 'llm-use-tools'
-const KEY_LLM_TEMPERATURE = 'llm-temperature'
-const KEY_LLM_OLLAMA_MODEL_NAME = 'llm-ollama-model-name'
-const KEY_LLM_OLLAMA_BASE_URL = 'llm-ollama-base-url'
-const KEY_LLM_OLLAMA_KEEP_ALIVE_SECONDS = 'llm-ollama-keep-alive-seconds'
-const KEY_LLM_OLLAMA_CONTEXT_LENGTH = 'llm-ollama-context-length'
-const KEY_LLM_OLLAMA_KEY = 'llm-ollama-key'
-const KEY_LLM_OPENAI_MODEL_NAME = 'llm-open-ai-model-name'
-const KEY_LLM_OPENAI_BASE_URL = 'llm-open-ai-base-url'
-const KEY_LLM_OPENAI_COMPLETIONS_PATH = 'llm-open-ai-completions-path'
-const KEY_LLM_OPENAI_KEY = 'llm-open-ai-key'
-const KEY_LLM_OPENAI_CONTEXT_LENGTH = 'llm-open-ai-context-length'
-
-const KEY_EMBEDDING_PROVIDER = 'embedding-provider'
-const KEY_EMBEDDING_OLLAMA_MODEL_NAME = 'embedding-ollama-model-name'
-const KEY_EMBEDDING_OLLAMA_BASE_URL = 'embedding-ollama-base-url'
-const KEY_EMBEDDING_OLLAMA_KEEP_ALIVE_SECONDS = 'embedding-ollama-keep_alive_seconds'
-const KEY_EMBEDDING_OLLAMA_KEY = 'embedding-ollama-key'
-const KEY_EMBEDDING_OPENAI_MODEL_NAME = 'embedding-open-ai-model-name'
-const KEY_EMBEDDING_OPENAI_BASE_URL = 'embedding-open-ai-base-url'
-const KEY_EMBEDDING_OPENAI_EMBEDDINGS_PATH = 'embedding-open-ai-embeddings-path'
-const KEY_EMBEDDING_OPENAI_KEY = 'embedding-open-ai-key'
+import { hasRoleAccess, ROLE_ADMIN } from '@/utils/role'
 
 const KEY_RETRIEVE_TOP_K = 'RETRIEVE_TOP_K'
 const KEY_RETRIEVE_METRIC_TYPE = 'RETRIEVE_METRIC_TYPE'
@@ -77,37 +56,10 @@ const KEY_RETRIEVE_SPARSE_WEIGHT = 'RETRIEVE_SPARSE_WEIGHT'
 const activeTab = ref('llm')
 const loading = ref(false)
 const saving = ref(false)
+const canManageUsers = computed(() => hasRoleAccess(ROLE_ADMIN))
 
-const llmForm = ref({
-	provider: 'open-ai',
-	useRag: true,
-	useTools: true,
-	temperature: 0,
-	ollamaModelName: 'qwen3:14b-q8_0',
-	ollamaBaseUrl: 'http://172.16.8.107:11434',
-	ollamaKeepAliveSeconds: 3600,
-	ollamaContextLength: 32768,
-	ollamaKey: '',
-	openAiModelName: 'qwen-plus',
-	openAiBaseUrl: 'https://dashscope.aliyuncs.com',
-	openAiCompletionsPath: '/compatible-mode/v1/chat/completions',
-	openAiKey: '',
-	openAiContextLength: 32768
-})
-
-const embeddingForm = ref({
-	provider: 'open-ai',
-	ollamaModelName: 'nomic-embed-text:latest',
-	ollamaBaseUrl: 'http://127.0.0.1:11434',
-	ollamaKeepAliveSeconds: 3600,
-	ollamaKey: '',
-	openAiModelName: 'text-embedding-v4',
-	openAiBaseUrl: 'https://dashscope.aliyuncs.com',
-	openAiEmbeddingsPath: '/compatible-mode/v1/embeddings',
-	openAiKey: ''
-})
-const embeddingSnapshot = ref('')
-const ragMetricSnapshot = ref('')
+// 用于避免切 Tab 后旧请求把 loading 状态覆盖回来
+let loadSeq = 0
 
 const ragForm = ref({
 	topK: 5,
@@ -116,16 +68,9 @@ const ragForm = ref({
 	denseWeight: 0.5,
 	sparseWeight: 0.5
 })
-ragMetricSnapshot.value = ragForm.value.metricType
+const ragMetricSnapshot = ref(ragForm.value.metricType)
 
-const parseBoolean = (value?: string, fallback = false) => {
-	if (value === undefined || value === null) {
-		return fallback
-	}
-	return value.trim() === '1' || value.trim().toLowerCase() === 'true'
-}
-
-const parseNumber = (value?: string, fallback: number) => {
+const parseNumber = (value?: string, fallback = 0) => {
 	if (value === undefined || value === null) {
 		return fallback
 	}
@@ -153,33 +98,14 @@ const resolvePropertyMap = (res: any) => {
 	return res?.data ?? {}
 }
 
+/**
+ * 加载 RAG 配置：仅在激活 `rag` Tab 时触发
+ */
 const loadSettings = async () => {
+	const seq = ++loadSeq
 	loading.value = true
 	try {
 		const keys = [
-			KEY_LLM_PROVIDER,
-			KEY_LLM_USE_RAG,
-			KEY_LLM_USE_TOOLS,
-			KEY_LLM_TEMPERATURE,
-			KEY_LLM_OLLAMA_MODEL_NAME,
-			KEY_LLM_OLLAMA_BASE_URL,
-			KEY_LLM_OLLAMA_KEEP_ALIVE_SECONDS,
-			KEY_LLM_OLLAMA_CONTEXT_LENGTH,
-			KEY_LLM_OLLAMA_KEY,
-			KEY_LLM_OPENAI_MODEL_NAME,
-			KEY_LLM_OPENAI_BASE_URL,
-			KEY_LLM_OPENAI_COMPLETIONS_PATH,
-			KEY_LLM_OPENAI_KEY,
-			KEY_LLM_OPENAI_CONTEXT_LENGTH,
-			KEY_EMBEDDING_PROVIDER,
-			KEY_EMBEDDING_OLLAMA_MODEL_NAME,
-			KEY_EMBEDDING_OLLAMA_BASE_URL,
-			KEY_EMBEDDING_OLLAMA_KEEP_ALIVE_SECONDS,
-			KEY_EMBEDDING_OLLAMA_KEY,
-			KEY_EMBEDDING_OPENAI_MODEL_NAME,
-			KEY_EMBEDDING_OPENAI_BASE_URL,
-			KEY_EMBEDDING_OPENAI_EMBEDDINGS_PATH,
-			KEY_EMBEDDING_OPENAI_KEY,
 			KEY_RETRIEVE_TOP_K,
 			KEY_RETRIEVE_METRIC_TYPE,
 			KEY_RETRIEVE_METRIC_SCORE_COMPARE_EXPR,
@@ -188,74 +114,17 @@ const loadSettings = async () => {
 		]
 		const res = await getProperties(keys)
 		const data = resolvePropertyMap(res)
-		llmForm.value.provider = data[KEY_LLM_PROVIDER] || llmForm.value.provider
-		llmForm.value.useRag = parseBoolean(data[KEY_LLM_USE_RAG], llmForm.value.useRag)
-		llmForm.value.useTools = parseBoolean(
-			data[KEY_LLM_USE_TOOLS],
-			llmForm.value.useTools
-		)
-		llmForm.value.temperature = parseNumber(
-			data[KEY_LLM_TEMPERATURE],
-			llmForm.value.temperature
-		)
-		llmForm.value.ollamaModelName =
-			data[KEY_LLM_OLLAMA_MODEL_NAME] || llmForm.value.ollamaModelName
-		llmForm.value.ollamaBaseUrl =
-			data[KEY_LLM_OLLAMA_BASE_URL] || llmForm.value.ollamaBaseUrl
-		llmForm.value.ollamaKeepAliveSeconds = parseNumber(
-			data[KEY_LLM_OLLAMA_KEEP_ALIVE_SECONDS],
-			llmForm.value.ollamaKeepAliveSeconds
-		)
-		llmForm.value.ollamaContextLength = parseNumber(
-			data[KEY_LLM_OLLAMA_CONTEXT_LENGTH],
-			llmForm.value.ollamaContextLength
-		)
-		llmForm.value.ollamaKey = data[KEY_LLM_OLLAMA_KEY] || llmForm.value.ollamaKey
-		llmForm.value.openAiModelName =
-			data[KEY_LLM_OPENAI_MODEL_NAME] || llmForm.value.openAiModelName
-		llmForm.value.openAiBaseUrl =
-			data[KEY_LLM_OPENAI_BASE_URL] || llmForm.value.openAiBaseUrl
-		llmForm.value.openAiCompletionsPath =
-			data[KEY_LLM_OPENAI_COMPLETIONS_PATH] || llmForm.value.openAiCompletionsPath
-		llmForm.value.openAiKey = data[KEY_LLM_OPENAI_KEY] || llmForm.value.openAiKey
-		llmForm.value.openAiContextLength = parseNumber(
-			data[KEY_LLM_OPENAI_CONTEXT_LENGTH],
-			llmForm.value.openAiContextLength
-		)
-
-		embeddingForm.value.provider =
-			data[KEY_EMBEDDING_PROVIDER] || embeddingForm.value.provider
-		embeddingForm.value.ollamaModelName =
-			data[KEY_EMBEDDING_OLLAMA_MODEL_NAME] || embeddingForm.value.ollamaModelName
-		embeddingForm.value.ollamaBaseUrl =
-			data[KEY_EMBEDDING_OLLAMA_BASE_URL] || embeddingForm.value.ollamaBaseUrl
-		embeddingForm.value.ollamaKeepAliveSeconds = parseNumber(
-			data[KEY_EMBEDDING_OLLAMA_KEEP_ALIVE_SECONDS],
-			embeddingForm.value.ollamaKeepAliveSeconds
-		)
-		embeddingForm.value.ollamaKey =
-			data[KEY_EMBEDDING_OLLAMA_KEY] || embeddingForm.value.ollamaKey
-		embeddingForm.value.openAiModelName =
-			data[KEY_EMBEDDING_OPENAI_MODEL_NAME] || embeddingForm.value.openAiModelName
-		embeddingForm.value.openAiBaseUrl =
-			data[KEY_EMBEDDING_OPENAI_BASE_URL] || embeddingForm.value.openAiBaseUrl
-		embeddingForm.value.openAiEmbeddingsPath =
-			data[KEY_EMBEDDING_OPENAI_EMBEDDINGS_PATH] ||
-			embeddingForm.value.openAiEmbeddingsPath
-		embeddingForm.value.openAiKey =
-			data[KEY_EMBEDDING_OPENAI_KEY] || embeddingForm.value.openAiKey
-		embeddingSnapshot.value = JSON.stringify(embeddingForm.value)
-		ragForm.value.topK = parseNumber(KEY_RETRIEVE_TOP_K in data ? data[KEY_RETRIEVE_TOP_K] : undefined, ragForm.value.topK)
+		ragForm.value.topK = parseNumber(data[KEY_RETRIEVE_TOP_K], ragForm.value.topK)
 		ragForm.value.metricType =
 			data[KEY_RETRIEVE_METRIC_TYPE] || ragForm.value.metricType
 		ragForm.value.metricScoreExpr =
 			data[KEY_RETRIEVE_METRIC_SCORE_COMPARE_EXPR] || ragForm.value.metricScoreExpr
 		ragForm.value.denseWeight = parseNumber(
-			KEY_RETRIEVE_DENSE_WEIGHT in data ? data[KEY_RETRIEVE_DENSE_WEIGHT] : undefined,
+			data[KEY_RETRIEVE_DENSE_WEIGHT],
 			ragForm.value.denseWeight
 		)
 		ragForm.value.sparseWeight = parseNumber(
-			KEY_RETRIEVE_SPARSE_WEIGHT in data ? data[KEY_RETRIEVE_SPARSE_WEIGHT] : undefined,
+			data[KEY_RETRIEVE_SPARSE_WEIGHT],
 			ragForm.value.sparseWeight
 		)
 		normalizeRagWeights()
@@ -263,7 +132,8 @@ const loadSettings = async () => {
 	} catch (error) {
 		ElMessage.error(t('settings.load.failed'))
 	} finally {
-		loading.value = false
+		// 只有当前序列请求完成才更新 loading
+		if (seq === loadSeq) loading.value = false
 	}
 }
 
@@ -276,109 +146,19 @@ const buildPayload = () => {
 		return String(value)
 	}
 	return [
-		{ propertyName: KEY_LLM_PROVIDER, propertyValue: toValue(llmForm.value.provider) },
-		{ propertyName: KEY_LLM_USE_RAG, propertyValue: toValue(llmForm.value.useRag) },
-		{ propertyName: KEY_LLM_USE_TOOLS, propertyValue: toValue(llmForm.value.useTools) },
-		{ propertyName: KEY_LLM_TEMPERATURE, propertyValue: toValue(llmForm.value.temperature) },
-		{
-			propertyName: KEY_LLM_OLLAMA_MODEL_NAME,
-			propertyValue: toValue(llmForm.value.ollamaModelName)
-		},
-		{
-			propertyName: KEY_LLM_OLLAMA_BASE_URL,
-			propertyValue: toValue(llmForm.value.ollamaBaseUrl)
-		},
-		{
-			propertyName: KEY_LLM_OLLAMA_KEEP_ALIVE_SECONDS,
-			propertyValue: toValue(llmForm.value.ollamaKeepAliveSeconds)
-		},
-		{
-			propertyName: KEY_LLM_OLLAMA_CONTEXT_LENGTH,
-			propertyValue: toValue(llmForm.value.ollamaContextLength)
-		},
-		{ propertyName: KEY_LLM_OLLAMA_KEY, propertyValue: toValue(llmForm.value.ollamaKey) },
-		{
-			propertyName: KEY_LLM_OPENAI_MODEL_NAME,
-			propertyValue: toValue(llmForm.value.openAiModelName)
-		},
-		{
-			propertyName: KEY_LLM_OPENAI_BASE_URL,
-			propertyValue: toValue(llmForm.value.openAiBaseUrl)
-		},
-		{
-			propertyName: KEY_LLM_OPENAI_COMPLETIONS_PATH,
-			propertyValue: toValue(llmForm.value.openAiCompletionsPath)
-		},
-		{ propertyName: KEY_LLM_OPENAI_KEY, propertyValue: toValue(llmForm.value.openAiKey) },
-		{
-			propertyName: KEY_LLM_OPENAI_CONTEXT_LENGTH,
-			propertyValue: toValue(llmForm.value.openAiContextLength)
-		},
-		{
-			propertyName: KEY_EMBEDDING_PROVIDER,
-			propertyValue: toValue(embeddingForm.value.provider)
-		},
-		{
-			propertyName: KEY_EMBEDDING_OLLAMA_MODEL_NAME,
-			propertyValue: toValue(embeddingForm.value.ollamaModelName)
-		},
-		{
-			propertyName: KEY_EMBEDDING_OLLAMA_BASE_URL,
-			propertyValue: toValue(embeddingForm.value.ollamaBaseUrl)
-		},
-		{
-			propertyName: KEY_EMBEDDING_OLLAMA_KEEP_ALIVE_SECONDS,
-			propertyValue: toValue(embeddingForm.value.ollamaKeepAliveSeconds)
-		},
-		{
-			propertyName: KEY_EMBEDDING_OLLAMA_KEY,
-			propertyValue: toValue(embeddingForm.value.ollamaKey)
-		},
-		{
-			propertyName: KEY_EMBEDDING_OPENAI_MODEL_NAME,
-			propertyValue: toValue(embeddingForm.value.openAiModelName)
-		},
-		{
-			propertyName: KEY_EMBEDDING_OPENAI_BASE_URL,
-			propertyValue: toValue(embeddingForm.value.openAiBaseUrl)
-		},
-		{
-			propertyName: KEY_EMBEDDING_OPENAI_EMBEDDINGS_PATH,
-			propertyValue: toValue(embeddingForm.value.openAiEmbeddingsPath)
-		},
-		{
-			propertyName: KEY_EMBEDDING_OPENAI_KEY,
-			propertyValue: toValue(embeddingForm.value.openAiKey)
-		},
-		{
-			propertyName: KEY_RETRIEVE_TOP_K,
-			propertyValue: toValue(ragForm.value.topK)
-		},
-		{
-			propertyName: KEY_RETRIEVE_METRIC_TYPE,
-			propertyValue: toValue(ragForm.value.metricType)
-		},
+		{ propertyName: KEY_RETRIEVE_TOP_K, propertyValue: toValue(ragForm.value.topK) },
+		{ propertyName: KEY_RETRIEVE_METRIC_TYPE, propertyValue: toValue(ragForm.value.metricType) },
 		{
 			propertyName: KEY_RETRIEVE_METRIC_SCORE_COMPARE_EXPR,
 			propertyValue: toValue(ragForm.value.metricScoreExpr)
 		},
-		{
-			propertyName: KEY_RETRIEVE_DENSE_WEIGHT,
-			propertyValue: toValue(ragForm.value.denseWeight)
-		},
-		{
-			propertyName: KEY_RETRIEVE_SPARSE_WEIGHT,
-			propertyValue: toValue(ragForm.value.sparseWeight)
-		}
+		{ propertyName: KEY_RETRIEVE_DENSE_WEIGHT, propertyValue: toValue(ragForm.value.denseWeight) },
+		{ propertyName: KEY_RETRIEVE_SPARSE_WEIGHT, propertyValue: toValue(ragForm.value.sparseWeight) }
 	]
 }
 
 const isRagMetricTypeChanged = () => {
 	return ragMetricSnapshot.value !== ragForm.value.metricType
-}
-
-const isEmbeddingChanged = () => {
-	return embeddingSnapshot.value !== JSON.stringify(embeddingForm.value)
 }
 
 const confirmEmbeddingRebuild = async () => {
@@ -396,11 +176,10 @@ const confirmEmbeddingRebuild = async () => {
 const saveSettings = async () => {
 	saving.value = true
 	try {
-		if (isRagMetricTypeChanged() || isEmbeddingChanged()) {
+		if (isRagMetricTypeChanged()) {
 			await confirmEmbeddingRebuild()
 		}
 		await putProperties(buildPayload())
-		embeddingSnapshot.value = JSON.stringify(embeddingForm.value)
 		ragMetricSnapshot.value = ragForm.value.metricType
 		ElMessage.success(t('settings.save.success'))
 	} catch (error) {
@@ -412,20 +191,33 @@ const saveSettings = async () => {
 	}
 }
 
-onMounted(() => {
-	loadSettings()
-})
+watch(
+	activeTab,
+	(tab) => {
+		// 切到 rag 才拉取配置；v-if 卸载/重挂载可确保面板也重新初始化
+		if (tab === 'rag') {
+			loadSettings()
+		}
+	},
+	{ flush: 'post' }
+)
 </script>
 
 <style scoped lang="scss">
+@use '@/styles/platform' as *;
+
 .settings-page {
 	height: 100%;
 	padding-top: 50px;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
 }
 
 .settings-content {
 	padding: 20px;
-	height: calc(100% - 50px);
+	flex: 1;
+	height: auto;
 	overflow: auto;
 }
 
@@ -433,20 +225,51 @@ onMounted(() => {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	margin-bottom: 10px;
+	margin-bottom: 8px;
 
 	h2 {
 		margin: 0;
-		color: var(--n-color-font-dark);
+		color: var(--n-color-text-primary);
 		font-weight: 600;
 	}
 }
 
 .settings-tabs {
-	background: color-mix(in srgb, var(--n-color-neutral-w), transparent 90%);
-	border-radius: var(--n-radius-quadruple);
-	padding: 10px 20px 20px;
-	box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
-}
+	@include n-data-table-panel;
 
+	:deep(.el-tabs__header) {
+		margin-bottom: 12px;
+	}
+
+	:deep(.el-tabs__nav-wrap::after) {
+		height: 1px;
+		background-color: var(--n-color-border-soft);
+	}
+
+	:deep(.el-tabs__item) {
+		color: color-mix(in srgb, var(--n-color-text-primary) 72%, transparent);
+		font-weight: 500;
+		transition: color 0.2s ease;
+	}
+
+	:deep(.el-tabs__item:hover) {
+		color: var(--n-color-text-primary);
+	}
+
+	:deep(.el-tabs__item.is-active) {
+		color: var(--el-color-primary);
+		background: transparent !important;
+	}
+
+	:deep(.el-tabs__active-bar) {
+		height: 2px;
+		border-radius: 2px;
+		background-color: var(--el-color-primary);
+	}
+
+	:deep(.el-tabs__content),
+	:deep(.el-tab-pane) {
+		background: transparent;
+	}
+}
 </style>

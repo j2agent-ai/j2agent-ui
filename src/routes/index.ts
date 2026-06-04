@@ -1,4 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router'
+import { ROLE_USER } from '@/utils/role'
 
 import chat from '@/routes/chat'
 import kb from '@/routes/kb'
@@ -19,9 +20,20 @@ const routes = [
 		component: () => import('@/pages/login/Logout.vue')
 	},
 	{
+		path: '/register',
+		name: 'Register',
+		component: () => import('@/pages/login/Register.vue')
+	},
+	{
+		path: '/forgot-password',
+		name: 'ForgotPassword',
+		component: () => import('@/pages/login/ForgotPassword.vue')
+	},
+	{
 		path: '/',
 		name: 'Index',
-		component: () => import('@/pages/HomePage.vue')
+		component: () => import('@/pages/HomePage.vue'),
+		meta: { requiredRole: ROLE_USER }
 	},
 	...chat,
 	...kb,

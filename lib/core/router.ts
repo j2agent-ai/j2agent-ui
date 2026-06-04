@@ -10,8 +10,8 @@ import {
 	routePathToPageName
 } from '@ai-system/utils'
 import { t } from '@ai-system/locale'
+import { getUserRole, hasRoleAccess, ROLE_USER } from '@/utils/role'
 import type { Router, RouteRecordRaw } from 'vue-router'
-import { hasRoleAccess } from '@/utils/role'
 
 function optimizeRoutes(routes: RouteRecordRaw[]) {
 	deepForEach(routes, (route, level, isLeaf, parent) => {
@@ -43,18 +43,25 @@ export function createWebRouter({ routes, routeBase, routeType }): Router {
 	})
 
 	router.beforeEach((to) => {
-		const adminOnlyPrefixes = ['/kb', '/mcp', '/settings']
-		if (
-			adminOnlyPrefixes.some((prefix) => to.path.startsWith(prefix)) &&
-			!hasRoleAccess(1)
-		) {
-			return '/chat/assistant'
-		}
 		if (to.meta.title) {
 			document.title = `${t(to.meta.title as string)}`
 		} else {
 			document.title = `${t('APP_HOME', '', document.title)}`
 		}
+		const requiredRole = to.meta.requiredRole as number | undefined
+		if (requiredRole === undefined) {
+			return true
+		}
+		if (getUserRole() === null) {
+			return {
+				path: '/login',
+				query: { redirect: to.fullPath }
+			}
+		}
+		if (!hasRoleAccess(requiredRole)) {
+			return { path: requiredRole <= ROLE_USER ? '/agents' : '/' }
+		}
+		return true
 	})
 
 	router.afterEach((to) => {

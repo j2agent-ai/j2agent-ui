@@ -1,7 +1,11 @@
 <template>
 	<div
 		class="chat-container"
-		:class="{ fullscreen: isFullscreen, 'is-mobile': isMobile }"
+		:class="{
+			fullscreen: isFullscreen,
+			'is-mobile': isMobile,
+			'is-history-open': isMobile && showChatManage
+		}"
 	>
 		<ChatManage
 			v-show="showChatManage || isFullscreen"
@@ -11,21 +15,23 @@
 			:history-chat="historyChat"
 			:curr-context-id="contextId"
 			:message-context="messageContext"
-			:is-busy="isWaiting"
+			:is-busy="isBusyByState"
+			:agent-id="props.agentId"
 			@show-chat-manage="(val) => (showChatManage = val)"
 		/>
 		<div
-			v-if="!showChatManage || isFullscreen || (isMobile && !showChatManage)"
+			v-if="!showChatManage || isFullscreen"
+			ref="chatViewRef"
 			class="chat-view"
 		>
 			<el-scrollbar ref="scrollbarRef" class="scroll" @scroll="checkScroll">
 				<div class="message-init">
 					<div class="ai-logo">
 						<!--						<img src="/src/assets/ai-logo-b.png" />-->
-						<span style="font-size: 100px">🤖</span>
+						<span class="ai-logo-emoji">🤖</span>
 					</div>
 					<h2 class="title">{{ $t('ai.hi.assistant') }}</h2>
-					<div class="hot-questions">
+					<div v-if="showHotQuestions" class="hot-questions">
 						<div class="fx hot-questions-title">
 							<strong class="fx">
 								<el-icon>
@@ -50,79 +56,103 @@
 						</div>
 					</div>
 				</div>
-				<div v-if="messageContext?.length" class="message-list">
+				<div
+					v-if="visibleMessageContext.length"
+					ref="messageListRef"
+					class="message-list"
+					@click="handleMessageMediaClick"
+				>
 					<div
-						v-for="(message, index) in messageContext"
+						v-for="(message, index) in visibleMessageContext"
 						:key="index"
 						class="message-row"
 						:class="[message.role]"
 					>
 						<template v-if="message.role === 'assistant'">
-							<div
-								class="avatar-wrap"
-								:class="[
-									isWaiting && index === messageContext.length - 1
-										? 'thinking-avatar'
-										: ''
-								]"
-							>
-								<el-avatar :size="50" class="ai-chat-logo">
-									<!--									<img src="/src/assets/ai-logo-w.png" />-->
-									<span style="font-size: 30px; margin: auto">🤖</span>
+							<div class="avatar-wrap">
+								<el-avatar :size="messageAvatarSize" class="ai-chat-logo">
+									<span class="avatar-emoji">🤖</span>
 								</el-avatar>
 							</div>
-							<div class="message-content">
-								<div
-									v-html="
-										md.render(
-											message.content +
-												(isWaiting && index === messageContext.length - 1
-													? '...'
-													: '')
-										)
-									"
-								/>
-								<div
-									v-show="message.srcFile && message.srcFile.length > 0"
-									class="src-file"
-								>
-									<br />
-									<p>
-										{{ $t('ai.source') }}
-									</p>
+							<div
+								class="message-bubble-wrap"
+								:class="{
+									'thinking-bubble':
+										isActiveAssistantTurn(index) && isBusyByState
+								}"
+							>
+								<div class="message-content">
+									<AgentThinkingBlock
+										v-if="message.reasoningContent?.trim()"
+										:content="message.reasoningContent"
+										:active="isActiveAssistantTurn(index) && isBusyByState"
+									/>
 									<div
-										v-html="md.render(convertSrcFilesToMd(message.srcFile))"
+										v-if="message.content"
+										:key="`assistant-md-${index}-${MARKDOWN_RENDERER_REVISION}`"
+										class="assistant-answer message-md"
+										v-html="
+											renderMarkdown(
+												message.content +
+													(isActiveAssistantTurn(index) ? '...' : '')
+											)
+										"
 									/>
-								</div>
-								<div v-show="message?.content" class="message-actions">
-									<div v-show="!isWaiting" class="support">
-										<span
-											class="feedback-icon-good"
-											:class="{ good: message.feedback === 1 }"
-											@click="handleMsgFeedback(1, message)"
-											>👍</span
-										>
-										&nbsp;
-										<span
-											class="feedback-icon-bad"
-											:class="{ bad: message.feedback === 2 }"
-											@click="handleMsgFeedback(2, message)"
-											>👎</span
-										>
+									<div
+										v-show="message.srcFile && message.srcFile.length > 0"
+										class="src-file message-md"
+									>
+										<br />
+										<p>
+											{{ $t('ai.source') }}
+										</p>
+										<div
+											v-html="
+												renderMarkdown(convertSrcFilesToMd(message.srcFile))
+											"
+										/>
 									</div>
-									<el-button
-										class="copy-button"
-										text
-										size="small"
-										:icon="DocumentCopy"
-										@click="copyMessage(message.content)"
+									<AgentTurnTimeline
+										v-if="message.turnSteps?.length"
+										:steps="message.turnSteps"
+										:active="isActiveAssistantTurn(index)"
+										:current-state="
+											isActiveAssistantTurn(index) ? currentAgentState : null
+										"
 									/>
+									<div v-show="message?.content" class="message-actions">
+										<div v-show="!isBusyByState" class="support">
+											<span
+												class="feedback-icon-good"
+												:class="{ good: message.feedback === 1 }"
+												@click="handleMsgFeedback(1, message)"
+												>👍</span
+											>
+											&nbsp;
+											<span
+												class="feedback-icon-bad"
+												:class="{ bad: message.feedback === 2 }"
+												@click="handleMsgFeedback(2, message)"
+												>👎</span
+											>
+										</div>
+										<el-button
+											class="copy-button"
+											text
+											size="small"
+											:icon="DocumentCopy"
+											@click="copyMessage(message.content)"
+										/>
+									</div>
 								</div>
 							</div>
 						</template>
 						<template v-else-if="message.role === 'user'">
 							<div class="message-content">
-								<div v-html="md.render(message.content)"></div>
+								<div
+									class="message-md"
+									v-html="renderMarkdown(message.content)"
+								></div>
 								<div v-show="message?.content" class="message-actions">
 									<el-button
 										class="copy-button"
@@ -134,52 +164,95 @@
 								</div>
 							</div>
 							<div class="avatar-wrap">
-								<el-avatar :size="50">
+								<el-avatar :size="messageAvatarSize">
 									<img src="/src/assets/avatar.png" />
 								</el-avatar>
 							</div>
 						</template>
 					</div>
 				</div>
-				<div
-					v-if="!isAtBottom"
-					class="scroll-to-bottom-button"
-					@click="scrollToBottom"
-				>
-					<ElIcon>
-						<ArrowDown />
-					</ElIcon>
-				</div>
 			</el-scrollbar>
-			<div class="input-area">
-				<ElInput
-					v-model="inputMessage"
-					class="chat-input"
-					:placeholder="t('ai.input.placeholder')"
-					type="textarea"
-					:autosize="{ minRows: 5, maxRows: 10 }"
-					:maxlength="4000"
-					show-word-limit
-					@keydown="handleKeydown"
-					@input="handleInput"
-					@keyup="handleKeyup"
-				/>
-				<ElButton
-					:type="isWaiting ? 'danger' : 'primary'"
-					class="chat-button"
-					circle
-					:disabled="!isWaiting && !inputMessage?.length"
-					@click="isWaiting ? interruptChat() : sendMessage()"
+			<div
+				v-if="!isAtBottom"
+				class="scroll-to-bottom-button"
+				@click="scrollToBottom"
+			>
+				<ElIcon>
+					<ArrowDown />
+				</ElIcon>
+			</div>
+			<div ref="bottomDockRef" class="chat-bottom-dock">
+				<div
+					v-show="suggestedFollowUps.length && !isBusyByState"
+					class="suggested-follow-ups"
 				>
-					<ElIcon v-if="isWaiting">
-						<span class="stop-square"></span>
-					</ElIcon>
-					<ElIcon v-else>
-						<Position />
-					</ElIcon>
-				</ElButton>
+					<div class="suggested-follow-ups-title">
+						<span class="suggested-follow-ups-title-text">
+							<el-icon class="suggested-follow-ups-title-icon">
+								<ChatLineSquare />
+							</el-icon>
+							{{ t('ai.suggested.follow.ups') }}
+						</span>
+					</div>
+					<ElScrollbar max-height="88px" class="suggested-follow-ups-scroll">
+						<ElSpace wrap size="small">
+							<ElTag
+								v-for="(text, idx) in suggestedFollowUps"
+								:key="idx"
+								effect="plain"
+								class="suggested-follow-ups-tag"
+								@click="sendMessage(text)"
+							>
+								{{ text }}
+							</ElTag>
+						</ElSpace>
+					</ElScrollbar>
+				</div>
+				<div
+					class="input-area"
+					:class="{ 'is-input-editing': isMobile && inputFocused }"
+				>
+					<ElInput
+						ref="chatInputRef"
+						v-model="inputMessage"
+						class="chat-input"
+						:placeholder="t('ai.input.placeholder')"
+						type="textarea"
+						:autosize="chatInputAutosize"
+						:maxlength="32768"
+						show-word-limit
+						@touchstart.passive="ensureMobileInputExpanded"
+						@pointerdown="ensureMobileInputExpanded"
+						@focus="onChatInputFocus"
+						@blur="onChatInputBlur"
+						@keydown="handleKeydown"
+						@input="handleInput"
+						@keyup="handleKeyup"
+					/>
+					<ElButton
+						:type="isBusyByState ? 'danger' : 'primary'"
+						class="chat-button"
+						circle
+						:disabled="!isBusyByState && !inputMessage?.length"
+						@click="isBusyByState ? interruptChat() : sendMessage()"
+					>
+						<ElIcon v-if="isBusyByState">
+							<span class="stop-square"></span>
+						</ElIcon>
+						<ElIcon v-else>
+							<Position />
+						</ElIcon>
+					</ElButton>
+				</div>
 			</div>
 		</div>
+		<ElImageViewer
+			v-if="imagePreviewVisible"
+			:url-list="imagePreviewUrlList"
+			:initial-index="imagePreviewIndex"
+			hide-on-click-modal
+			@close="closeImagePreview"
+		/>
 	</div>
 </template>
 
@@ -191,20 +264,24 @@ import {
 	Position,
 	Refresh
 } from '@element-plus/icons-vue'
-import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
 	ElAvatar,
 	ElButton,
 	ElIcon,
+	ElImageViewer,
 	ElInput,
 	ElMessage,
-	ElScrollbar
+	ElScrollbar,
+	ElSpace,
+	ElTag
 } from 'element-plus'
-import MarkdownIt from 'markdown-it'
 import ChatManage from './chatManage.vue'
+import AgentTurnTimeline from './AgentTurnTimeline.vue'
+import AgentThinkingBlock from './AgentThinkingBlock.vue'
 import {
+	AgentUiEventEnvelope,
 	ChatRequestDto,
-	ChatResponseDto,
 	convertSrcFilesToMd,
 	MessageDto
 } from '@/types/ai.types'
@@ -216,55 +293,96 @@ import {
 	getNewContextId,
 	getQaTemplate
 } from '@/api/ai.api'
-
-const md = new MarkdownIt({
-	html: true, // 启用 HTML 标签解析
-	linkify: true, // 自动识别网络链接
-	typographer: true // 改善某些符号的显示效果
-})
-
-// 添加自定义渲染规则
-md.renderer.rules.paragraph_open = function (tokens, idx) {
-	return '<p style="line-height: var(--n-font-line-height-4);">'
-}
-// 添加新的渲染规则以确保链接在新窗口中打开
-md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
-	tokens[idx].attrPush(['target', '_blank']) // 添加 target="_blank"
-	return self.renderToken(tokens, idx, options)
-}
-// 添加表格渲染支持
-md.renderer.rules.table_open = function () {
-	return '<table class="md-table">'
-}
-md.renderer.rules.thead_open = function () {
-	return '<thead class="md-thead">'
-}
-md.renderer.rules.tbody_open = function () {
-	return '<tbody class="md-tbody">'
-}
-md.renderer.rules.tr_open = function () {
-	return '<tr class="md-tr">'
-}
-md.renderer.rules.th_open = function () {
-	return '<th class="md-th">'
-}
-md.renderer.rules.td_open = function () {
-	return '<td class="md-td">'
-}
+import { resolveTurnErrorDisplayText } from './agentTurnError'
+import { useAgentEventDispatcher } from './useAgentEventDispatcher'
+import {
+	MARKDOWN_RENDERER_REVISION,
+	renderMarkdown,
+	renderMarkdownBlocks
+} from '@/utils/markdownRenderer'
 
 const showChatManage = ref(false)
 const chatManageRef = ref(null)
+/** 聊天主区域根节点，用于写入底部悬浮层高度 CSS 变量 */
+const chatViewRef = ref<HTMLElement>()
+/** 底部悬浮层（状态 / 推荐追问 / 输入框）容器 */
+const bottomDockRef = ref<HTMLElement>()
+let bottomDockResizeObserver: ResizeObserver | undefined
 const contextId = ref<string>()
 let keepAliveWsClient: WebSocket
 const scrollbarRef = ref()
+const messageListRef = ref<HTMLElement>()
 const isAtBottom = ref<boolean>(true)
+/** 用户发送后短暂保持跟滚，直到主动上滑离开底部（与 isAtBottom 配合避免阈值边界误判） */
+const stickToBottom = ref(false)
 const messageContext = ref<MessageDto[]>([])
+/**
+ * 仅展示后端标记为可展示的消息；displayInChat === false 的条目仍保留在上下文中，但不渲染气泡。
+ */
+const visibleMessageContext = computed(() =>
+	messageContext.value.filter((m) => m.displayInChat !== false)
+)
 const inputMessage = ref<string>('')
 
-const isWaiting = ref<boolean>(false)
-const isNewLlmResponse = ref<boolean>(true)
+/** 聊天图片/图表全屏预览是否可见 */
+const imagePreviewVisible = ref(false)
+/** 当前预览 URL 列表（同条消息内多张图或图表可切换） */
+const imagePreviewUrlList = ref<string[]>([])
+/** 预览初始下标 */
+const imagePreviewIndex = ref(0)
+/** 图表预览产生的 blob URL，关闭时需释放 */
+const previewBlobUrls = ref<string[]>([])
 
-defineProps({
+const isNewLlmResponse = ref<boolean>(true)
+const {
+	handleAgentEvent,
+	recordTerminalState,
+	beginOptimisticTurn,
+	resetTurnStates,
+	currentAgentState,
+	isBusyByState,
+	isTerminalState,
+	suggestedFollowUps,
+	clearSuggestedFollowUps
+} = useAgentEventDispatcher({
+	messageContext,
+	isNewLlmResponse,
+	sessionContextId: contextId,
+	resolveTurnErrorMessage: (errorCode, errorMessage) =>
+		resolveTurnErrorDisplayText(errorCode, errorMessage, t),
+	onTurnFailure: (displayMessage, raw) => {
+		let msg = displayMessage
+		if (raw?.errorMessage?.trim()) {
+			msg = `${displayMessage}: ${raw.errorMessage.trim()}`
+		} else if (raw?.errorCode) {
+			msg = `${displayMessage} (${raw.errorCode})`
+		}
+		ElMessage.error({
+			message: msg,
+			duration: 6000,
+			showClose: true
+		})
+	}
+})
+
+/** 非终态 busy 时当前轮 assistant 在可见列表中的下标。 */
+const activeAssistantVisibleIndex = computed(() => {
+	if (!isBusyByState.value) {
+		return -1
+	}
+	const list = visibleMessageContext.value
+	for (let i = list.length - 1; i >= 0; i--) {
+		if (list[i].role === 'assistant') {
+			return i
+		}
+	}
+	return -1
+})
+
+const isActiveAssistantTurn = (index: number) =>
+	index === activeAssistantVisibleIndex.value
+
+const props = defineProps({
 	isFullscreen: {
 		type: Boolean,
 		default: false
@@ -272,18 +390,117 @@ defineProps({
 	isMobile: {
 		type: Boolean,
 		default: false
+	},
+	/** 与 WebSocket agent-id 一致，对应后端 AiAgent#getAgentId */
+	agentId: {
+		type: String,
+		default: 'chat_assistant'
+	},
+	/** 是否展示热门问题（由 Agent 元数据驱动） */
+	showHotQuestions: {
+		type: Boolean,
+		default: false
 	}
 })
-let chatWebsocketClient: WebSocket
+
+/** 窄屏缩小消息行头像，与气泡字号更协调 */
+const messageAvatarSize = computed(() => (props.isMobile ? 36 : 50))
+
+const chatInputRef = ref<InstanceType<typeof ElInput> | null>(null)
+const inputFocused = ref(false)
+
+/** 窄屏高度由 CSS 控制，禁用 autosize，避免 iOS 内联 height 盖过样式 */
+const chatInputAutosize = computed(() =>
+	props.isMobile ? false : { minRows: 5, maxRows: 10 }
+)
+
+const getChatTextareaEl = (): HTMLTextAreaElement | null => {
+	const root = chatInputRef.value?.$el as HTMLElement | undefined
+	const el = root?.querySelector('.el-textarea__inner')
+	return el instanceof HTMLTextAreaElement ? el : null
+}
+
+/** 去掉 Element Plus / Safari 残留的内联高度，让 CSS 生效 */
+const clearChatTextareaInlineSize = () => {
+	const ta = getChatTextareaEl()
+	if (!ta) {
+		return
+	}
+	ta.style.removeProperty('height')
+	ta.style.removeProperty('min-height')
+	ta.style.removeProperty('max-height')
+}
+
+const syncMobileInputHeight = () => {
+	if (!props.isMobile) {
+		return
+	}
+	nextTick(() => {
+		clearChatTextareaInlineSize()
+		scheduleChatBottomInsetUpdate()
+		requestAnimationFrame(() => {
+			clearChatTextareaInlineSize()
+			scheduleChatBottomInsetUpdate()
+		})
+	})
+}
+
+/** touchstart / pointerdown 先于 focus，同一击内先标记撑高 */
+const ensureMobileInputExpanded = () => {
+	if (!props.isMobile || inputFocused.value) {
+		return
+	}
+	inputFocused.value = true
+	syncMobileInputHeight()
+}
+
+const onChatInputFocus = () => {
+	inputFocused.value = true
+	syncMobileInputHeight()
+}
+
+const onChatInputBlur = () => {
+	inputFocused.value = false
+	syncMobileInputHeight()
+}
+
+let chatWebsocketClient: WebSocket | undefined
+
+/** 拆除 WebSocket 回调，避免旧连接晚到的包在新会话里被处理。 */
+const detachChatWebSocket = (ws: WebSocket | undefined) => {
+	if (!ws) {
+		return
+	}
+	try {
+		ws.onopen = null
+		ws.onmessage = null
+		ws.onerror = null
+		ws.onclose = null
+	} catch {
+		/* ignore */
+	}
+	try {
+		if (
+			ws.readyState === WebSocket.OPEN ||
+			ws.readyState === WebSocket.CONNECTING
+		) {
+			ws.close()
+		}
+	} catch {
+		/* ignore */
+	}
+}
+
 const sendMessage = (msg?: string) => {
-	if (!isWaiting.value) {
+	if (!isBusyByState.value) {
 		getNewContextId().then(() => {
 			if (msg) {
 				inputMessage.value = msg
 			}
 			if (inputMessage.value.trim()) {
-				isWaiting.value = true
-				scrollToBottom()
+				detachChatWebSocket(chatWebsocketClient)
+				chatWebsocketClient = undefined
+				clearSuggestedFollowUps()
 				const message: MessageDto = {
 					index: messageContext.value.length,
 					content: inputMessage.value,
@@ -291,33 +508,36 @@ const sendMessage = (msg?: string) => {
 				}
 				messageContext.value.push(message)
 				inputMessage.value = ''
+				beginOptimisticTurn()
+				stickToBottom.value = true
+				scrollToBottomAfterMessageFlush()
 				const chatRequestDto: ChatRequestDto = {
 					contextId: contextId.value,
-					messages: messageContext.value,
+					messages: [message],
 					retrievalKb: true,
 					systemPrompt: 'GENERAL_ASSISTANT'
 				}
-				chatWebsocketClient = chatWebsocketClientApi(contextId.value)
+				chatWebsocketClient = chatWebsocketClientApi(
+					contextId.value,
+					props.agentId
+				)
 				// 连接打开时的处理
 				chatWebsocketClient.onopen = () => {
 					chatWebsocketClient.send(JSON.stringify(chatRequestDto))
-					if (isNewLlmResponse.value) {
-						messageContext.value.push({
-							index: messageContext.value.length,
-							role: 'assistant',
-							content: ''
-						})
-						isNewLlmResponse.value = false
-					}
+					isNewLlmResponse.value = false
 					scrollToBottom()
 				}
 				// 接收新消息通知
 				chatWebsocketClient.onmessage = (event) => {
 					try {
-						const chatResponseDto: ChatResponseDto = JSON.parse(event.data)
-						handleChatResponse(chatResponseDto)
+						const payload: AgentUiEventEnvelope = JSON.parse(event.data)
+						handleAgentEvent(payload)
+						checkScroll()
+						if (isAtBottom.value || stickToBottom.value) {
+							scrollToBottom()
+						}
 					} catch (error) {
-						console.error('解析SSE消息失败:', error)
+						console.error('解析Agent事件失败:', error)
 					}
 				}
 				// 错误处理
@@ -327,8 +547,8 @@ const sendMessage = (msg?: string) => {
 					} else if (error.responseCode !== 0) {
 						console.error(error)
 						ElMessage.error(t('ai.assistant.service.unavailable'))
-						isWaiting.value = false
 						isNewLlmResponse.value = true
+						recordTerminalState('FAILED')
 					}
 				}
 				// 关闭处理
@@ -341,66 +561,14 @@ const sendMessage = (msg?: string) => {
 		ElMessage.info(t('ai.assistant.waiting'))
 	}
 }
-// 处理响应
-const handleChatResponse = (chatResponseDto: ChatResponseDto) => {
-	if (chatResponseDto.error) {
-		const errorCode = Number(chatResponseDto.errorCode)
-		if (errorCode === 401 || errorCode === 403) {
-			ElMessage.error(t('ai.api.key.invalid'))
-		} else if (errorCode === 503) {
-			ElMessage.error(t('ai.assistant.service.unavailable'))
-		} else if (chatResponseDto.errorMessage) {
-			ElMessage.error(chatResponseDto.errorMessage)
-		} else {
-			ElMessage.error(t('ai.assistant.service.unavailable'))
-		}
-		isWaiting.value = false
-		isNewLlmResponse.value = true
-		nextTick(() => {
-			chatWebsocketClient?.close()
-		})
-		return
-	}
-	checkScroll()
-	if (isAtBottom.value) {
-		scrollToBottom()
-	}
-	if (chatResponseDto.message) {
-		if (chatResponseDto.message?.role === 'system') {
-			messageContext.value[messageContext.value.length - 1] =
-				chatResponseDto.message
-			messageContext.value.push({
-				index: messageContext.value.length,
-				role: 'assistant',
-				content: ''
-			})
-		} else if (chatResponseDto.message?.role === 'assistant') {
-			if (
-				messageContext.value[messageContext.value.length - 1].index !==
-				chatResponseDto.message.index
-			) {
-				console.error('消息index异常')
-			}
-			if (
-				chatResponseDto.message.srcFile &&
-				chatResponseDto.message.srcFile.length > 0
-			) {
-				messageContext.value[messageContext.value.length - 1].srcFile =
-					chatResponseDto.message.srcFile
-			}
-			if (chatResponseDto.message.content) {
-				messageContext.value[messageContext.value.length - 1].content +=
-					chatResponseDto.message.content
-			}
-		}
-	}
-}
-
 const onWsClose = () => {
-	isWaiting.value = false
+	if (!isTerminalState.value) {
+		recordTerminalState('CANCELLED')
+	}
 	isNewLlmResponse.value = true
 	nextTick(() => {
-		chatWebsocketClient.close()
+		detachChatWebSocket(chatWebsocketClient)
+		chatWebsocketClient = undefined
 		if (
 			keepAliveWsClient &&
 			keepAliveWsClient.readyState === keepAliveWsClient.OPEN
@@ -409,6 +577,10 @@ const onWsClose = () => {
 		}
 	})
 }
+
+/** 根据视口高度计算“仍在底部”的允许像素余量，避免单条气泡过高导致误判 */
+const getScrollBottomEpsilon = (clientHeight: number) =>
+	Math.max(160, Math.floor(clientHeight * 0.18))
 
 // 滚动到底部
 const scrollToBottom = () => {
@@ -422,14 +594,59 @@ const scrollToBottom = () => {
 	})
 }
 
+/** 用户消息入列后等待 DOM / v-html 布局稳定再滚动，避免 scrollHeight 未更新 */
+const scrollToBottomAfterMessageFlush = () => {
+	nextTick(() => {
+		nextTick(() => {
+			requestAnimationFrame(() => {
+				scrollToBottom()
+			})
+		})
+	})
+}
+
+const activateMarkdownBlocks = () => {
+	nextTick(() => {
+		const root = messageListRef.value
+		if (!root) {
+			return
+		}
+		renderMarkdownBlocks(root, { deferDiagrams: isBusyByState.value })
+			.then(() => {
+				if (isAtBottom.value || stickToBottom.value) {
+					scrollToBottom()
+				}
+			})
+			.catch((error) => {
+				console.error('Markdown图表渲染失败:', error)
+			})
+	})
+}
+
 const checkScroll = () => {
-	if (scrollbarRef.value) {
-		const { scrollTop, scrollHeight, clientHeight } = scrollbarRef.value.wrapRef
-		isAtBottom.value = scrollTop + 100 > scrollHeight - clientHeight
+	if (!scrollbarRef.value?.wrapRef) {
+		return
+	}
+	const { scrollTop, scrollHeight, clientHeight } = scrollbarRef.value.wrapRef
+	const epsilon = getScrollBottomEpsilon(clientHeight)
+	const distFromBottom = scrollHeight - clientHeight - scrollTop
+	isAtBottom.value = distFromBottom <= epsilon
+	if (distFromBottom > epsilon) {
+		stickToBottom.value = false
 	}
 }
 
 let send: boolean = true
+
+const lastAssistantTurnStepsLength = computed(() => {
+	const list = visibleMessageContext.value
+	for (let i = list.length - 1; i >= 0; i--) {
+		if (list[i].role === 'assistant') {
+			return list[i].turnSteps?.length ?? 0
+		}
+	}
+	return 0
+})
 
 const handleKeydown = (event: KeyboardEvent) => {
 	if (event.key === 'Enter' && !event.shiftKey) {
@@ -451,7 +668,11 @@ const handleKeyup = () => {
 
 const hotQuestions = ref([])
 const getHotQuestions = () => {
-	getQaTemplate().then((res) => {
+	if (!props.showHotQuestions) {
+		hotQuestions.value = []
+		return
+	}
+	getQaTemplate(props.agentId).then((res) => {
 		hotQuestions.value = res.data.data
 	})
 }
@@ -463,6 +684,7 @@ const handleMsgFeedback = (type, message?) => {
 	message.feedback = type
 	addMessageFeedback({
 		contextId: contextId.value,
+		agentId: props.agentId,
 		index: message.index,
 		feedback: type // 用户反馈: 0: 无, 1: 赞, 2: 踩
 	}).then((res) => {
@@ -493,6 +715,163 @@ const fallbackCopyText = (text: string) => {
 	document.body.removeChild(textarea)
 }
 
+/** 释放图表预览占用的 blob URL */
+const revokePreviewBlobUrls = () => {
+	previewBlobUrls.value.forEach((url) => URL.revokeObjectURL(url))
+	previewBlobUrls.value = []
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+/** 为预览用 SVG 铺一层白色底，避免全屏查看时透明区域发灰/发黑 */
+const appendSvgWhiteBackground = (svg: SVGElement) => {
+	const viewBox = svg.viewBox?.baseVal
+	let x = 0
+	let y = 0
+	let width = 800
+	let height = 600
+	if (viewBox && viewBox.width > 0 && viewBox.height > 0) {
+		x = viewBox.x
+		y = viewBox.y
+		width = viewBox.width
+		height = viewBox.height
+	} else {
+		const attrW = Number.parseFloat(svg.getAttribute('width') || '')
+		const attrH = Number.parseFloat(svg.getAttribute('height') || '')
+		if (!Number.isNaN(attrW) && attrW > 0) {
+			width = attrW
+		}
+		if (!Number.isNaN(attrH) && attrH > 0) {
+			height = attrH
+		}
+	}
+	const rect = document.createElementNS(SVG_NS, 'rect')
+	rect.setAttribute('x', String(x))
+	rect.setAttribute('y', String(y))
+	rect.setAttribute('width', String(width))
+	rect.setAttribute('height', String(height))
+	rect.setAttribute('fill', '#ffffff')
+	svg.insertBefore(rect, svg.firstChild)
+}
+
+/**
+ * 将消息内 SVG 图表转为可预览的 blob URL（全屏显示时去掉缩放 transform）。
+ */
+const svgElementToPreviewUrl = (svg: SVGElement) => {
+	const clone = svg.cloneNode(true) as SVGElement
+	clone.style.transform = ''
+	clone.style.maxWidth = ''
+	clone.style.maxHeight = ''
+	const viewBox = svg.viewBox?.baseVal
+	if (viewBox?.width > 0 && viewBox?.height > 0) {
+		clone.setAttribute('width', String(viewBox.width))
+		clone.setAttribute('height', String(viewBox.height))
+	} else {
+		clone.removeAttribute('height')
+	}
+	appendSvgWhiteBackground(clone)
+	const serialized = new XMLSerializer().serializeToString(clone)
+	const blob = new Blob([serialized], { type: 'image/svg+xml;charset=utf-8' })
+	const url = URL.createObjectURL(blob)
+	previewBlobUrls.value.push(url)
+	return url
+}
+
+/**
+ * 点击消息气泡内 Markdown 图片时，收集同气泡全部图片并打开全屏预览。
+ */
+const openMessageImagePreview = (
+	messageContent: Element,
+	targetImg: HTMLImageElement
+) => {
+	const imgs = messageContent.querySelectorAll('img')
+	const urlList: string[] = []
+	let index = 0
+	imgs.forEach((el) => {
+		const src = (el as HTMLImageElement).src?.trim()
+		if (!src) {
+			return
+		}
+		if (el === targetImg) {
+			index = urlList.length
+		}
+		urlList.push(src)
+	})
+	if (!urlList.length) {
+		return
+	}
+	revokePreviewBlobUrls()
+	imagePreviewUrlList.value = urlList
+	imagePreviewIndex.value = index
+	imagePreviewVisible.value = true
+}
+
+/**
+ * 点击消息气泡内 Mermaid/PlantUML/Vega-Lite 图表时，收集同气泡全部图表并打开全屏预览。
+ */
+const openMessageDiagramPreview = (
+	messageContent: Element,
+	targetSvg: SVGElement
+) => {
+	revokePreviewBlobUrls()
+	const svgs = messageContent.querySelectorAll(
+		'.md-diagram:not(.md-diagram-error) .md-diagram-body svg'
+	)
+	const urlList: string[] = []
+	let index = 0
+	svgs.forEach((el) => {
+		if (!(el instanceof SVGElement)) {
+			return
+		}
+		if (el === targetSvg) {
+			index = urlList.length
+		}
+		urlList.push(svgElementToPreviewUrl(el))
+	})
+	if (!urlList.length) {
+		revokePreviewBlobUrls()
+		return
+	}
+	imagePreviewUrlList.value = urlList
+	imagePreviewIndex.value = index
+	imagePreviewVisible.value = true
+}
+
+/**
+ * 点击消息气泡内图片或图表，打开全屏预览（与 ElImageViewer 一致）。
+ */
+const handleMessageMediaClick = (event: MouseEvent) => {
+	const target = event.target
+	if (!(target instanceof Element)) {
+		return
+	}
+	const messageContent = target.closest('.message-md, .message-content')
+	if (!messageContent) {
+		return
+	}
+
+	if (target instanceof HTMLImageElement) {
+		openMessageImagePreview(messageContent, target)
+		return
+	}
+
+	const diagramBody = target.closest('.md-diagram-body')
+	if (!diagramBody || diagramBody.closest('.md-diagram-error')) {
+		return
+	}
+	const svg = diagramBody.querySelector('svg')
+	if (!(svg instanceof SVGElement)) {
+		return
+	}
+	openMessageDiagramPreview(messageContent, svg)
+}
+
+/** 关闭聊天图片/图表全屏预览 */
+const closeImagePreview = () => {
+	imagePreviewVisible.value = false
+	revokePreviewBlobUrls()
+}
+
 const copyMessage = async (content?: string) => {
 	if (!content) {
 		return
@@ -517,9 +896,13 @@ const copyMessage = async (content?: string) => {
 
 const newChat = () => {
 	interruptChat()
+	// 先使当前会话 ID 失效，避免旧连接迟到的 NOTICE 仍与「当前会话」匹配
+	contextId.value = undefined
+	resetTurnStates()
 	inputMessage.value = ''
 	messageContext.value = []
 	isAtBottom.value = true
+	stickToBottom.value = false
 	getNewContextId().then((contextIdDto) => {
 		contextId.value = contextIdDto.data.contextId
 	})
@@ -527,14 +910,51 @@ const newChat = () => {
 	scrollToBottom()
 }
 
+/** 切换智能体时重置会话，避免沿用上一次的上下文与连接 */
+watch(
+	() => props.agentId,
+	() => {
+		newChat()
+	}
+)
+
+/** Agent 元数据异步到达后补拉热门问题 */
+watch(
+	() => props.showHotQuestions,
+	(enabled) => {
+		if (enabled) {
+			getHotQuestions()
+		} else {
+			hotQuestions.value = []
+		}
+	}
+)
+
+watch(
+	messageContext,
+	() => {
+		activateMarkdownBlocks()
+	},
+	{ deep: true, flush: 'post' }
+)
+
+/** 流式结束但 content 不再变化时，补渲染推迟的 mermaid/plantuml/vegalite 块 */
+watch(isBusyByState, () => {
+	activateMarkdownBlocks()
+})
+
 const historyChat = (historyId) => {
 	interruptChat()
+	const previousContextId = contextId.value
+	contextId.value = undefined
+	resetTurnStates()
 	inputMessage.value = ''
-	if (historyId !== contextId.value) {
+	stickToBottom.value = false
+	if (historyId !== previousContextId) {
 		chatManageRef.value.getHistoryListData()
 	}
 	contextId.value = historyId
-	getHistoryContext(historyId).then((res) => {
+	getHistoryContext(historyId, props.agentId).then((res) => {
 		messageContext.value = res.data.messages
 		scrollToBottom()
 	})
@@ -542,11 +962,12 @@ const historyChat = (historyId) => {
 
 // 中止正在进行的对话
 const interruptChat = () => {
-	isWaiting.value = false
-	isNewLlmResponse.value = true
-	if (chatWebsocketClient) {
-		chatWebsocketClient.close()
+	if (isBusyByState.value) {
+		recordTerminalState('CANCELLED')
 	}
+	isNewLlmResponse.value = true
+	detachChatWebSocket(chatWebsocketClient)
+	chatWebsocketClient = undefined
 	if (
 		keepAliveWsClient &&
 		keepAliveWsClient.readyState === keepAliveWsClient.OPEN
@@ -555,24 +976,106 @@ const interruptChat = () => {
 	}
 }
 
+/**
+ * 根据底部悬浮层实际高度更新滚动区内边距，避免最后几条气泡被遮挡。
+ */
+const updateChatBottomInset = () => {
+	const dockEl = bottomDockRef.value
+	const viewEl = chatViewRef.value
+	if (!dockEl || !viewEl) {
+		return
+	}
+	const height = Math.ceil(dockEl.getBoundingClientRect().height)
+	viewEl.style.setProperty('--chat-bottom-inset', `${height}px`)
+}
+
+/** 在 DOM 更新后重新测量底部悬浮层高度 */
+const scheduleChatBottomInsetUpdate = () => {
+	nextTick(() => {
+		updateChatBottomInset()
+	})
+}
+
+watch(inputFocused, () => {
+	if (props.isMobile) {
+		syncMobileInputHeight()
+		return
+	}
+	nextTick(() => {
+		chatInputRef.value?.resizeTextarea?.()
+		scheduleChatBottomInsetUpdate()
+	})
+})
+
 onMounted(() => {
 	newChat()
+	nextTick(() => {
+		scheduleChatBottomInsetUpdate()
+		if (typeof ResizeObserver !== 'undefined' && bottomDockRef.value) {
+			bottomDockResizeObserver = new ResizeObserver(() => {
+				updateChatBottomInset()
+			})
+			bottomDockResizeObserver.observe(bottomDockRef.value)
+		}
+	})
 })
 
 onUnmounted(() => {
+	bottomDockResizeObserver?.disconnect()
+	bottomDockResizeObserver = undefined
 	interruptChat()
+	revokePreviewBlobUrls()
 })
+
+watch(
+	() => [
+		lastAssistantTurnStepsLength.value,
+		suggestedFollowUps.value.length,
+		isBusyByState.value
+	],
+	() => {
+		scheduleChatBottomInsetUpdate()
+	}
+)
 
 defineExpose({
 	showChatManage,
 	chatManageRef,
-	isWaiting,
+	isBusyByState,
 	getHistoryListData: () => chatManageRef.value.getHistoryListData(),
 	newChat
 })
 </script>
 <style scoped lang="scss">
+@use '@/styles/platform' as *;
+
+/* 聊天气泡：水晶染色 + 细棱线；$with-black-shadow 控制是否带黑色外投影 */
+@mixin chat-bubble-crystal-glass($pale, $vivid, $deep, $blur, $with-black-shadow: true) {
+	background: color-mix(
+		in srgb,
+		color-mix(in srgb, #fff 34%, transparent),
+		color-mix(in srgb, $vivid 52%, transparent)
+	);
+	backdrop-filter: blur($blur) saturate(195%);
+	-webkit-backdrop-filter: blur($blur) saturate(195%);
+	border: none;
+	@if $with-black-shadow {
+		box-shadow:
+			inset 0 1px 0 color-mix(in srgb, $pale 82%, transparent),
+			inset 0 -1px 0 color-mix(in srgb, $deep 48%, transparent),
+			0 6px 18px rgba(0, 0, 0, 0.16),
+			0 14px 36px rgba(0, 0, 0, 0.12);
+	} @else {
+		box-shadow:
+			inset 0 1px 0 color-mix(in srgb, $pale 82%, transparent),
+			inset 0 -1px 0 color-mix(in srgb, $deep 35%, transparent);
+	}
+	isolation: isolate;
+}
+
 .chat-container {
+	/* 与左侧历史栏 padding-bottom 共用，保证输入框底边对齐 */
+	--chat-side-gutter: 20px;
 	height: 100%;
 	display: flex;
 	flex-direction: column;
@@ -580,10 +1083,17 @@ defineExpose({
 
 	&.fullscreen {
 		flex-direction: row;
+		align-items: stretch;
+
+		:deep(.chat-manage) {
+			align-self: stretch;
+			height: 100%;
+			flex-shrink: 0;
+		}
 
 		.chat-manage-view {
-			width: 360px;
-			max-width: 360px;
+			width: 320px;
+			max-width: 320px;
 			height: 100%;
 
 			:deep(.chat-list) {
@@ -598,16 +1108,265 @@ defineExpose({
 		}
 	}
 
+	/* 窄屏：仅呼出历史时显示全屏遮罩（勿对容器写 display:!important，否则会盖掉 v-show） */
+	&.is-mobile {
+		flex: 1;
+		min-height: 0;
+		height: 100%;
+
+		&.is-history-open {
+			:deep(.chat-manage-container) {
+				position: fixed;
+				top: 0;
+				right: 0;
+				bottom: 0;
+				left: 0;
+				z-index: 30;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				width: 100%;
+				max-width: none;
+				min-width: 0;
+				margin: 0;
+				/* 覆盖桌面侧栏 padding-top:70px；顶栏高度用 padding 顶出内容区，遮罩背景铺满无白条 */
+				padding: var(--n-topbar-height, 50px) 0 0 !important;
+				height: auto;
+				max-height: none;
+				overflow: hidden;
+				box-sizing: border-box;
+				background: color-mix(in srgb, var(--n-color-neutral-b) 32%, transparent);
+			}
+
+			:deep(.chat-manage-card) {
+				width: 70%;
+				max-width: 70%;
+				height: min(82vh, 100%);
+				max-height: 82vh;
+				flex: 0 1 auto;
+				margin: 0;
+				padding: 16px;
+				overflow: hidden;
+			}
+
+			:deep(.chat-list) {
+				flex: 1;
+				min-height: 0;
+			}
+		}
+
+		--chat-side-gutter: 12px;
+		--chat-content-h-pad: 16px;
+		--chat-init-top-gap: 80px;
+		--chat-hot-questions-width: 80%;
+
+		.chat-view {
+			padding: var(--n-padding-basic) var(--chat-content-h-pad) 0;
+			padding-bottom: 0;
+
+			.chat-bottom-dock {
+				left: var(--chat-content-h-pad);
+				right: var(--chat-content-h-pad);
+			}
+		}
+
+		.ai-logo {
+			width: 72px;
+		}
+
+		.ai-logo-emoji {
+			font-size: 64px;
+		}
+
+		.message-init {
+			align-items: center;
+			width: 100%;
+			max-width: 100%;
+			box-sizing: border-box;
+			margin-top: var(--chat-init-top-gap);
+			padding: 16px 0;
+
+			.title {
+				font-size: 17px;
+				margin-top: 16px;
+			}
+
+			.hot-questions {
+				align-self: center;
+				min-width: 0;
+				width: var(--chat-hot-questions-width);
+				max-width: var(--chat-hot-questions-width);
+				margin-top: 20px;
+				padding: 16px 18px;
+				font-size: var(--n-font-size-1);
+
+				.hot-questions-title {
+					margin-bottom: 12px;
+				}
+
+				.question-list .question {
+					margin-bottom: 12px;
+
+					.qa {
+						margin-right: 8px;
+					}
+				}
+			}
+		}
+
+		.message-list {
+			--chat-message-gap: 28px;
+			padding: 16px 0;
+
+			.message-row {
+				margin: 0;
+
+				.message-content {
+					padding: 10px 12px;
+					min-height: 40px;
+					font-size: var(--n-font-size-1);
+				}
+
+				&.assistant .message-content .assistant-answer {
+					font-size: var(--n-font-size-1);
+				}
+
+				&.assistant .message-content .src-file {
+					font-size: 11px;
+				}
+			}
+
+			.message-row + .message-row {
+				margin-top: var(--chat-message-gap);
+			}
+		}
+
+		.message-list {
+			--chat-message-avatar-size: 36px;
+			--chat-message-avatar-margin: 6px;
+		}
+
+		.avatar-emoji {
+			font-size: 22px;
+		}
+
+		.suggested-follow-ups {
+			padding: 10px 12px 8px;
+		}
+
+		.suggested-follow-ups-title-text {
+			font-size: 12px;
+		}
+
+		.suggested-follow-ups-title-icon {
+			font-size: 14px;
+		}
+
+		.suggested-follow-ups :deep(.el-tag.suggested-follow-ups-tag) {
+			font-size: var(--n-font-size-1);
+			padding: 4px 10px;
+		}
+
+		/* 窄屏：平时矮框，聚焦加高；发送钮仍在输入框内右下角 */
+		.input-area .el-textarea.chat-input {
+			--chat-input-pad-y: 12px;
+			--chat-input-pad-x: 16px;
+			--chat-input-pad-end: 48px;
+
+			:deep(.el-textarea__inner) {
+				box-sizing: border-box;
+				padding: var(--chat-input-pad-y) var(--chat-input-pad-end)
+					var(--chat-input-pad-y) var(--chat-input-pad-x);
+				line-height: 1.5;
+				font-size: var(--n-font-size-2);
+				transition:
+					min-height 0.2s ease,
+					height 0.2s ease,
+					max-height 0.2s ease;
+			}
+
+			:deep(.el-textarea__inner::placeholder) {
+				line-height: 1.5;
+				color: var(--n-color-text-placeholder);
+			}
+		}
+
+		.input-area:not(.is-input-editing) .el-textarea.chat-input {
+			:deep(.el-textarea__inner) {
+				min-height: 58px;
+				height: 58px !important;
+				max-height: 58px;
+				overflow-y: hidden;
+			}
+
+			:deep(.el-input__count) {
+				bottom: 12px;
+			}
+		}
+
+		.input-area.is-input-editing .el-textarea.chat-input {
+			--chat-input-pad-y: 14px;
+
+			:deep(.el-textarea__inner) {
+				min-height: 148px;
+				height: 148px !important;
+				max-height: 148px;
+				overflow-y: auto;
+			}
+
+			:deep(.el-input__count) {
+				bottom: 14px;
+			}
+		}
+
+		.input-area .el-button.chat-button {
+			right: 12px;
+			bottom: 13px;
+		}
+
+		.input-area.is-input-editing .el-button.chat-button {
+			bottom: 14px;
+		}
+	}
+
 	.chat-view {
+		--chat-bottom-inset: 200px;
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		justify-content: center;
 		height: 100%;
+		min-height: 0;
+		overflow: visible;
 		padding: calc(2 * var(--n-padding-basic));
+		padding-bottom: 0;
 
 		.scroll {
-			flex-grow: 1;
+			flex: 1;
 			height: 100%;
+			min-height: 0;
+			overflow: hidden;
+
+			:deep(.el-scrollbar__view) {
+				padding-bottom: calc(var(--chat-bottom-inset, 200px) + 12px);
+			}
+		}
+
+		.chat-bottom-dock {
+			position: absolute;
+			/* 对齐 content 区；底边与左侧历史栏卡片底边同一水平线 */
+			left: calc(2 * var(--n-padding-basic));
+			right: calc(2 * var(--n-padding-basic));
+			bottom: var(--chat-side-gutter);
+			z-index: 10;
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+			pointer-events: none;
+
+			> * {
+				pointer-events: auto;
+			}
 		}
 	}
 }
@@ -623,6 +1382,19 @@ defineExpose({
 	}
 }
 
+.ai-logo-emoji {
+	display: block;
+	font-size: 100px;
+	line-height: 1;
+}
+
+.avatar-emoji {
+	display: block;
+	font-size: 30px;
+	margin: auto;
+	line-height: 1;
+}
+
 .message-init {
 	text-align: center;
 	display: flex;
@@ -636,13 +1408,13 @@ defineExpose({
 
 	.title {
 		font-size: 20px;
-		color: var(--n-color-font-dark);
+		color: var(--n-color-text-primary);
 		margin-top: 20px;
 	}
 
 	.sub-tip {
 		font-size: 18px;
-		color: #637a9e;
+		color: var(--n-color-text-muted);
 		line-height: 1.5;
 		display: block;
 		// width: 280px;
@@ -653,13 +1425,10 @@ defineExpose({
 		display: flex;
 		margin-top: 20px;
 		flex-direction: column;
-		background: color-mix(in srgb, var(--n-color-neutral-w), transparent 80%);
-		backdrop-filter: blur(10px);
+		@include n-glass-surface(2);
+		box-shadow: 0 0 12px rgba(0, 0, 0, 0.08);
 		border-radius: var(--n-radius-quadruple);
-		border: 1px solid
-			color-mix(in srgb, var(--n-color-neutral-4), transparent 50%);
-		box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
-		color: var(--n-color-font-dark);
+		color: var(--n-color-text-primary);
 		min-width: 350px;
 		max-width: 450px;
 		padding: 20px;
@@ -695,13 +1464,14 @@ defineExpose({
 
 			.question {
 				display: flex;
+				align-items: flex-start;
 				margin-bottom: 15px;
 				cursor: pointer;
 				line-height: 1.5;
 				text-align: left;
-				overflow: hidden;
-				text-overflow: ellipsis;
-				white-space: nowrap;
+				white-space: normal;
+				word-break: break-word;
+				overflow-wrap: anywhere;
 				width: 100%;
 
 				&:hover {
@@ -709,6 +1479,7 @@ defineExpose({
 				}
 
 				.qa {
+					flex-shrink: 0;
 					margin-right: 10px;
 					height: 20px;
 					line-height: 20px;
@@ -729,15 +1500,26 @@ defineExpose({
 }
 
 .message-list {
-	padding: 20px 0;
+	/* 左右各一列头像区，气泡远侧边界对齐对侧头像近边 */
+	--chat-message-avatar-size: 50px;
+	--chat-message-avatar-margin: 10px;
+	--chat-message-avatar-col: calc(
+		var(--chat-message-avatar-size) + 2 * var(--chat-message-avatar-margin)
+	);
+	--chat-message-gap: 28px;
+	padding: 24px 0;
 
 	.message-row {
-		margin-bottom: 20px;
-		display: flex;
+		margin: 0;
+		display: grid;
+		grid-template-columns:
+			var(--chat-message-avatar-col)
+			minmax(0, 1fr)
+			var(--chat-message-avatar-col);
+		align-items: start;
 
 		.message-content {
-			max-width: 80%;
-			padding: 10px 15px;
+			padding: 14px 16px 14px;
 			border-radius: 15px;
 			height: 100%;
 			min-height: 48px;
@@ -747,24 +1529,97 @@ defineExpose({
 			justify-content: center;
 			display: flex;
 			flex-direction: column;
-			transition: transform 0.2s ease;
+			color: var(--n-color-text-primary);
 		}
 
-		.message-content:hover {
-			transform: translate(-3px, -3px);
-			box-shadow: 0 6px 8px rgba(0, 0, 0, 0.1);
+		.message-md :deep(p),
+		.message-md :deep(li),
+		.message-md :deep(strong),
+		.message-md :deep(em),
+		.message-md :deep(h1),
+		.message-md :deep(h2),
+		.message-md :deep(h3),
+		.message-md :deep(h4),
+		.message-md :deep(h5),
+		.message-md :deep(h6),
+		.message-md :deep(th),
+		.message-md :deep(td) {
+			color: inherit;
 		}
 
-		.message-content :deep(img) {
-			max-width: 100%; /* 限制不超过父容器宽度 */
-			height: auto; /* 保持原始比例 */
-			display: block; /* 避免inline元素的底部间隙 */
+		.message-md :deep(a) {
+			color: var(--n-color-link);
+		}
+
+		.message-md :deep(pre),
+		.message-md :deep(pre *) {
+			color: var(--n-dark-panel-text);
+		}
+
+		.message-md :deep(pre code) {
+			color: var(--n-dark-panel-text);
+		}
+
+		.message-md :deep(.md-diagram-body),
+		.message-md :deep(.md-diagram-body *) {
+			color: var(--n-color-diagram-text);
+		}
+
+		.message-md :deep(img) {
+			max-width: 100%;
+			height: auto;
+			display: block;
+			cursor: pointer;
+			border-radius: 6px;
+			transition: opacity 0.2s ease;
+		}
+
+		.message-md :deep(img:hover) {
+			opacity: 0.92;
+		}
+
+		.message-md :deep(.md-diagram:not(.md-diagram-error) .md-diagram-body) {
+			cursor: pointer;
+			border-radius: 6px;
+			transition: opacity 0.2s ease;
+		}
+
+		.message-md
+			:deep(.md-diagram:not(.md-diagram-error) .md-diagram-body:hover) {
+			opacity: 0.92;
 		}
 
 		&.assistant {
+			.avatar-wrap {
+				grid-column: 1;
+				grid-row: 1;
+			}
+
+			.message-bubble-wrap {
+				grid-column: 2;
+				grid-row: 1;
+				justify-self: start;
+				max-width: 100%;
+				min-width: 0;
+			}
+
+			/* 助手气泡：柔和暖灰水晶（低饱和、护眼） */
 			.message-content {
-				background-color: var(--el-color-primary-light-8); //#ffe0d1;
-				border: 1px solid var(--el-color-primary-light-8);
+				@include chat-bubble-crystal-glass(
+					#f2f1ef,
+					color-mix(in srgb, #f2f1ef 70%, transparent),
+					color-mix(in srgb, #969088 88%, transparent),
+					8px
+				);
+
+				:deep(.agent-thinking-block) {
+					margin-bottom: 10px;
+				}
+
+				.assistant-answer {
+					font-size: var(--n-font-size-2);
+					color: inherit;
+				}
 
 				.src-file {
 					margin-top: 15px;
@@ -814,13 +1669,79 @@ defineExpose({
 					}
 				}
 			}
+
+			/* 思考态外围光晕：下方变量可调；双伪元素透明度交替，避免插值发黑 */
+			.message-bubble-wrap.thinking-bubble {
+				--think-glow-orange: rgba(255, 147, 68, 0.85);
+				--think-glow-blue: rgba(64, 158, 255, 0.85);
+				--think-glow-blur: 18px;
+				--think-glow-spread: 6px;
+				--think-glow-duration: 1.4s;
+				overflow: visible;
+			}
+
+			.message-bubble-wrap.thinking-bubble .message-content {
+				position: relative;
+				z-index: 0;
+				overflow: visible;
+
+				@include chat-bubble-crystal-glass(
+					#f2f1ef,
+					color-mix(in srgb, #f2f1ef 70%, transparent),
+					color-mix(in srgb, #969088 88%, transparent),
+					10px,
+					false
+				);
+
+				&::before,
+				&::after {
+					content: '';
+					position: absolute;
+					inset: 0;
+					border-radius: inherit;
+					pointer-events: none;
+					z-index: -1;
+					box-shadow: 0 0 var(--think-glow-blur) var(--think-glow-spread)
+						currentColor;
+				}
+
+				&::before {
+					color: var(--think-glow-orange);
+					animation: think-glow-orange var(--think-glow-duration) ease-in-out
+						infinite;
+				}
+
+				&::after {
+					color: var(--think-glow-blue);
+					animation: think-glow-blue var(--think-glow-duration) ease-in-out
+						infinite;
+				}
+			}
+
+			.message-bubble-wrap.thinking-bubble .message-content:hover {
+				transform: none;
+			}
 		}
 
 		&.user {
-			justify-content: flex-end;
+			.avatar-wrap {
+				grid-column: 3;
+				grid-row: 1;
+			}
 
+			/* 用户气泡：天蓝水晶染色 */
 			.message-content {
-				background-color: #d8d8f6; //#cfe6fc;
+				grid-column: 2;
+				grid-row: 1;
+				justify-self: end;
+				max-width: 100%;
+				min-width: 0;
+				@include chat-bubble-crystal-glass(
+					#d8f0ff,
+					color-mix(in srgb, #5cadf2 86%, transparent),
+					color-mix(in srgb, #3896d9 92%, transparent),
+					10px
+				);
 
 				.message-actions {
 					display: flex;
@@ -834,6 +1755,10 @@ defineExpose({
 			}
 		}
 	}
+
+	.message-row + .message-row {
+		margin-top: var(--chat-message-gap);
+	}
 }
 
 .input-area {
@@ -845,42 +1770,85 @@ defineExpose({
 
 	.el-textarea {
 		&.chat-input {
+			overflow: visible;
+
 			:deep(.el-input__count) {
 				right: 60px;
 				bottom: 16px;
-				background: rgba(255, 255, 255, 0);
+				z-index: 2;
+				padding: 2px 8px;
+				border-radius: 8px;
+				line-height: 1.4;
+				@include n-glass-surface(1);
 			}
 
 			:deep(.el-textarea__inner) {
-				background: color-mix(
-					in srgb,
-					var(--n-color-neutral-w),
-					transparent 80%
-				);
-				backdrop-filter: blur(10px);
-				padding: 15px 20px;
-				border-color: color-mix(
-					in srgb,
-					var(--n-color-neutral-w),
-					transparent 80%
-				);
+				@include n-glass-surface(2);
+				box-sizing: border-box;
+				padding: 15px 48px 15px 20px;
+				line-height: 1.5;
+				font-size: var(--n-font-size-2);
 				border-radius: 15px;
 				word-wrap: break-word;
 				word-break: break-all;
-				box-shadow: none;
+				border: none !important;
+				outline: none;
+				box-shadow: 0 0 12px rgba(0, 0, 0, 0.08);
+				transition: box-shadow 0.2s ease;
 			}
 
-			:hover {
-				box-shadow: 0px 0px 12px
-					color-mix(in srgb, var(--el-color-primary-light-3), transparent 10%);
+			:deep(.el-textarea__inner::placeholder) {
+				line-height: 1.5;
+				color: var(--n-color-text-placeholder);
+			}
+
+			:deep(.el-textarea__inner:focus) {
+				box-shadow:
+					0 0 10px color-mix(in srgb, var(--el-color-primary) 30%, transparent),
+					0 0 24px color-mix(in srgb, var(--el-color-primary) 14%, transparent);
 			}
 		}
 	}
 
-	.el-button {
+	.el-button.chat-button {
 		position: absolute;
 		right: 20px;
 		bottom: 15px;
+		z-index: 2;
+		border: none;
+		@include n-glass-surface(1);
+
+		&.el-button--primary:not(.is-disabled) {
+			background: var(--el-color-primary);
+		}
+
+		&.el-button--danger:not(.is-disabled) {
+			background: var(--el-color-danger);
+		}
+
+		&.is-disabled {
+			opacity: 1;
+			cursor: not-allowed;
+			--chat-btn-disabled-tint: var(--el-color-primary);
+			background: color-mix(
+				in srgb,
+				var(--chat-btn-disabled-tint) 22%,
+				var(--n-color-bg-glass-strong)
+			) !important;
+			color: color-mix(
+				in srgb,
+				var(--chat-btn-disabled-tint) 78%,
+				var(--n-color-text-muted)
+			) !important;
+
+			&.el-button--danger {
+				--chat-btn-disabled-tint: var(--el-color-danger);
+			}
+
+			:deep(.el-icon) {
+				color: inherit;
+			}
+		}
 	}
 
 	.stop-square {
@@ -892,39 +1860,113 @@ defineExpose({
 	}
 }
 
-// 思考动画
-@keyframes thinking {
-	0% {
-		transform: rotate(0deg);
-	}
-	100% {
-		transform: rotate(360deg);
-	}
+.suggested-follow-ups {
+	align-self: stretch;
+	width: 100%;
+	max-width: 100%;
+	margin: 0;
+	padding: 14px 16px 12px;
+	border-radius: var(--n-radius-quadruple);
+	@include n-glass-surface(2);
+	color: var(--n-color-text-primary);
 }
 
-// 思考动画标志
-.thinking-indicator {
-	margin-top: 14px;
-	margin-right: 10px;
-	display: inline-block;
-	width: 20px;
-	height: 20px;
-	border: 3px solid var(--el-color-primary-light-8);
-	border-top-color: var(--el-color-primary);
-	border-radius: 50%;
-	animation: thinking 1s linear infinite;
-	margin-left: 10px;
+.suggested-follow-ups-title {
+	margin-bottom: 10px;
+}
+
+.suggested-follow-ups-title-text {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--n-color-text-primary);
+	letter-spacing: 0.02em;
+}
+
+.suggested-follow-ups-title-icon {
+	font-size: 16px;
+	color: var(--el-color-primary);
 	flex-shrink: 0;
 }
 
+.suggested-follow-ups-scroll {
+	width: 100%;
+
+	:deep(.el-scrollbar__bar) {
+		&.is-horizontal {
+			height: 5px;
+		}
+	}
+}
+
+.suggested-follow-ups :deep(.el-tag.suggested-follow-ups-tag) {
+	cursor: pointer;
+	max-width: 100%;
+	white-space: normal;
+	height: auto;
+	line-height: 1.4;
+	padding: 6px 12px;
+	border-radius: 999px;
+	font-weight: 500;
+	color: var(--n-color-text-primary);
+	@include n-glass-surface(1);
+	transition:
+		color 0.2s ease,
+		border-color 0.2s ease,
+		background 0.2s ease,
+		box-shadow 0.2s ease,
+		transform 0.15s ease;
+}
+
+.suggested-follow-ups :deep(.el-tag.suggested-follow-ups-tag:hover) {
+	color: var(--el-color-primary);
+	border-color: color-mix(in srgb, var(--el-color-primary), transparent 45%);
+	background: color-mix(
+		in srgb,
+		var(--el-color-primary-light-8),
+		transparent 35%
+	);
+	box-shadow: var(--n-shadow-card);
+	transform: translateY(-1px);
+}
+
+// 思考光晕：只动画 opacity，橙蓝叠化（中间不会插值出黑影）
+@keyframes think-glow-orange {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0;
+	}
+}
+
+@keyframes think-glow-blue {
+	0%,
+	100% {
+		opacity: 0;
+	}
+	50% {
+		opacity: 1;
+	}
+}
+
 .avatar-wrap {
-	margin: 0 10px;
+	margin: 0 var(--chat-message-avatar-margin, 10px);
 
 	.el-avatar {
 		margin: 0;
 		flex-shrink: 0;
-		width: 50px;
-		height: 50px;
+		width: var(--chat-message-avatar-size, 50px);
+		height: var(--chat-message-avatar-size, 50px);
+
+		:deep(img) {
+			width: 100%;
+			height: 100%;
+			object-fit: cover;
+		}
 	}
 
 	.ai-chat-logo {
@@ -936,206 +1978,84 @@ defineExpose({
 			object-fit: contain; // 保持图片比例
 		}
 	}
-
-	&.thinking-avatar {
-		width: 50px;
-		height: 50px;
-		box-shadow: 0 0 12px var(--el-color-primary);
-		background: linear-gradient(#9724ff, #00c4ff);
-		border-radius: 50%;
-		justify-content: center;
-		display: flex;
-		align-items: center;
-		animation: thinking 1s linear infinite;
-
-		.el-avatar {
-			width: 42px;
-			height: 42px;
-			animation: anti-thinking 1s linear infinite;
-		}
-
-		.ai-chat-logo {
-			padding: 7px 7px 10px;
-		}
-	}
-
-	@keyframes thinking {
-		0% {
-			transform: rotate(0deg);
-		}
-		100% {
-			transform: rotate(360deg);
-		}
-	}
-
-	@keyframes anti-thinking {
-		0% {
-			transform: rotate(0deg);
-		}
-		100% {
-			transform: rotate(-360deg);
-		}
-	}
 }
 
-/* Markdown样式 */
-/* 标题 */
-.message-content {
-	:deep(h1) {
-		font-size: var(--n-font-size-6);
-		margin-bottom: calc(var(--n-font-size-6) / 2);
-	}
-
-	:deep(h2) {
-		font-size: var(--n-font-size-5);
-		margin-bottom: calc(var(--n-font-size-5) / 2);
-	}
-
-	:deep(h3) {
-		font-size: var(--n-font-size-4);
-		margin-bottom: calc(var(--n-font-size-4) / 2);
-	}
-
-	:deep(h4) {
-		font-size: var(--n-font-size-3);
-		margin-bottom: calc(var(--n-font-size-3) / 2);
-	}
-
-	:deep(h5) {
-		font-size: var(--n-font-size-2);
-		margin-bottom: calc(var(--n-font-size-2) / 2);
-	}
-
-	:deep(h6) {
-		font-size: var(--n-font-size-1);
-		margin-bottom: calc(var(--n-font-size-1) / 2);
-	}
-
-	/* 有序列表 */
-	:deep(ol) {
-		list-style: none; /* 移除默认的列表样式 */
-		padding-left: calc(3 * var(--n-font-size-2));
-	}
-
-	:deep(ol li) {
-		list-style: decimal;
-	}
-
-	/* 无序列表 */
-	:deep(ul) {
-		padding-left: calc(3 * var(--n-font-size-2));
-	}
-
-	:deep(ul li) {
-		list-style: disc;
-	}
-
-	/* 链接 */
-	:deep(a) {
-		color: #2b6afd;
-		text-decoration: none;
-	}
-
-	:deep(a:hover) {
-		text-decoration: underline;
-	}
-
-	/* 代码 */
-	:deep(code) {
-		background-color: #d4d4d4; /* 深色背景 */
-		padding: 3px;
-		border-radius: 4px;
-		font-family: 'Courier New', Courier, monospace;
-		white-space: pre-wrap; /* 保留空白符序列，但是正常地进行换行 */
-		word-wrap: break-word; /* 在长单词或 URL 地址内部进行换行 */
-	}
-
-	:deep(pre) {
-		background-color: #1e1e1e;
-		color: #e0e0e0; /* 浅色文字 */
-		padding: 1em;
-		margin: 10px 0 10px 0;
-		border-radius: 4px;
-		overflow-x: auto;
-		font-family: monospace;
-	}
-
-	:deep(pre code) {
-		background-color: transparent;
-		padding: 0;
-	}
-
-	:deep(img) {
-		max-width: 100%; /* 限制不超过父容器宽度 */
-		height: auto; /* 保持原始比例 */
-		display: block; /* 避免inline元素的底部间隙 */
-	}
-
-	:deep(table.md-table) {
-		border-collapse: collapse;
-		width: 100%;
-		margin: 10px 0;
-	}
-
-	:deep(th.md-th),
-	:deep(td.md-td) {
-		border: 1px solid var(--n-color-neutral-b);
-		padding: 8px 12px;
-		text-align: left;
-	}
-}
-
-.scroll-to-bottom-button {
+.chat-view .scroll-to-bottom-button {
 	position: absolute;
-	top: 93%;
+	bottom: calc(
+		var(--chat-bottom-inset, 200px) + 12px + var(--chat-side-gutter, 20px)
+	);
 	left: 50%;
-	transform: translate(-50%, -50%);
+	z-index: 11;
+	transform: translateX(-50%);
 	background: color-mix(in srgb, var(--n-color-neutral-w), transparent 80%);
 	border: 1px solid rgba(255, 255, 255, 0.18);
-	box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+	box-shadow: 0 4px 12px 0 rgba(31, 38, 135, 0.1);
 	backdrop-filter: blur(2px);
+	-webkit-backdrop-filter: blur(2px);
 	border-radius: 50%;
 	padding: 13px;
 	cursor: pointer;
+	pointer-events: auto;
 	transition: all 0.3s ease;
 }
 
-.scroll-to-bottom-button:hover {
+.chat-view .scroll-to-bottom-button:hover {
 	background: color-mix(in srgb, var(--n-color-neutral-4), transparent 50%);
 	backdrop-filter: blur(5px);
-	box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.2);
-	transform: translate(-50%, -50%) scale(1.2);
+	-webkit-backdrop-filter: blur(5px);
+	box-shadow: 0 6px 16px 0 rgb(112 112 112 / 0.2);
+	transform: translateX(-50%) scale(1.2);
 }
 
-@media only screen and (max-width: 768px) {
-	.message-init {
-		padding: 0 0 20px;
+/* 与 layout.ts：总宽 < 3×聊天记录栏(340px) 时窄屏，媒体查询上界 1019px */
+@media only screen and (max-width: 1019px) {
+	.chat-container:not(.is-mobile) .chat-view {
+		padding-left: var(--chat-content-h-pad, 16px);
+		padding-right: var(--chat-content-h-pad, 16px);
+	}
+
+	.chat-container:not(.is-mobile) .message-init {
+		margin-top: var(--chat-init-top-gap, 80px);
+
+		.hot-questions {
+			align-self: center;
+			min-width: 0;
+			width: var(--chat-hot-questions-width, 80%);
+			max-width: var(--chat-hot-questions-width, 80%);
+		}
 	}
 }
 
 /* 手机设备样式 */
 @media only screen and (max-width: 600px) {
-	.chat-input {
-		height: 70px !important;
-
-		:deep(textarea) {
-			height: 70px !important;
-			min-height: 70px !important;
-		}
-	}
-	.message-init {
-		padding: 0 0 20px;
+	.chat-container.is-mobile {
+		--chat-content-h-pad: 14px;
+		--chat-init-top-gap: 64px;
 
 		.ai-logo {
-			width: 80px;
+			width: 60px;
 		}
 
-		.title {
-			font-size: 18px;
+		.ai-logo-emoji {
+			font-size: 52px;
 		}
 
-		.sub-tip {
-			font-size: 16px;
+		.message-init {
+			padding: 14px 0;
+
+			.title {
+				font-size: 16px;
+				margin-top: 14px;
+			}
+
+			.hot-questions {
+				padding: 14px 16px;
+			}
+		}
+
+		.message-init .sub-tip {
+			font-size: 14px;
 		}
 	}
 }

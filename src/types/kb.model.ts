@@ -2,6 +2,16 @@ export interface KnowledgeGetListDto {
 	data?: KnowledgeDto[]
 }
 
+export interface KnowledgeCollectionListDto {
+	data?: string[]
+}
+
+/** 知识库目录增量同步结果 */
+export interface KnowledgeSyncResult {
+	success?: boolean
+	message?: string
+}
+
 export interface KnowledgeDto {
 	/**
 	 * 知识ID（文本块的SHA-1）
@@ -47,6 +57,11 @@ export interface KnowledgeDto {
 	 * 文件ID
 	 */
 	fileId?: number
+
+	/**
+	 * 源文件路径
+	 */
+	sourceFile?: string
 }
 
 export interface KnowledgeRetrieveResponseDto {
@@ -128,6 +143,16 @@ export interface KnowledgeRetrieveItemDto {
 	 * 文件名
 	 */
 	textChunkId?: string
+
+	/**
+	 * 源文件路径
+	 */
+	sourceFile?: string
+
+	/**
+	 * 是否被命中阈值过滤
+	 */
+	isFiltered?: boolean
 }
 
 

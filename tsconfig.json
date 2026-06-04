@@ -27,7 +27,8 @@
 		"paths": {
 			"@/*": ["src/*"],
 			"@ai-system/lib": ["lib/index.ts"],
-			"@ai-system/*": ["lib/*"]
+			"@ai-system/*": ["lib/*"],
+			"vega-embed": ["node_modules/vega-embed/build/embed.d.ts"]
 		}
 	}
 }

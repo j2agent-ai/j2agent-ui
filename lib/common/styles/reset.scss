@@ -211,8 +211,8 @@ button.disabled,
 html input[disabled] {
     cursor: default;
     cursor: not-allowed;
-    background: #fafafa;
-    color: #666666;
+    background: var(--el-fill-color-light);
+    color: var(--el-text-color-placeholder);
 }
 
 button::-moz-focus-inner,

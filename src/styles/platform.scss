@@ -64,7 +64,11 @@
 }
 
 .Q-Tooltip{
-	background-color: #fff !important;
+	background: var(--n-color-bg-glass-overlay) !important;
+	backdrop-filter: blur(var(--n-glass-blur-4)) saturate(var(--n-glass-saturate));
+	-webkit-backdrop-filter: blur(var(--n-glass-blur-4)) saturate(var(--n-glass-saturate));
+	border: none;
+	box-shadow: var(--n-shadow-elevation-4);
 	z-index: 1000 !important;
   padding: 10px !important;
   .el-descriptions__cell {
@@ -76,7 +80,7 @@
 	width: 14px;
 	height: 14px;
 	margin-left: 4px;
-	border: 1px solid #dcdfe6;
+	border: 1px solid var(--n-color-border);
 	border-radius: 14px;
 }
 .radio-active {
@@ -90,7 +94,7 @@
 		width: 4px;
 		height: 4px;
 		border-radius: 4px;
-		background-color: #fff;
+		background-color: var(--n-color-text-inverse);
 	}
 }
 
@@ -100,5 +104,195 @@
 .el-dialog__body {
 	.el-select__placeholder{
 		height: 16px;
+	}
+}
+
+/* 全局覆盖 Element Plus Loading 蒙层：高斯模糊 + 染色遮罩 */
+.el-loading-mask {
+	backdrop-filter: blur(var(--n-glass-blur-4)) saturate(var(--n-glass-saturate));
+	-webkit-backdrop-filter: blur(var(--n-glass-blur-4)) saturate(var(--n-glass-saturate));
+	background-color: var(--n-color-bg-glass-overlay) !important;
+}
+
+/** 毛玻璃 elevation mixin：$level 1-4 对应弱/标准/强/浮层（无描边，靠阴影过渡） */
+@mixin n-glass-surface($level: 2) {
+	@if $level == 1 {
+		@include n-glass-surface-base(
+			var(--n-color-bg-glass-weak),
+			var(--n-glass-blur-1),
+			var(--n-shadow-elevation-1)
+		);
+	} @else if $level == 2 {
+		@include n-glass-surface-base(
+			var(--n-color-bg-glass),
+			var(--n-glass-blur-2),
+			var(--n-shadow-elevation-2)
+		);
+	} @else if $level == 3 {
+		@include n-glass-surface-base(
+			var(--n-color-bg-glass-strong),
+			var(--n-glass-blur-3),
+			var(--n-shadow-elevation-3)
+		);
+	} @else {
+		@include n-glass-surface-base(
+			var(--n-color-bg-glass-overlay),
+			var(--n-glass-blur-4),
+			var(--n-shadow-elevation-4)
+		);
+	}
+}
+
+@mixin n-glass-surface-base($bg, $blur, $shadow) {
+	background: $bg;
+	backdrop-filter: blur($blur) saturate(var(--n-glass-saturate));
+	-webkit-backdrop-filter: blur($blur) saturate(var(--n-glass-saturate));
+	border: none;
+	box-shadow: $shadow;
+	isolation: isolate;
+}
+
+@mixin n-glass-card-surface {
+	@include n-glass-surface(2);
+	transition:
+		transform 0.3s ease,
+		box-shadow 0.3s ease;
+
+	&:hover {
+		box-shadow:
+			var(--n-shadow-elevation-3),
+			0 8px 28px color-mix(in srgb, var(--el-color-primary) 22%, transparent);
+	}
+}
+
+/** 设置页等操作面板：半透明毛玻璃，避免 glass-strong 发白刺眼 */
+@mixin n-settings-panel-surface {
+	background: var(--n-color-bg-glass);
+	backdrop-filter: blur(10px);
+	-webkit-backdrop-filter: blur(10px);
+	border: 1px solid var(--n-color-border-soft);
+	border-radius: var(--n-radius-quadruple);
+	box-shadow: var(--n-shadow-elevation-2);
+}
+
+/** 数据表格面板：外层毛玻璃容器 + 表格区域 flex/滚动约束 */
+@mixin n-data-table-panel {
+	@include n-settings-panel-surface;
+	padding: 12px 20px 20px;
+	min-width: 0;
+	min-height: 0;
+	box-sizing: border-box;
+
+	.table-wrapper {
+		flex: 1;
+		min-height: 0;
+		min-width: 0;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+
+		:deep(.el-table) {
+			flex: 1;
+			min-height: 0;
+			min-width: 0;
+			height: 100% !important;
+		}
+	}
+}
+
+.n-glass-1 {
+	@include n-glass-surface(1);
+}
+
+.n-glass-2 {
+	@include n-glass-surface(2);
+}
+
+.n-glass-3 {
+	@include n-glass-surface(3);
+}
+
+.n-glass-4 {
+	@include n-glass-surface(4);
+}
+
+.glass-card,
+.feature-card,
+.agent-card {
+	@include n-glass-card-surface;
+}
+
+/* 知识库重建弹窗：内容区布局（外壳与危险标题见全局 .n-dialog--danger） */
+.rebuild-dialog.el-dialog {
+	min-width: auto;
+	width: min(520px, 90vw);
+	max-width: 90vw;
+
+	.el-dialog__body {
+		padding: 14px 24px 10px;
+	}
+
+	.el-dialog__footer {
+		padding: 12px 24px 20px;
+		border-top: 1px solid var(--n-color-border-soft);
+	}
+
+	.rebuild-dialog-content {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.rebuild-intro {
+		margin-top: 0;
+		margin-bottom: 8px;
+		color: var(--el-text-color-regular);
+		line-height: 1.6;
+	}
+
+	.rebuild-form .el-form-item {
+		margin-bottom: 14px;
+	}
+
+	.rebuild-form .el-form-item__label {
+		font-weight: 500;
+		color: var(--n-color-text-primary);
+	}
+
+	.rebuild-form .el-form-item__content {
+		align-items: flex-start;
+	}
+
+	.full-rebuild-confirm-area {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		width: 100%;
+	}
+
+	.full-rebuild-tip {
+		padding: 10px 12px;
+		border-left: 3px solid var(--el-color-warning);
+		border-radius: 6px;
+		background: var(--el-color-warning-light-9);
+		color: var(--el-color-warning-dark-2);
+		font-size: 12px;
+		line-height: 1.7;
+	}
+
+	.full-rebuild-input input::placeholder {
+		color: var(--el-input-placeholder-color) !important;
+		-webkit-text-fill-color: var(--el-input-placeholder-color) !important;
+		opacity: 1;
+	}
+
+	.full-rebuild-input input::-webkit-input-placeholder {
+		color: var(--el-input-placeholder-color) !important;
+		-webkit-text-fill-color: var(--el-input-placeholder-color) !important;
+		opacity: 1;
+	}
+
+	.full-rebuild-input {
+		--el-input-placeholder-color: #8f959e;
 	}
 }

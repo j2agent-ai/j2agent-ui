@@ -1,5 +1,6 @@
 import { ElMessageBox, ElMessage, ElLoading } from 'element-plus'
 import { t } from '@ai-system/locale'
+import { withDraggableMessageBoxOptions } from '@ai-system/common/elementPlusDialog'
 
 class BaseFeedbackService {
 	error(msg: string): void {
@@ -15,7 +16,7 @@ class BaseFeedbackService {
 		ElMessage.info(msg)
 	}
 	alert(msg: string): Promise<any> {
-		return ElMessageBox.alert(msg)
+		return ElMessageBox.alert(msg, withDraggableMessageBoxOptions())
 	}
 	loading(msg: string) {
 		return ElLoading.service({
@@ -33,14 +34,19 @@ class BaseFeedbackService {
 			showClose?: boolean
 		}
 	): Promise<any> {
-		return ElMessageBox.confirm(msg, title, {
-			type: options?.type,
-			confirmButtonText: options?.confirmText || t('topo.confirm'),
-			cancelButtonText: options?.cancelText || t('common.cancel'),
-			showCancelButton: false,
-			closeOnClickModal: false,
-			closeOnPressEscape: false,
-			closeOnHashChange: false
-		})
+		return ElMessageBox.confirm(
+			msg,
+			title,
+			withDraggableMessageBoxOptions({
+				type: options?.type,
+				confirmButtonText: options?.confirmText || t('topo.confirm'),
+				cancelButtonText: options?.cancelText || t('common.cancel'),
+				showCancelButton: options?.showCancel ?? false,
+				showClose: options?.showClose,
+				closeOnClickModal: false,
+				closeOnPressEscape: false,
+				closeOnHashChange: false
+			})
+		)
 	}
 }

@@ -37,24 +37,10 @@ const classObj = computed(() => {
 
 <style lang="scss">
 .web-app {
-	background-image: url('@/assets/wallpaper.svg'),
-		linear-gradient(45deg, rgb(195, 195, 196) 0px, rgb(83, 83, 83) 100%);
-	background-size: cover;
-
+	background: var(--n-color-bg-page);
 	position: relative;
 	height: 100%;
 	z-index: 0;
-	// 添加遮罩层
-	&::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background-color: rgba(173, 214, 255, 0.5);
-		z-index: -1;
-	}
 	&.isFullscreen {
 		position: fixed;
 		top: 0;
@@ -72,12 +58,4 @@ const classObj = computed(() => {
 	}
 }
 
-// 深色模式下的背景处理
-html.dark {
-	.web-app {
-		&::before {
-			background-color: rgba(0, 12, 30, 0.7);
-		}
-	}
-}
 </style>

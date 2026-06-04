@@ -13,6 +13,7 @@ body {
   line-height: 1.4;
   margin: 0;
   padding: 0;
+  background: var(--n-color-bg-page);
 }
 
 * {
@@ -36,11 +37,11 @@ body {
 }
 ::-webkit-scrollbar-thumb {
     border-radius: 5px;
-    background: #cdcdcd;
+    background: var(--n-color-scrollbar-thumb);
 }
 ::-webkit-scrollbar-track {
     border-radius: 5px;
-    background: #e5e5e5;
+    background: var(--n-color-scrollbar-track);
 }
 
 em {

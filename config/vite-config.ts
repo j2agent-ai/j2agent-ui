@@ -5,8 +5,6 @@ import path from 'path'
 import DefineOptions from 'unplugin-vue-define-options/vite'
 import VueJsx from '@vitejs/plugin-vue-jsx'
 import fs from 'fs'
-import { visualizer } from 'rollup-plugin-visualizer'
-// import compression from 'vite-plugin-compression';
 
 const rootDir = path.join(__dirname, '../')
 
@@ -15,6 +13,8 @@ interface ProxyServer {
 	target: string
 	rewrite?: boolean
 	ws?: boolean
+	/** false 时忽略 HTTPS 目标证书校验 */
+	secure?: boolean
 	headers?: { [header: string]: string }
 }
 
@@ -40,11 +40,13 @@ export function viteConfig(
 	// 处理开发代理服务转发
 	const proxyServers = {}
 	proxyServer.forEach((server) => {
+		const secure = server.secure ?? false
 		if (server.ws) {
 			proxyServers[server.path] = {
 				target: server.target,
 				ws: true,
-				secure: false,
+				changeOrigin: true,
+				secure,
 				logLevel: 'debug',
 				headers: server.headers
 			}
@@ -52,6 +54,7 @@ export function viteConfig(
 			proxyServers[server.path] = {
 				target: server.target,
 				changeOrigin: true,
+				secure,
 				rewrite: (url) => {
 					const regex = new RegExp(`^${server.path}/`)
 					const target = url.replace(regex, '')

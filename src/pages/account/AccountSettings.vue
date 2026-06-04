@@ -1,6 +1,6 @@
 <template>
 	<div class="account-page">
-		<topo-bar />
+		<top-bar />
 		<div class="account-content">
 			<div class="account-card">
 				<div class="account-header">
@@ -32,7 +32,7 @@
 import { ref } from 'vue'
 import { ElButton, ElForm, ElFormItem, ElInput, ElMessage } from 'element-plus'
 import { t } from '@ai-system/lib'
-import TopoBar from '@/pages/components/topoBar.vue'
+import topBar from '@/pages/components/topBar.vue'
 import { updateUserPassword } from '@/api/user.api'
 
 const saving = ref(false)
@@ -70,6 +70,8 @@ const save = async () => {
 </script>
 
 <style scoped lang="scss">
+@use '@/styles/platform' as *;
+
 .account-page {
 	height: 100%;
 	padding-top: 50px;
@@ -81,23 +83,13 @@ const save = async () => {
 	justify-content: center;
 	align-items: flex-start;
 	padding: 40px 20px 60px;
-	background: radial-gradient(
-		circle at 10% 10%,
-		rgba(64, 158, 255, 0.08),
-		transparent 40%
-	);
 }
 
 .account-card {
 	width: min(520px, 92vw);
-	background: color-mix(in srgb, var(--n-color-neutral-w), transparent 88%);
+	@include n-glass-surface(3);
 	border-radius: 16px;
 	padding: 28px 28px 20px;
-	box-shadow:
-		0 12px 32px rgba(31, 38, 135, 0.15),
-		0 1px 0 rgba(255, 255, 255, 0.35) inset;
-	border: 1px solid rgba(255, 255, 255, 0.3);
-	backdrop-filter: blur(10px);
 }
 
 .account-header {
@@ -107,20 +99,20 @@ const save = async () => {
 		margin: 0 0 6px 0;
 		font-size: 22px;
 		font-weight: 600;
-		color: var(--n-color-font-dark);
+		color: var(--n-color-text-primary);
 	}
 }
 
 .account-desc {
 	margin: 0;
 	font-size: 14px;
-	color: var(--n-color-neutral-6);
+	color: var(--n-color-text-muted);
 }
 
 .account-form {
 	:deep(.el-form-item__label) {
 		font-weight: 500;
-		color: var(--n-color-font-dark);
+		color: var(--n-color-text-primary);
 	}
 
 	:deep(.el-input__wrapper) {

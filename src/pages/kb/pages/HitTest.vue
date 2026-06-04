@@ -3,7 +3,9 @@
 		<div class="hit-test-result">
 			<div class="table-wrapper">
 				<div class="table-header">
-					<span class="table-header-title">{{ t('settings.rag.weight.label') }}</span>
+					<span class="table-header-title">{{
+						t('settings.rag.weight.label')
+					}}</span>
 					<div class="rag-weight-slider compact">
 						<el-slider
 							:model-value="denseWeightPercent"
@@ -14,45 +16,66 @@
 							disabled
 						/>
 						<div class="rag-weight-values">
-							<span>{{ t('settings.rag.weight.dense') }}: {{ denseWeightPercent }}%</span>
-							<span>{{ t('settings.rag.weight.sparse') }}: {{ sparseWeightPercent }}%</span>
+							<span
+								>{{ t('settings.rag.weight.dense') }}:
+								{{ denseWeightPercent }}%</span
+							>
+							<span
+								>{{ t('settings.rag.weight.sparse') }}:
+								{{ sparseWeightPercent }}%</span
+							>
 						</div>
 					</div>
 				</div>
 				<el-table
 					ref="tableRef"
-					:data="retrieveResultList"  style="width: 100%; height: 100%"
+					:data="retrieveResultList"
+					class="kb-data-table"
+					style="width: 100%; height: 100%"
 					v-loading="loading"
-					border
+					stripe
 				>
-					<el-table-column :label="t('kb.outline')" width="300">
-						<template #default="item">
-							<el-popover
-								effect="dark"
-								trigger="hover"
-								placement="top"
-								width="400"
-							>
-								<template #reference>
-									<div class="outline-preview">
-										{{ item.row.outline }}
+					<el-table-column :label="t('kb.outline')" width="300" align="center">
+						<template #default="{ row }">
+							<template v-if="!isTableCellEmpty(row.outline)">
+								<el-popover
+									effect="dark"
+									trigger="hover"
+									placement="top"
+									width="400"
+								>
+									<template #reference>
+										<div class="outline-preview">
+											{{ getOutlineDisplay(row.outline) }}
+										</div>
+									</template>
+									<div class="outline-full">
+										<div
+											v-for="(item, index) in getOutlineItems(row.outline)"
+											:key="index"
+										>
+											{{ index + 1 }}. {{ item }}
+										</div>
 									</div>
-								</template>
-								<div class="outline-full">
-									<div class="text-chunk-full">{{ item.row.outline }}</div>
-								</div>
-							</el-popover>
+								</el-popover>
+							</template>
+							<span v-else class="empty-text">-</span>
 						</template>
 					</el-table-column>
 					<el-table-column
-						prop="denseMetricType"
 						:label="t('kb.knowledge.hit.test.dense.metric')"
-						width="170"
-					/>
+						min-width="180"
+						align="center"
+					>
+						<template #default="{ row }">
+							<span v-if="isTableCellEmpty(row.denseMetricType)" class="empty-text">-</span>
+							<span v-else>{{ row.denseMetricType }}</span>
+						</template>
+					</el-table-column>
 					<el-table-column
 						:label="t('kb.knowledge.hit.test.dense.score')"
 						width="170"
-						:formatter="(row) => formatScore(row.denseScore)"
+						align="center"
 					>
 						<template #header>
 							<div class="header-with-tooltip">
@@ -69,16 +92,25 @@
 								</el-tooltip>
 							</div>
 						</template>
+						<template #default="{ row }">
+							<span v-if="!Number.isFinite(row.denseScore)" class="empty-text">-</span>
+							<span v-else>{{ row.denseScore.toFixed(4) }}</span>
+						</template>
 					</el-table-column>
 					<el-table-column
-						prop="sparseMetricType"
 						:label="t('kb.knowledge.hit.test.sparse.metric')"
-						width="170"
-					/>
+						min-width="180"
+						align="center"
+					>
+						<template #default="{ row }">
+							<span v-if="isTableCellEmpty(row.sparseMetricType)" class="empty-text">-</span>
+							<span v-else>{{ row.sparseMetricType }}</span>
+						</template>
+					</el-table-column>
 					<el-table-column
 						:label="t('kb.knowledge.hit.test.sparse.score')"
 						width="170"
-						:formatter="(row) => formatScore(row.sparseScore)"
+						align="center"
 					>
 						<template #header>
 							<div class="header-with-tooltip">
@@ -95,55 +127,101 @@
 								</el-tooltip>
 							</div>
 						</template>
+						<template #default="{ row }">
+							<span v-if="!Number.isFinite(row.sparseScore)" class="empty-text">-</span>
+							<span v-else>{{ row.sparseScore.toFixed(4) }}</span>
+						</template>
 					</el-table-column>
 					<el-table-column
 						:label="t('kb.knowledge.hit.test.hybrid.score')"
 						width="170"
-						:formatter="(row) => formatScore(row.hybridScore ?? row.score)"
-					/>
-					<el-table-column
-						prop="isFiltered"
-						:label="t('kb.knowledge.hit.test.is.hit')"
-						width="150"
-						:formatter="(row) => row.isFiltered ? t('common.no') : t('common.yes')"
-					/>
-					<el-table-column :label="t('kb.textChunk')" width="400">
-						<template #default="item">
-							<el-popover
-								effect="dark"
-								trigger="hover"
-								placement="top"
-								width="400"
-							>
-								<template #reference>
-									<div class="text-chunk-preview">
-										{{ item.row.textChunk }}
-									</div>
-								</template>
-								<div class="text-chunk-full">{{ item.row.textChunk }}</div>
-							</el-popover>
+						align="center"
+					>
+						<template #default="{ row }">
+							<span
+								v-if="!Number.isFinite(row.hybridScore ?? row.score)"
+								class="empty-text"
+							>-</span>
+							<span v-else>{{ (row.hybridScore ?? row.score)!.toFixed(4) }}</span>
 						</template>
 					</el-table-column>
 					<el-table-column
-						prop="dimension"
-						:label="t('kb.dimension')"
-						width="130"
-					/>
-					<el-table-column
-						prop="embeddingModel"
-						:label="t('kb.embeddingModel')"
+						:label="t('kb.knowledge.hit.test.is.hit')"
 						width="150"
-					/>
-					<el-table-column
-						prop="embeddingProvider"
-						:label="t('kb.embeddingProvider')"
-						width="150"
-					/>
+						align="center"
+					>
+						<template #default="{ row }">
+							{{ row.isFiltered ? t('common.no') : t('common.yes') }}
+						</template>
+					</el-table-column>
+					<el-table-column :label="t('kb.textChunk')" width="400">
+						<template #default="{ row }">
+							<template v-if="!isTableCellEmpty(row.textChunk)">
+								<el-popover
+									effect="dark"
+									trigger="hover"
+									placement="top"
+									width="400"
+								>
+									<template #reference>
+										<div class="text-chunk-preview">
+											{{ row.textChunk }}
+										</div>
+									</template>
+									<div class="text-chunk-full">{{ row.textChunk }}</div>
+								</el-popover>
+							</template>
+							<span v-else class="empty-text">-</span>
+						</template>
+					</el-table-column>
+					<el-table-column :label="t('kb.dimension')" width="130" align="center">
+						<template #default="{ row }">
+							<span v-if="isTableCellEmpty(row.dimension)" class="empty-text">-</span>
+							<span v-else>{{ row.dimension }}</span>
+						</template>
+					</el-table-column>
+					<el-table-column :label="t('kb.embeddingModel')" width="150">
+						<template #default="{ row }">
+							<span v-if="isTableCellEmpty(row.embeddingModel)" class="empty-text">-</span>
+							<span v-else>{{ row.embeddingModel }}</span>
+						</template>
+					</el-table-column>
+					<el-table-column :label="t('kb.embeddingProvider')" width="150">
+						<template #default="{ row }">
+							<span v-if="isTableCellEmpty(row.embeddingProvider)" class="empty-text">-</span>
+							<span v-else>{{ row.embeddingProvider }}</span>
+						</template>
+					</el-table-column>
+					<template #empty>
+						<span class="table-empty-hint">暂无检索结果</span>
+					</template>
 				</el-table>
 			</div>
 		</div>
 		<div class="hit-test-form">
 			<el-form ref="formRef" :model="formData" label-width="120px">
+				<el-form-item
+					label="Collection"
+					prop="collection"
+					:rules="[{ required: true, message: t('common.input.required') }]"
+				>
+					<el-select
+						v-model="formData.collection"
+						placeholder="请选择 Collection"
+						clearable
+						filterable
+						style="width: 260px"
+						:loading="collectionLoading"
+						@change="retrieveResultList = []"
+					>
+						<el-option
+							v-for="collection in collectionOptions"
+							:key="collection"
+							:label="collection"
+							:value="collection"
+						/>
+					</el-select>
+				</el-form-item>
 				<el-form-item
 					label="TOP-K"
 					prop="topK"
@@ -163,41 +241,48 @@
 					class="input-area"
 					:rules="[{ required: true, message: t('common.input.required') }]"
 				>
-					<ElInput
-						v-model="formData.text"
-						class="text-input"
-						:placeholder="t('kb.knowledge.hit.test.text.placeholder')"
-						type="textarea"
-						:autosize="{ minRows: 5, maxRows: 10 }"
-						:maxlength="4000"
-						show-word-limit
-						@keydown="handleKeydown"
-						@input="handleInput"
-						@keyup="handleKeyup"
-					/>
-					<el-button type="primary" @click="onSubmit">提交</el-button>
+					<div class="text-input-panel">
+						<ElInput
+							v-model="formData.text"
+							class="text-input"
+							:placeholder="t('kb.knowledge.hit.test.text.placeholder')"
+							type="textarea"
+							:rows="4"
+							:maxlength="32768"
+							show-word-limit
+							@keydown="handleKeydown"
+							@input="handleInput"
+							@keyup="handleKeyup"
+						/>
+						<div class="text-input-actions">
+							<el-button type="primary" @click="onSubmit">提交</el-button>
+						</div>
+					</div>
 				</el-form-item>
 			</el-form>
 		</div>
 	</div>
 </template>
 
-<script setup lang="ts">import {
+<script setup lang="ts">
+import {
 	ElButton,
 	ElForm,
 	ElFormItem,
 	ElInput,
 	ElInputNumber,
 	ElPopover,
+	ElOption,
+	ElSelect,
 	ElSlider,
 	ElTable,
 	ElTableColumn,
 	ElTooltip,
-	ElIcon,
+	ElIcon
 } from 'element-plus'
 import { computed, onMounted, ref } from 'vue'
-import { t } from '@ai-system/lib'
-import { retrieveKnowledge } from '@/api/kb/kb.api'
+import { getOutlineDisplay, getOutlineItems, isTableCellEmpty, t } from '@ai-system/lib'
+import { getKnowledgeCollections, retrieveKnowledge } from '@/api/kb/kb.api'
 import { getProperties } from '@/api/property.api'
 import { KnowledgeRetrieveItemDto } from '@/types/kb.model'
 import { QuestionFilled } from '@element-plus/icons-vue'
@@ -207,6 +292,7 @@ const KEY_RETRIEVE_SPARSE_WEIGHT = 'RETRIEVE_SPARSE_WEIGHT'
 
 // 表单数据
 const formData = ref({
+	collection: '',
 	text: '',
 	topK: 5
 })
@@ -215,7 +301,9 @@ const formData = ref({
 const formRef = ref<InstanceType<typeof ElForm>>()
 
 const loading = ref(false)
+const collectionLoading = ref(false)
 const retrieveResultList = ref<KnowledgeRetrieveItemDto[]>([])
+const collectionOptions = ref<string[]>([])
 
 const ragWeights = ref({
 	denseWeight: 0.5,
@@ -257,14 +345,22 @@ const sparseWeightPercent = computed(() => 100 - denseWeightPercent.value)
 const formatWeightTooltip = (value: number) => {
 	const densePercent = Math.min(100, Math.max(0, Math.round(value)))
 	const sparsePercent = 100 - densePercent
-	return `${t('settings.rag.weight.dense')}: ${densePercent}% / ${t('settings.rag.weight.sparse')}: ${sparsePercent}%`
+	return `${t('settings.rag.weight.dense')}: ${densePercent}% / ${t(
+		'settings.rag.weight.sparse'
+	)}: ${sparsePercent}%`
 }
 
-const formatScore = (value?: number) => {
-	if (!Number.isFinite(value)) {
-		return '-'
+const loadCollections = async () => {
+	collectionLoading.value = true
+	try {
+		const response = await getKnowledgeCollections()
+		collectionOptions.value = response.data?.data || []
+	} catch (error) {
+		console.error('加载知识库 Collection 失败:', error)
+		collectionOptions.value = []
+	} finally {
+		collectionLoading.value = false
 	}
-	return value!.toFixed(4)
 }
 
 const onSubmit = async () => {
@@ -275,7 +371,8 @@ const onSubmit = async () => {
 				loading.value = true
 				const response = await retrieveKnowledge(
 					formData.value.text,
-					formData.value.topK
+					formData.value.topK,
+					formData.value.collection
 				)
 				retrieveResultList.value = response.data?.data || []
 			} catch (error) {
@@ -314,11 +411,15 @@ const loadRagWeights = async () => {
 		])
 		const data = resolvePropertyMap(res)
 		ragWeights.value.denseWeight = parseNumber(
-			KEY_RETRIEVE_DENSE_WEIGHT in data ? data[KEY_RETRIEVE_DENSE_WEIGHT] : undefined,
+			KEY_RETRIEVE_DENSE_WEIGHT in data
+				? data[KEY_RETRIEVE_DENSE_WEIGHT]
+				: undefined,
 			ragWeights.value.denseWeight
 		)
 		ragWeights.value.sparseWeight = parseNumber(
-			KEY_RETRIEVE_SPARSE_WEIGHT in data ? data[KEY_RETRIEVE_SPARSE_WEIGHT] : undefined,
+			KEY_RETRIEVE_SPARSE_WEIGHT in data
+				? data[KEY_RETRIEVE_SPARSE_WEIGHT]
+				: undefined,
 			ragWeights.value.sparseWeight
 		)
 		normalizeRagWeights()
@@ -328,77 +429,78 @@ const loadRagWeights = async () => {
 }
 
 onMounted(() => {
+	loadCollections()
 	loadRagWeights()
 })
 </script>
 
-<style scoped lang="scss">.hit-test-container {
+<style scoped lang="scss">
+@use '@/styles/platform' as *;
+
+.hit-test-container {
 	font-family: Arial, sans-serif;
 	height: 100%;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
 
 	.header-with-tooltip {
 		display: flex;
 		align-items: center;
 		gap: 4px;
+		white-space: nowrap;
 	}
 
 	.hit-test-result {
-		padding: 20px;
-		background-color: color-mix(
-				in srgb,
-				var(--n-color-neutral-w),
-				transparent 30%
-		);
-		backdrop-filter: blur(10px);
-		border-radius: var(--n-radius-triple);
-		min-height: 300px;
-		height: calc(100% - 235px - 20px);
-
+		@include n-data-table-panel;
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		flex: 1;
+		min-height: 240px;
+		overflow: hidden;
 
 		.table-wrapper {
-			height: 100%;
 			border-radius: var(--n-radius-triple);
-			flex: 1; // 占据剩余所有高度
-			overflow: hidden; // 防止溢出，强制在内部滚动
-			display: flex;
-			flex-direction: column;
 
 			.table-header {
 				display: flex;
 				align-items: center;
-					justify-content: flex-start;
-					gap: 12px;
+				justify-content: flex-start;
+				gap: 12px;
 				padding: 8px 12px;
-				border-bottom: 1px solid var(--el-border-color-lighter);
-				background-color: var(--el-fill-color-lighter);
+				flex-shrink: 0;
+				border-bottom: 1px solid var(--n-color-border-soft);
+				background-color: transparent;
 
 				.table-header-title {
 					font-weight: 600;
-					color: var(--n-color-font-dark);
+					color: var(--n-color-text-primary);
 					white-space: nowrap;
 				}
 
 				.rag-weight-slider {
-						flex: 0 0 auto;
+					flex: 0 0 auto;
 				}
 			}
 
 			.rag-weight-slider {
-					width: 280px;
+				width: 280px;
 
 				:deep(.el-slider__runway) {
-						background-color: #f4a340;
+					background-color: #f4a340;
 				}
 
-					:deep(.el-slider__bar) {
-						background-color: var(--el-slider-main-bg-color);
-					}
+				:deep(.el-slider__bar) {
+					background-color: var(--el-slider-main-bg-color);
+				}
 
 				.rag-weight-values {
 					display: flex;
 					justify-content: space-between;
 					margin-top: 4px;
-					color: var(--n-color-neutral-6);
+					color: var(--n-color-text-muted);
 					font-size: 12px;
 				}
 
@@ -407,11 +509,6 @@ onMounted(() => {
 						margin-top: 2px;
 					}
 				}
-			}
-
-			// 穿透 element-plus 样式，确保表格高度占满
-			:deep(.el-table) {
-				height: 100% !important;
 			}
 		}
 		// 内容预览样式
@@ -423,56 +520,42 @@ onMounted(() => {
 			cursor: pointer;
 			color: var(--el-color-primary);
 		}
+
+		.text-chunk-full,
+		.outline-full {
+			max-height: 300px;
+			overflow-y: auto;
+		}
 	}
 
 	.hit-test-form {
-		height: 235px;
-		margin-top: 20px;
-		padding: 20px;
-		display: flex;
-		flex-direction: column;
+		flex-shrink: 0;
+		padding: 16px 20px;
 		box-sizing: border-box;
-		background-color: color-mix(
-				in srgb,
-				var(--n-color-neutral-w),
-				transparent 30%
-		);
-		backdrop-filter: blur(10px);
+		@include n-glass-surface(2);
 		border-radius: var(--n-radius-triple);
 
-		.rag-weight-summary {
+		:deep(.el-form) {
 			display: flex;
-			align-items: center;
-			gap: 12px;
-			margin-bottom: 12px;
-			font-size: 14px;
-			color: var(--n-color-font-dark);
+			flex-wrap: wrap;
+			gap: 0 24px;
+		}
 
-			.label {
-				font-weight: 600;
-			}
+		:deep(.el-form-item) {
+			margin-bottom: 12px;
 		}
 
 		:deep(.el-form-item__label) {
-			color: var(--n-color-font-dark);
+			color: var(--n-color-text-primary);
 			justify-content: flex-start;
 		}
 
 		.top-k-input {
 			width: 100px;
-			margin-right: 10px;
-
-			:deep(.el-form-item) {
-				margin-bottom: 20px;
-			}
 
 			:deep(.el-input__wrapper) {
 				height: 40px;
-				background-color: color-mix(
-						in srgb,
-						var(--n-color-neutral-w),
-						transparent 30%
-				);
+				background: var(--n-color-bg-glass-weak) !important;
 			}
 
 			:deep(.el-input-number) {
@@ -485,50 +568,44 @@ onMounted(() => {
 		}
 
 		.input-area {
-			.el-textarea {
-				margin-bottom: 5px;
+			flex: 1 1 100%;
+			margin-bottom: 0;
 
-				&.text-input {
-					:deep(.el-input__count) {
-						right: 80px;
-						bottom: 15px;
-						background: rgba(255, 255, 255, 0);
-					}
+			:deep(.el-form-item__content) {
+				width: 100%;
+			}
+		}
 
-					:deep(.el-textarea__inner) {
-						background: color-mix(
-								in srgb,
-								var(--n-color-neutral-w),
-								transparent 80%
-						);
-						backdrop-filter: blur(10px);
-						padding: 15px 20px;
-						border-color: color-mix(
-								in srgb,
-								var(--n-color-neutral-w),
-								transparent 80%
-						);
-						word-wrap: break-word;
-						word-break: break-all;
-						box-shadow: none;
-					}
+		.text-input-panel {
+			width: 100%;
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+		}
 
-					:hover {
-						box-shadow: 0px 0px 12px
-						color-mix(
-								in srgb,
-								var(--el-color-primary-light-3),
-								transparent 10%
-						);
-					}
-				}
+		.text-input {
+			width: 100%;
+
+			:deep(.el-textarea__inner) {
+				background: var(--n-table-row-bg);
+				padding: 12px 16px;
+				border-radius: var(--n-radius-triple);
+				word-wrap: break-word;
+				word-break: break-all;
+				border: 1px solid var(--n-color-border-control);
+				box-shadow: none;
+				resize: vertical;
+				min-height: 96px;
 			}
 
-			.el-button {
-				position: absolute;
-				right: 10px;
-				bottom: 30px;
+			:deep(.el-input__count) {
+				background: transparent;
 			}
+		}
+
+		.text-input-actions {
+			display: flex;
+			justify-content: flex-end;
 		}
 	}
 }

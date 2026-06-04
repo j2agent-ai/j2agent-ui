@@ -104,7 +104,7 @@ const formatWeightTooltip = (value: number) => {
 .section-title {
 	margin-bottom: 12px;
 	font-weight: 600;
-	color: var(--n-color-font-dark);
+	color: var(--n-color-text-primary);
 }
 
 .settings-select {
@@ -122,7 +122,7 @@ const formatWeightTooltip = (value: number) => {
 		display: flex;
 		justify-content: space-between;
 		margin-top: 6px;
-		color: var(--n-color-neutral-6);
+		color: var(--n-color-text-primary);
 		font-size: 12px;
 	}
 }

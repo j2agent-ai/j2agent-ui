@@ -1,14 +1,17 @@
 import http from '@ai-system/http/loginInterceptor'
 import {
 	KnowledgeAddDto,
+	KnowledgeCollectionListDto,
 	KnowledgeGetListDto,
-	KnowledgeRetrieveResponseDto
+	KnowledgeRetrieveResponseDto,
+	KnowledgeSyncResult
 } from '@/types/kb.model'
 import { globalUrlPrefix, programTag } from '../../oem.js'
 
 export const getKnowledge = (
 	offset: number,
 	limit: number,
+	collection: string,
 	search?: string
 ) => {
 	return http.get<KnowledgeGetListDto>(
@@ -17,19 +20,41 @@ export const getKnowledge = (
 			params: {
 				offset,
 				limit,
+				collection,
 				search
 			}
 		}
 	)
 }
 
-export const retrieveKnowledge = (queryText: string, topK: number) => {
+export const getKnowledgeCollections = () => {
+	return http.get<KnowledgeCollectionListDto>(
+		`/v1${globalUrlPrefix}rest/${programTag}/knowledge/collections`
+	)
+}
+
+/**
+ * 手动触发知识库目录增量同步
+ */
+export const syncKnowledge = (fullRebuild = false) => {
+	return http.post<KnowledgeSyncResult>(
+		`/v1${globalUrlPrefix}rest/${programTag}/knowledge/sync`,
+		null,
+		{
+			params: { fullRebuild },
+			timeout: 10 * 60 * 1000
+		}
+	)
+}
+
+export const retrieveKnowledge = (queryText: string, topK: number, collection: string) => {
 	return http.get<KnowledgeRetrieveResponseDto>(
 		`/v1${globalUrlPrefix}rest/${programTag}/knowledge/retrieve`,
 		{
 			params: {
 				'query-text': queryText,
-				'top-k': topK
+				'top-k': topK,
+				collection
 			}
 		}
 	)
