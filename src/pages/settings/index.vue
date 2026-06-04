@@ -22,8 +22,8 @@
 				<el-tab-pane :label="t('settings.agentPlugin.section')" name="agent-plugin">
 					<AgentPluginSettingsPanel v-if="activeTab === 'agent-plugin'" />
 				</el-tab-pane>
-				<el-tab-pane :label="t('settings.nms.section')" name="nms">
-					<NmsSettingsPanel v-if="activeTab === 'nms'" />
+				<el-tab-pane :label="t('settings.agentGlobalConfig.section')" name="agent-global-config">
+					<AgentGlobalConfigSettingsPanel v-if="activeTab === 'agent-global-config'" />
 				</el-tab-pane>
 				<el-tab-pane v-if="canManageUsers" :label="t('user.management.title')" name="user">
 					<UserManagementPanel v-if="activeTab === 'user'" />
@@ -42,7 +42,7 @@ import EmbeddingSettingsPanel from './components/EmbeddingSettingsPanel.vue'
 import LlmSettingsPanel from './components/LlmSettingsPanel.vue'
 import RagSettingsPanel from './components/RagSettingsPanel.vue'
 import AgentPluginSettingsPanel from './components/AgentPluginSettingsPanel.vue'
-import NmsSettingsPanel from './components/NmsSettingsPanel.vue'
+import AgentGlobalConfigSettingsPanel from './components/AgentGlobalConfigSettingsPanel.vue'
 import UserManagementPanel from './components/UserManagementPanel.vue'
 import { getProperties, putProperties } from '@/api/property.api'
 import { hasRoleAccess, ROLE_ADMIN } from '@/utils/role'

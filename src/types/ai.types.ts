@@ -163,13 +163,13 @@ export type AgentInfoList = {
 	agents: AgentInfoDto[]
 }
 
-/** Agent 插件状态 */
+/** 智能体插件状态 */
 export type AgentPluginStatus = {
 	jarFiles?: string[]
 	loadedAgentIds?: string[]
 }
 
-/** Agent 插件 JAR 重载结果 */
+/** 智能体插件 JAR 重载结果 */
 export type AgentReloadResult = {
 	success?: boolean
 	message?: string

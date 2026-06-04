@@ -36,7 +36,7 @@ export const getAgentList = () => {
 }
 
 /**
- * 查询 Agent 插件状态
+ * 查询 智能体插件状态
  */
 export const getAgentPlugins = () => {
 	return http.get<AgentPluginStatus>(`/v1${globalUrlPrefix}rest/${programTag}/plugins/agents`)
