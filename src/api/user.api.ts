@@ -26,7 +26,6 @@ export interface UserRoleUpdateRequestDto {
 
 export interface UserPasswordUpdateRequestDto {
 	userId?: string
-	oldPassword?: string
 	newPassword: string
 }
 

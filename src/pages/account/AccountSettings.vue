@@ -8,9 +8,6 @@
 					<p class="account-desc">{{ t('account.desc') }}</p>
 				</div>
 				<el-form :model="form" label-position="top" class="account-form">
-					<el-form-item :label="t('account.old.password')">
-						<el-input v-model="form.oldPassword" type="password" show-password />
-					</el-form-item>
 					<el-form-item :label="t('account.new.password')">
 						<el-input v-model="form.newPassword" type="password" show-password />
 					</el-form-item>
@@ -37,13 +34,12 @@ import { updateUserPassword } from '@/api/user.api'
 
 const saving = ref(false)
 const form = ref({
-	oldPassword: '',
 	newPassword: '',
 	confirmPassword: ''
 })
 
 const save = async () => {
-	if (!form.value.oldPassword || !form.value.newPassword) {
+	if (!form.value.newPassword) {
 		ElMessage.error(t('common.input.required'))
 		return
 	}
@@ -54,11 +50,9 @@ const save = async () => {
 	saving.value = true
 	try {
 		await updateUserPassword({
-			oldPassword: form.value.oldPassword,
 			newPassword: form.value.newPassword
 		})
 		ElMessage.success(t('common.success'))
-		form.value.oldPassword = ''
 		form.value.newPassword = ''
 		form.value.confirmPassword = ''
 	} catch (error) {
