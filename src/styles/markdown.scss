@@ -326,6 +326,13 @@
     margin-top: 0;
   }
 
+  .md-html-preview-wrap {
+    position: relative;
+    width: 100%;
+    margin: 0;
+    box-sizing: border-box;
+  }
+
   .md-html-preview {
     display: block;
     width: 100%;
@@ -335,6 +342,68 @@
     background: var(--n-color-preview-bg);
     color: var(--n-color-preview-text);
     transform-origin: top center;
+  }
+
+  .md-block-generating {
+    margin: 0;
+    font-size: var(--n-font-size-1, 13px);
+    line-height: 1.5;
+    color: var(--n-color-text-muted);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* 生成中：保留白底区域，正中仅一行文字（无胶囊气泡） */
+  .md-html-preview-wrap.md-block-pending {
+    min-height: 160px;
+
+    .md-html-preview {
+      display: block;
+      min-height: 160px;
+      visibility: hidden;
+    }
+
+    .md-block-generating {
+      display: block;
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      text-align: center;
+    }
+  }
+
+  .md-diagram-body.md-block-pending {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 160px;
+    padding: 14px 16px;
+    background: var(--n-color-preview-bg);
+    border: 1px solid var(--n-color-preview-border);
+    border-radius: 6px;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+    text-align: center;
+
+    &:hover {
+      border-color: var(--n-color-preview-border);
+      box-shadow: none;
+    }
+
+    .md-block-generating {
+      display: inline;
+      text-align: center;
+    }
+  }
+
+  .md-html-preview-wrap:not(.md-block-pending) .md-block-generating,
+  .md-html-block[data-md-rendered='true'] .md-block-generating,
+  .md-diagram[data-md-rendered='true'] .md-block-generating,
+  .md-diagram-body:not(.md-block-pending) .md-block-generating {
+    display: none;
   }
 
   .md-diagram-error .md-diagram-body {

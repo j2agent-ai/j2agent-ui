@@ -40,7 +40,7 @@ const MARKDOWN_REVISION_ATTR = 'data-md-revision'
  * 图表后处理逻辑变更时递增，用于让历史气泡在 SPA 内重新渲染（非 Mermaid 缓存）。
  * 与 ChatView 中 v-html 的 :key 保持一致。
  */
-export const MARKDOWN_RENDERER_REVISION = '8'
+export const MARKDOWN_RENDERER_REVISION = '9'
 /** 与 markdown.scss 中 --md-diagram-max-height 回退值保持一致 */
 const MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK = 360
 /** body 垂直内边距合计（padding-top + padding-bottom，各 14px） */
@@ -336,6 +336,15 @@ const escapeHtml = (value: string) => md.utils.escapeHtml(value)
 const normalizeFenceLanguage = (info?: string) =>
 	(info || '').trim().split(/\s+/)[0]?.toLowerCase() || ''
 
+/** 异步块占位：简单文字「生成中…」 */
+const renderGeneratingHintHtml = () =>
+	'<span class="md-block-generating" role="status" aria-live="polite">生成中…</span>'
+
+/** innerHTML / replaceChildren 不会清掉容器上的 pending 类，渲染成功后须显式移除 */
+const clearDiagramBodyPending = (body: HTMLElement) => {
+	body.classList.remove('md-block-pending')
+}
+
 const renderDiagramPlaceholder = (
 	type: 'mermaid' | 'plantuml' | 'vegalite',
 	source: string
@@ -344,7 +353,7 @@ const renderDiagramPlaceholder = (
 	return [
 		`<div class="md-diagram md-diagram-${type}" ${MARKDOWN_RENDER_ATTR}="${type}" ${MARKDOWN_REVISION_ATTR}="${MARKDOWN_RENDERER_REVISION}">`,
 		`<pre class="md-diagram-source" hidden>${escapedSource}</pre>`,
-		'<div class="md-diagram-body">图表生成中...</div>',
+		`<div class="md-diagram-body md-block-pending">${renderGeneratingHintHtml()}</div>`,
 		'</div>'
 	].join('')
 }
@@ -354,7 +363,10 @@ const renderHtmlPreviewPlaceholder = (source: string) => {
 	return [
 		`<div class="md-html-block" ${MARKDOWN_RENDER_ATTR}="html">`,
 		`<pre class="md-diagram-source" hidden>${escapedSource}</pre>`,
-		'<iframe class="md-html-preview" sandbox="allow-same-origin allow-forms allow-popups"></iframe>',
+		'<div class="md-html-preview-wrap md-block-pending">',
+		'<iframe class="md-html-preview" sandbox="allow-same-origin allow-forms allow-popups" title="HTML 预览"></iframe>',
+		renderGeneratingHintHtml(),
+		'</div>',
 		'</div>'
 	].join('')
 }
@@ -424,7 +436,10 @@ export const renderMarkdown = (markdown?: string) => md.render(markdown || '')
 
 /** 异步渲染 Markdown 图表块时的选项 */
 export type RenderMarkdownBlocksOptions = {
-	/** 为 true 时跳过 mermaid/plantuml/vegalite，保留占位（用于 LLM 流式输出） */
+	/**
+	 * 为 true 时，仅跳过仍处于流式尾段（带 data-md-stream-tail 标记的容器内、围栏尚未闭合）的
+	 * mermaid/plantuml/vegalite/html 块；已闭合的块照常立即渲染。用于 LLM 流式输出避免逐 token 重渲染抽搐。
+	 */
 	deferDiagrams?: boolean
 }
 
@@ -823,6 +838,145 @@ const applyXychartDiagramPresentation = (
 }
 
 /**
+ * 将同一行内串联的多条 flowchart 边拆成多行。
+ * LLM 常输出 `A --> B{x} B -->|y| C` 导致解析器在 B{x} 后期望换行却遇到下一个节点。
+ */
+const splitChainedFlowchartEdgesOnLine = (line: string) => {
+	const indent = line.match(/^[\t ]*/)?.[0] ?? ''
+	const splitOnce = (input: string) =>
+		input.replace(
+			/([\]\)\}])([ \t]+)([A-Za-z_][\w-]*)([ \t]+(?:-->|---|===|-\.->|==>|--o|--x)(?:\|[^|\n]+\|)?)/g,
+			'$1\n$3$4'
+		)
+
+	let cur = line
+	let prev = ''
+	while (prev !== cur) {
+		prev = cur
+		cur = splitOnce(cur)
+	}
+
+	return cur
+		.split('\n')
+		.map((part, index) => (index === 0 ? part : indent + part.trimStart()))
+		.join('\n')
+}
+
+const shouldNormalizeFlowchartLine = (trimmed: string) => {
+	if (!trimmed || trimmed.startsWith('%%')) {
+		return false
+	}
+	if (
+		/^(?:style|classDef|class|linkStyle|click|subgraph|end)\b/i.test(trimmed)
+	) {
+		return false
+	}
+	const arrowMatches = trimmed.match(
+		/(?:-->|---|===|-\.->|==>|--o|--x)/g
+	)
+	return (arrowMatches?.length ?? 0) >= 2
+}
+
+const countLeadingSpaces = (line: string) => {
+	const prefix = line.match(/^[\t ]*/)?.[0] ?? ''
+	let n = 0
+	for (const ch of prefix) {
+		n += ch === '\t' ? 4 : 1
+	}
+	return n
+}
+
+/** 从已有缩进推断 mindmap 每层步长（常见为 2 或 4） */
+const detectMindmapIndentStep = (lines: string[]) => {
+	const indents = [
+		...new Set(
+			lines.map((l) => countLeadingSpaces(l)).filter((i) => i > 0)
+		)
+	].sort((a, b) => a - b)
+	if (indents.length >= 2 && indents[1] - indents[0] > 0) {
+		return indents[1] - indents[0]
+	}
+	return 2
+}
+
+/**
+ * 修正 mindmap 缩进：LLM 常把子节点顶格（如「工具调用」），会被当成第二个 root 导致渲染失败。
+ */
+const normalizeMindmapIndentation = (source: string) => {
+	if (!/^\s*mindmap\b/im.test(source)) {
+		return source
+	}
+
+	const lines = source.split('\n')
+	const indentStep = detectMindmapIndentStep(lines)
+	const out: string[] = []
+	const stack: number[] = []
+	let rootIndent = -1
+	let seenRoot = false
+
+	for (const line of lines) {
+		const trimmed = line.trim()
+		if (!trimmed) {
+			out.push(line)
+			continue
+		}
+		if (/^mindmap$/i.test(trimmed)) {
+			out.push(line)
+			continue
+		}
+
+		const indent = countLeadingSpaces(line)
+
+		if (!seenRoot) {
+			seenRoot = true
+			rootIndent = indent
+			stack.length = 0
+			stack.push(rootIndent)
+			out.push(line)
+			continue
+		}
+
+		let fixedIndent = indent
+
+		if (indent <= rootIndent) {
+			fixedIndent = stack[stack.length - 1] + indentStep
+		} else {
+			while (stack.length > 1 && indent <= stack[stack.length - 1]) {
+				stack.pop()
+			}
+			if (indent <= stack[stack.length - 1]) {
+				fixedIndent = stack[stack.length - 1] + indentStep
+			}
+		}
+
+		while (stack.length > 1 && fixedIndent <= stack[stack.length - 1]) {
+			stack.pop()
+		}
+		stack.push(fixedIndent)
+		out.push(' '.repeat(fixedIndent) + trimmed)
+	}
+
+	return out.join('\n')
+}
+
+/** 仅对 graph / flowchart 图：把一行多条边拆成多行 */
+const normalizeFlowchartMultilineEdges = (source: string) => {
+	if (!/^\s*(?:graph|flowchart)\s/im.test(source)) {
+		return source
+	}
+	return source
+		.split('\n')
+		.map((line) => {
+			const trimmed = line.trim()
+			if (!shouldNormalizeFlowchartLine(trimmed)) {
+				return line
+			}
+			return splitChainedFlowchartEdgesOnLine(line)
+		})
+		.join('\n')
+}
+
+/**
  * 规范化 LLM 生成的 Mermaid 源码，修复弯引号、全角冒号、转义引号等常见导致解析失败的问题。
  */
 const normalizeMermaidSource = (source: string) => {
@@ -838,6 +992,8 @@ const normalizeMermaidSource = (source: string) => {
 		.replace(/\\'/g, "'")
 		.replace(/：/g, ':')
 		.replace(/\u00a0/g, ' ')
+	text = normalizeMindmapIndentation(text)
+	text = normalizeFlowchartMultilineEdges(text)
 	text = quotePieSliceLines(text)
 	return normalizeXychartOrientation(text)
 }
@@ -848,6 +1004,7 @@ const setBlockError = (block: Element, error: unknown) => {
 		error instanceof Error ? error.message : String(error || 'Unknown error')
 	block.classList.add('md-diagram-error')
 	if (body) {
+		clearDiagramBodyPending(body)
 		// 用原生 details/summary 展示长错误，避免被容器 overflow 裁切后“看不见”
 		body.innerHTML = [
 			'<div class="md-diagram-error-title"><strong>图表渲染失败</strong></div>',
@@ -1002,6 +1159,7 @@ const renderMermaidBlock = async (block: Element) => {
 		throw new Error('Mermaid 图表语法无效')
 	}
 	body.innerHTML = svg
+	clearDiagramBodyPending(body)
 	const renderedSvg = body.querySelector('svg')
 	if (renderedSvg instanceof SVGElement && isXychartSource(source)) {
 		applyXychartBarColors(renderedSvg)
@@ -1086,6 +1244,7 @@ const renderPlantUmlBlock = async (block: Element) => {
 
 	const renderer = await getPlantUmlRenderer()
 	body.innerHTML = await renderer(source)
+	clearDiagramBodyPending(body)
 	scheduleFitDiagramSvg(body)
 }
 
@@ -1211,6 +1370,7 @@ const renderVegaLiteBlock = async (block: Element) => {
 	const host = document.createElement('div')
 	host.className = 'md-vegalite-host'
 	body.replaceChildren(host)
+	clearDiagramBodyPending(body)
 	await embed(host, spec, {
 		actions: false,
 		renderer: 'svg',
@@ -1342,6 +1502,9 @@ const renderHtmlPreviewBlock = (block: Element) => {
 	if (!iframe) {
 		return
 	}
+	block
+		.querySelector('.md-html-preview-wrap')
+		?.classList.remove('md-block-pending')
 	iframe.onload = () => {
 		resizeHtmlPreview(iframe)
 		observeHtmlPreviewResize(block as HTMLElement, iframe)
@@ -1362,7 +1525,8 @@ const resetStaleDiagramBlock = (block: Element) => {
 	if (body) {
 		disconnectDiagramFitObserver(body)
 		body.classList.remove('md-diagram-body--wide')
-		body.replaceChildren(document.createTextNode('图表生成中...'))
+		body.classList.add('md-block-pending')
+		body.innerHTML = renderGeneratingHintHtml()
 		body.style.cssText = ''
 	}
 	block.removeAttribute(MARKDOWN_REVISION_ATTR)
@@ -1386,9 +1550,17 @@ const renderBlock = async (
 	}
 
 	const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
+	const isAsyncBlock =
+		type === 'mermaid' ||
+		type === 'plantuml' ||
+		type === 'vegalite' ||
+		type === 'html'
+	// 仅推迟“仍在流式输出（围栏未闭合）”的块——其所在容器带 data-md-stream-tail 标记。
+	// 已闭合的块即便整条消息还在继续输出，也立即就地渲染；因其所在 DOM 不再被重建，渲染结果保持稳定、不抽搐。
 	if (
+		isAsyncBlock &&
 		options?.deferDiagrams &&
-		(type === 'mermaid' || type === 'plantuml' || type === 'vegalite')
+		(block as Element).closest?.('[data-md-stream-tail]')
 	) {
 		return
 	}
