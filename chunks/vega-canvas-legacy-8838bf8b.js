@@ -1,0 +1,1 @@
+System.register([],(function(e){"use strict";return{execute:function(){e("d",(function(e,t){if("undefined"!=typeof document&&document.createElement){var n=document.createElement("canvas");if(n&&n.getContext)return n.width=e,n.height=t,n}return null})),e("a",(function(){return"undefined"!=typeof Image?Image:null}))}}}));
