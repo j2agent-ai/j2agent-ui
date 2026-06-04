@@ -71,6 +71,7 @@
 						<template v-if="message.role === 'assistant'">
 							<div class="avatar-wrap">
 								<el-avatar :size="messageAvatarSize" class="ai-chat-logo">
+									<!--									<img src="/src/assets/ai-logo-w.png" />-->
 									<span class="avatar-emoji">🤖</span>
 								</el-avatar>
 							</div>

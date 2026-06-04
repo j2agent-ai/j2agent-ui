@@ -1,10 +1,10 @@
 <template>
-	<div class="nms-config-page" v-loading="loading">
+	<div class="agent-global-config-page" v-loading="loading">
 		<div class="header">
-			<h2>{{ t('nms.config.title') }}</h2>
+			<h2>{{ t('agentGlobalConfig.config.title') }}</h2>
 			<div class="actions">
 				<el-button size="small" @click="formatConfig">
-					{{ t('nms.config.format') }}
+					{{ t('agentGlobalConfig.config.format') }}
 				</el-button>
 				<el-button type="primary" size="small" @click="saveConfig" :loading="saving">
 					{{ t('settings.save') }}
@@ -15,7 +15,7 @@
 			v-model="configText"
 			type="textarea"
 			:autosize="{ minRows: 14 }"
-			:placeholder="t('nms.config.placeholder')"
+			:placeholder="t('agentGlobalConfig.config.placeholder')"
 			@blur="formatConfig"
 		/>
 	</div>
@@ -25,7 +25,7 @@
 import { onMounted, ref } from 'vue'
 import { ElButton, ElInput, ElMessage } from 'element-plus'
 import { t } from '@ai-system/lib'
-import { getNmsConfig, putNmsConfig } from '@/api/nms.api'
+import { getAgentGlobalConfig, putAgentGlobalConfig } from '@/api/agentGlobalConfig.api'
 
 const DEFAULT_CONFIG = {
 	datasource: {
@@ -53,11 +53,11 @@ const resolvePayload = (res: any) => {
 const loadConfig = async () => {
 	loading.value = true
 	try {
-		const res = await getNmsConfig()
+		const res = await getAgentGlobalConfig()
 		const data = resolvePayload(res)
 		configText.value = JSON.stringify(data || DEFAULT_CONFIG, null, 2)
 	} catch (error) {
-		ElMessage.error(t('nms.config.load.failed'))
+		ElMessage.error(t('agentGlobalConfig.config.load.failed'))
 	} finally {
 		loading.value = false
 	}
@@ -72,7 +72,7 @@ const formatConfig = () => {
 		const parsed = JSON.parse(configText.value)
 		configText.value = JSON.stringify(parsed, null, 2)
 	} catch (error) {
-		ElMessage.warning(t('nms.config.invalid'))
+		ElMessage.warning(t('agentGlobalConfig.config.invalid'))
 	}
 }
 
@@ -80,12 +80,12 @@ const saveConfig = async () => {
 	saving.value = true
 	try {
 		const parsed = JSON.parse(configText.value)
-		await putNmsConfig(parsed)
+		await putAgentGlobalConfig(parsed)
 		configText.value = JSON.stringify(parsed, null, 2)
 		ElMessage.success(t('settings.save.success'))
 	} catch (error) {
 		if (error instanceof SyntaxError) {
-			ElMessage.error(t('nms.config.invalid'))
+			ElMessage.error(t('agentGlobalConfig.config.invalid'))
 		} else {
 			ElMessage.error(t('settings.save.failed'))
 		}
@@ -100,7 +100,7 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
-.nms-config-page {
+.agent-global-config-page {
 	padding: 0;
 }
 

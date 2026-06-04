@@ -107,16 +107,21 @@ export function viteConfig(
 			}),
 			{
 				name: 'copy-index-html-plugin',
-				closeBundle() {
+				writeBundle() {
 					console.log('Vite 打包完成，执行自定义脚本...')
+					const indexPath = path.join(rootDir, 'dist/index.html')
+					if (!fs.existsSync(indexPath)) {
+						console.warn('[copy-index-html-plugin] skip: dist/index.html not found')
+						return
+					}
 					// 复制 index.html
-					const content = fs.readFileSync('dist/index.html', {
+					const content = fs.readFileSync(indexPath, {
 						encoding: 'utf-8'
 					})
 					// 这几个文件的长度不能一样,否则文件的etag相同
-					fs.writeFileSync('dist/index-zh.html', content)
+					fs.writeFileSync(path.join(rootDir, 'dist/index-zh.html'), content)
 					fs.writeFileSync(
-						'dist/index-en.html',
+						path.join(rootDir, 'dist/index-en.html'),
 						content
 							.replace(
 								'ai_system_language_variable = "zh"',
@@ -147,7 +152,7 @@ export function viteConfig(
 		],
 		build: {
 			outDir: env.VITE_OUT_DIR,
-			emptyOutDir: false,
+			emptyOutDir: true,
 			assetsDir: './assets/',
 			minify: 'terser',
 			terserOptions: {
