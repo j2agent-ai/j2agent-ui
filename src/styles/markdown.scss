@@ -99,8 +99,7 @@
     border-radius: 10px;
     background: var(--n-dark-panel-bg);
     backdrop-filter: blur(var(--n-dark-panel-blur)) saturate(var(--n-dark-panel-saturate));
-    -webkit-backdrop-filter: blur(var(--n-dark-panel-blur))
-      saturate(var(--n-dark-panel-saturate));
+    -webkit-backdrop-filter: blur(var(--n-dark-panel-blur)) saturate(var(--n-dark-panel-saturate));
     border: 1px solid var(--n-dark-panel-border);
     box-shadow: var(--n-dark-panel-shadow);
     color: var(--n-dark-panel-text);
@@ -157,10 +156,9 @@
     border: none;
     @include n-glass-surface(2);
     background: var(--n-color-bg-glass);
-    box-shadow:
-      inset 0 1px 0 color-mix(in srgb, var(--n-glass-highlight) 95%, transparent),
-      0 4px 10px rgba(0, 0, 0, 0.06),
-      0 12px 32px rgba(0, 0, 0, 0.1);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--n-glass-highlight) 95%, transparent),
+    0 4px 10px rgba(0, 0, 0, 0.06),
+    0 12px 32px rgba(0, 0, 0, 0.1);
     isolation: isolate;
     scrollbar-width: thin;
     scrollbar-color: var(--n-color-scrollbar-thumb) transparent;
@@ -247,10 +245,9 @@
     overflow: hidden;
     text-align: center;
     box-sizing: border-box;
-    transition:
-            border-color 120ms ease,
-            box-shadow 160ms ease,
-            background 160ms ease;
+    transition: border-color 120ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
   }
 
   .md-diagram-body:hover {
@@ -292,9 +289,19 @@
     filter: none;
   }
 
-  /* 图表 SVG 兜底：尽量统一 PlantUML / Mermaid 的观感（主要仍由 Mermaid 主题变量控制） */
+  /* 图表 SVG 文字/线条：各引擎统一继承气泡图表色（主题变量在 diagramTheme.ts） */
+  .md-diagram-body svg {
+    color: var(--n-color-diagram-text);
+  }
+
   .md-diagram-body svg text {
     fill: currentColor;
+  }
+
+  .md-diagram-vegalite svg .background,
+  .md-diagram-plantuml svg rect[fill='white'],
+  .md-diagram-plantuml svg rect[fill='#FFFFFF'] {
+    fill: transparent;
   }
 
   .md-diagram-body svg a {
@@ -331,6 +338,7 @@
     width: 100%;
     margin: 0;
     box-sizing: border-box;
+    overflow: hidden;
   }
 
   .md-html-preview {
@@ -342,6 +350,7 @@
     background: var(--n-color-preview-bg);
     color: var(--n-color-preview-text);
     transform-origin: top center;
+    overflow: hidden;
   }
 
   .md-block-generating {
