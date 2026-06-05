@@ -43,12 +43,12 @@
   --n-color-state-5: #8bcb01; // 状态色
   --n-color-state-6: #8bcb01; // 状态色
   // 透明色
-  --n-color-opacity-1: rgba(0, 0, 0, 0.75); 
+  --n-color-opacity-1: rgba(0, 0, 0, 0.75);
   --n-color-opacity-2: rgba(
-    50,
-    50,
-    50,
-    0.55
+          50,
+          50,
+          50,
+          0.55
   ); // 主要用于弹框 抽屉的mask 滚动条hover
   --n-color-opacity-3: rgba(0, 0, 0, 0.12); // 主要用于box-shadow的color;
   --n-color-opacity-4: rgba(0, 0, 0, 0.4); // 主要用于滚动条;
@@ -118,38 +118,34 @@
   --n-glass-tint-3: 44%;
   --n-glass-tint-4: 54%;
   --n-color-bg-glass-weak: color-mix(
-    in srgb,
-    var(--n-glass-highlight) var(--n-glass-frost-1),
-    color-mix(in srgb, var(--n-glass-tint) var(--n-glass-tint-1), transparent)
+          in srgb,
+          var(--n-glass-highlight) var(--n-glass-frost-1),
+          color-mix(in srgb, var(--n-glass-tint) var(--n-glass-tint-1), transparent)
   );
   --n-color-bg-glass: color-mix(in srgb, var(--n-color-neutral-w), transparent 80%);
   --n-color-bg-glass-strong: color-mix(
-    in srgb,
-    var(--n-glass-highlight) var(--n-glass-frost-3),
-    color-mix(in srgb, var(--n-glass-tint) var(--n-glass-tint-3), transparent)
+          in srgb,
+          var(--n-glass-highlight) var(--n-glass-frost-3),
+          color-mix(in srgb, var(--n-glass-tint) var(--n-glass-tint-3), transparent)
   );
   --n-color-bg-glass-overlay: color-mix(
-    in srgb,
-    var(--n-glass-highlight) var(--n-glass-frost-4),
-    color-mix(in srgb, var(--n-glass-tint) var(--n-glass-tint-4), transparent)
+          in srgb,
+          var(--n-glass-highlight) var(--n-glass-frost-4),
+          color-mix(in srgb, var(--n-glass-tint) var(--n-glass-tint-4), transparent)
   );
   /* 顶缘主题高光 + 柔和外阴影（无 1px 描边环） */
-  --n-shadow-elevation-1:
-    inset 0 1px 0 color-mix(in srgb, var(--n-glass-highlight) 92%, transparent),
-    0 2px 6px rgba(15, 23, 42, 0.05),
-    0 8px 20px rgba(15, 23, 42, 0.08);
-  --n-shadow-elevation-2:
-    inset 0 1px 0 color-mix(in srgb, var(--n-glass-highlight) 95%, transparent),
-    0 4px 10px rgba(15, 23, 42, 0.06),
-    0 12px 32px rgba(15, 23, 42, 0.1);
-  --n-shadow-elevation-3:
-    inset 0 1px 0 color-mix(in srgb, var(--n-glass-highlight) 98%, transparent),
-    0 6px 14px rgba(15, 23, 42, 0.07),
-    0 16px 40px rgba(15, 23, 42, 0.12);
-  --n-shadow-elevation-4:
-    inset 0 1px 0 color-mix(in srgb, var(--n-glass-highlight) 100%, transparent),
-    0 8px 18px rgba(15, 23, 42, 0.08),
-    0 20px 52px rgba(15, 23, 42, 0.14);
+  --n-shadow-elevation-1: inset 0 1px 0 color-mix(in srgb, var(--n-glass-highlight) 92%, transparent),
+  0 2px 6px rgba(15, 23, 42, 0.05),
+  0 8px 20px rgba(15, 23, 42, 0.08);
+  --n-shadow-elevation-2: inset 0 1px 0 color-mix(in srgb, var(--n-glass-highlight) 95%, transparent),
+  0 4px 10px rgba(15, 23, 42, 0.06),
+  0 12px 32px rgba(15, 23, 42, 0.1);
+  --n-shadow-elevation-3: inset 0 1px 0 color-mix(in srgb, var(--n-glass-highlight) 98%, transparent),
+  0 6px 14px rgba(15, 23, 42, 0.07),
+  0 16px 40px rgba(15, 23, 42, 0.12);
+  --n-shadow-elevation-4: inset 0 1px 0 color-mix(in srgb, var(--n-glass-highlight) 100%, transparent),
+  0 8px 18px rgba(15, 23, 42, 0.08),
+  0 20px 52px rgba(15, 23, 42, 0.14);
   /* 内部分割线等场景仍可用 */
   --n-glass-border-1: color-mix(in srgb, var(--n-color-neutral-6) 38%, var(--n-color-border-soft));
   --n-glass-border-2: color-mix(in srgb, var(--n-color-neutral-6) 52%, var(--n-color-border));
@@ -169,18 +165,17 @@
   --n-topbar-blur: 5px;
   --n-topbar-saturate: 150%;
   --n-topbar-border: color-mix(
-    in srgb,
-    var(--n-topbar-text) 26%,
-    var(--n-color-neutral-6) 40%
+          in srgb,
+          var(--n-topbar-text) 26%,
+          var(--n-color-neutral-6) 40%
   );
   --n-topbar-divider: color-mix(in srgb, var(--n-topbar-border) 85%, transparent);
   --n-topbar-text: #f3f6fb;
   --n-topbar-text-muted: color-mix(in srgb, var(--n-topbar-text) 72%, transparent);
   --n-topbar-text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   --n-topbar-hover-bg: color-mix(in srgb, var(--n-topbar-text) 10%, transparent);
-  --n-topbar-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--n-topbar-text) 14%, transparent),
-    0 4px 20px rgba(0, 0, 0, 0.18);
+  --n-topbar-shadow: inset 0 1px 0 color-mix(in srgb, var(--n-topbar-text) 14%, transparent),
+  0 4px 20px rgba(0, 0, 0, 0.18);
 
   /* 聊天深色面板：深度思考、代码块（淡透深灰玻璃） */
   --n-dark-panel-tint: rgb(18 24 32);
@@ -188,13 +183,12 @@
   --n-dark-panel-blur: 6px;
   --n-dark-panel-saturate: 135%;
   --n-dark-panel-border: color-mix(
-    in srgb,
-    var(--n-topbar-text) 20%,
-    var(--n-dark-panel-tint) 80%
+          in srgb,
+          var(--n-topbar-text) 20%,
+          var(--n-dark-panel-tint) 80%
   );
-  --n-dark-panel-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--n-topbar-text) 12%, transparent),
-    0 4px 16px rgba(0, 0, 0, 0.18);
+  --n-dark-panel-shadow: inset 0 1px 0 color-mix(in srgb, var(--n-topbar-text) 12%, transparent),
+  0 4px 16px rgba(0, 0, 0, 0.18);
   --n-dark-panel-text: #fafcfe;
   --n-dark-panel-text-muted: color-mix(in srgb, #fafcfe 90%, transparent);
 
@@ -208,9 +202,9 @@
   --n-dialog-glass-tint: 22%;
   --n-dialog-blur: 12px;
   --n-color-bg-glass-dialog: color-mix(
-    in srgb,
-    var(--n-glass-highlight) var(--n-dialog-glass-frost),
-    color-mix(in srgb, var(--n-glass-tint) var(--n-dialog-glass-tint), transparent)
+          in srgb,
+          var(--n-glass-highlight) var(--n-dialog-glass-frost),
+          color-mix(in srgb, var(--n-glass-tint) var(--n-dialog-glass-tint), transparent)
   );
   /* 危险确认标题：红色染色玻璃 */
   --n-color-bg-glass-danger: color-mix(in srgb, var(--el-color-error), transparent 82%);
@@ -251,8 +245,16 @@
   --n-color-diagram-bg: rgba(255, 255, 255, 0.65);
   --n-color-diagram-text: var(--n-color-font-dark);
   --n-color-diagram-border: rgba(0, 0, 0, 0.08);
-  /* xychart 柱/条主色，与 markdownRenderer 中 pie1 及色板首色一致 */
-  --n-color-diagram-bar: #93c5fd;
+  /* 图表分类色板（与 diagramTheme.ts DIAGRAM_COLOR_PALETTE 保持一致） */
+  --n-color-diagram-palette-1: #93c5fd;
+  --n-color-diagram-palette-2: #fde68a;
+  --n-color-diagram-palette-3: #86efac;
+  --n-color-diagram-palette-4: #c4b5fd;
+  --n-color-diagram-palette-5: #fda4af;
+  --n-color-diagram-palette-6: #7dd3fc;
+  --n-color-diagram-palette-7: #a5f3fc;
+  --n-color-diagram-palette-8: #fdba74;
+  --n-color-diagram-bar: var(--n-color-diagram-palette-1);
   --n-color-preview-bg: #fff;
   --n-color-preview-text: #1f2933;
   --n-color-preview-border: rgba(0, 0, 0, 0.12);
@@ -261,7 +263,7 @@
   --n-transition-duration-basic: 100ms;
 
   // 头部高度
-  --headerBarHeight:54px;
+  --headerBarHeight: 54px;
 
   --el-bg-color: var(--n-color-bg-glass);
   --el-bg-color-overlay: var(--n-color-bg-glass-overlay);
