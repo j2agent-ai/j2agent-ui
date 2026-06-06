@@ -264,13 +264,6 @@ const onSubmit = async () => {
 		ElMessage.warning(t('providerConfig.validate.modelName'))
 		return
 	}
-	if (value.providerType === 'anthropic') {
-		const mt = value.config?.maxTokens
-		if (mt == null || mt === '' || (typeof mt === 'number' && mt <= 0)) {
-			ElMessage.warning(t('providerConfig.validate.maxTokens'))
-			return
-		}
-	}
 	const cleanedConfig = normalizeProviderConfig(value.config, value.providerType)
 	saving.value = true
 	try {
