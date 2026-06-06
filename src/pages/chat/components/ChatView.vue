@@ -316,7 +316,12 @@ let keepAliveWsClient: WebSocket
 const scrollbarRef = ref()
 const messageListRef = ref<HTMLElement>()
 const isAtBottom = ref<boolean>(true)
-/** 用户发送后短暂保持跟滚，直到主动上滑离开底部（与 isAtBottom 配合避免阈值边界误判） */
+/**
+ * 自动跟随底部的唯一开关（所有自动下滚都以它为准）：
+ * - 用户发送消息时置 true；
+ * - 用户一旦主动上滑（滚轮 / 触摸 / 拖动滚动条）立即置 false，停止自动下滚，避免与用户操作打架；
+ * - 用户重新滚回真正的底部时再自动恢复 true。
+ */
 const stickToBottom = ref(false)
 const messageContext = ref<MessageDto[]>([])
 /**
@@ -536,7 +541,7 @@ const sendMessage = (msg?: string) => {
             const payload: AgentUiEventEnvelope = JSON.parse(event.data)
             handleAgentEvent(payload)
             checkScroll()
-            if (isAtBottom.value || stickToBottom.value) {
+            if (stickToBottom.value) {
               scrollToBottom()
             }
           } catch (error) {
@@ -581,9 +586,12 @@ const onWsClose = () => {
   })
 }
 
-/** 根据视口高度计算“仍在底部”的允许像素余量，避免单条气泡过高导致误判 */
+/** 根据视口高度计算“仍在底部”的允许像素余量，避免单条气泡过高导致误判（仅用于「回到底部」按钮显隐） */
 const getScrollBottomEpsilon = (clientHeight: number) =>
   Math.max(160, Math.floor(clientHeight * 0.18))
+
+/** 恢复自动跟随所需的「贴底」严格阈值：只有真正滚回底部才重新开启跟随，避免与用户上滑相互打架 */
+const REENGAGE_BOTTOM_THRESHOLD = 32
 
 /** 上一次滚动位置，用于区分「用户主动上滑」与「内容异步撑高」 */
 let lastScrollTop = 0
@@ -662,7 +670,7 @@ const activateMarkdownBlocks = () => {
     }
     renderMarkdownBlocks(root, { deferDiagrams: isBusyByState.value })
       .then(() => {
-        if (isAtBottom.value || stickToBottom.value) {
+        if (stickToBottom.value) {
           scrollToBottom()
         }
       })
@@ -679,14 +687,69 @@ const checkScroll = () => {
   const { scrollTop, scrollHeight, clientHeight } = scrollbarRef.value.wrapRef
   const epsilon = getScrollBottomEpsilon(clientHeight)
   const distFromBottom = scrollHeight - clientHeight - scrollTop
-  // 仅当用户主动上滑（scrollTop 明显减小）才解除跟随；
-  // 内容异步撑高只增大 distFromBottom 而不减小 scrollTop，不应被误判为离开底部。
-  if (scrollTop < lastScrollTop - 2 && distFromBottom > epsilon) {
+  // scrollTop 明显减小 = 用户主动上滑（内容异步撑高只增大 distFromBottom、不减小 scrollTop）
+  const scrolledUp = scrollTop < lastScrollTop - 2
+  if (distFromBottom <= REENGAGE_BOTTOM_THRESHOLD) {
+    // 用户真正滚回底部：恢复自动跟随
+    stickToBottom.value = true
+  } else if (scrolledUp) {
+    // 用户上滑离开底部：立刻停止自动下滚，把滚动主动权交还用户
     stickToBottom.value = false
   }
-  // 跟随态下保持按钮隐藏，避免内容撑高的瞬间闪现「回到底部」
-  isAtBottom.value = distFromBottom <= epsilon || stickToBottom.value
+  // 跟随态下始终视为在底部，避免内容撑高的瞬间闪现「回到底部」
+  isAtBottom.value = stickToBottom.value || distFromBottom <= epsilon
   lastScrollTop = scrollTop
+}
+
+/** 用户主动上滑：立即停止自动跟随，避免流式内容把视口又拽回底部 */
+const handleUserScrollUpIntent = () => {
+  if (stickToBottom.value) {
+    stickToBottom.value = false
+  }
+}
+
+const handleScrollWheel = (event: WheelEvent) => {
+  if (event.deltaY < 0) {
+    handleUserScrollUpIntent()
+  }
+}
+
+let lastTouchY = 0
+const handleScrollTouchStart = (event: TouchEvent) => {
+  lastTouchY = event.touches[0]?.clientY ?? 0
+}
+const handleScrollTouchMove = (event: TouchEvent) => {
+  const y = event.touches[0]?.clientY ?? lastTouchY
+  // 手指下移 => 内容上滑（查看更早的消息）
+  if (y - lastTouchY > 2) {
+    handleUserScrollUpIntent()
+  }
+  lastTouchY = y
+}
+
+let scrollIntentEl: HTMLElement | null = null
+
+/** 在滚动容器上挂载滚轮 / 触摸监听，作为「用户正在滚动」的即时信号 */
+const bindUserScrollIntent = () => {
+  const wrap = scrollbarRef.value?.wrapRef as HTMLElement | undefined
+  if (!wrap || scrollIntentEl === wrap) {
+    return
+  }
+  unbindUserScrollIntent()
+  scrollIntentEl = wrap
+  wrap.addEventListener('wheel', handleScrollWheel, { passive: true })
+  wrap.addEventListener('touchstart', handleScrollTouchStart, { passive: true })
+  wrap.addEventListener('touchmove', handleScrollTouchMove, { passive: true })
+}
+
+const unbindUserScrollIntent = () => {
+  if (!scrollIntentEl) {
+    return
+  }
+  scrollIntentEl.removeEventListener('wheel', handleScrollWheel)
+  scrollIntentEl.removeEventListener('touchstart', handleScrollTouchStart)
+  scrollIntentEl.removeEventListener('touchmove', handleScrollTouchMove)
+  scrollIntentEl = null
 }
 
 let send: boolean = true
@@ -993,12 +1056,19 @@ watch(messageListRef, (el) => {
   messageListResizeObserver = undefined
   if (el && typeof ResizeObserver !== 'undefined') {
     messageListResizeObserver = new ResizeObserver(() => {
-      if (stickToBottom.value || isAtBottom.value) {
+      if (stickToBottom.value) {
         scrollToBottom('auto')
       }
     })
     messageListResizeObserver.observe(el)
   }
+})
+
+/** 滚动容器可能因 v-if（历史栏 / 全屏切换）重建，wrapRef 变化后需重新挂载用户滚动监听 */
+watch(scrollbarRef, () => {
+  nextTick(() => {
+    bindUserScrollIntent()
+  })
 })
 
 watch(
@@ -1081,6 +1151,7 @@ watch(inputFocused, () => {
 onMounted(() => {
   newChat()
   nextTick(() => {
+    bindUserScrollIntent()
     scheduleChatBottomInsetUpdate()
     if (typeof ResizeObserver !== 'undefined' && bottomDockRef.value) {
       bottomDockResizeObserver = new ResizeObserver(() => {
@@ -1092,6 +1163,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  unbindUserScrollIntent()
   bottomDockResizeObserver?.disconnect()
   bottomDockResizeObserver = undefined
   messageListResizeObserver?.disconnect()
