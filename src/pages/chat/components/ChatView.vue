@@ -315,14 +315,15 @@ const contextId = ref<string>()
 let keepAliveWsClient: WebSocket
 const scrollbarRef = ref()
 const messageListRef = ref<HTMLElement>()
+/** 「回到底部」按钮隐藏（即处于贴底自动跟随区域）时为 true；完全由滚动位置决定 */
 const isAtBottom = ref<boolean>(true)
-/**
- * 自动跟随底部的唯一开关（所有自动下滚都以它为准）：
- * - 用户发送消息时置 true；
- * - 用户一旦主动上滑（滚轮 / 触摸 / 拖动滚动条）立即置 false，停止自动下滚，避免与用户操作打架；
- * - 用户重新滚回真正的底部时再自动恢复 true。
- */
-const stickToBottom = ref(false)
+/** 用户正在主动滚动（滚轮 / 触摸）期间为 true：此时一律不自动下滚，避免与用户操作打架 */
+let userScrolling = false
+let userScrollIdleTimer: ReturnType<typeof setTimeout> | null = null
+/** 用户停手多久后视为「滚动结束」，恢复自动跟随能力 */
+const USER_SCROLL_IDLE_MS = 200
+/** 自动下滚的统一条件：处于贴底区域（按钮已隐藏）且用户当前没有在滚动 */
+const shouldAutoScroll = () => isAtBottom.value && !userScrolling
 const messageContext = ref<MessageDto[]>([])
 /**
  * 仅展示后端标记为可展示的消息；displayInChat === false 的条目仍保留在上下文中，但不渲染气泡。
@@ -517,7 +518,7 @@ const sendMessage = (msg?: string) => {
         messageContext.value.push(message)
         inputMessage.value = ''
         beginOptimisticTurn()
-        stickToBottom.value = true
+        isAtBottom.value = true
         scrollToBottomAfterMessageFlush()
         const chatRequestDto: ChatRequestDto = {
           contextId: contextId.value,
@@ -540,8 +541,9 @@ const sendMessage = (msg?: string) => {
           try {
             const payload: AgentUiEventEnvelope = JSON.parse(event.data)
             handleAgentEvent(payload)
-            checkScroll()
-            if (stickToBottom.value) {
+            // 流式内容增长不改变 scrollTop，故 isAtBottom 维持上次「真实滚动」时的判定：
+            // 跟随态下持续贴底；用户已上滑离开则不打扰。
+            if (shouldAutoScroll()) {
               scrollToBottom()
             }
           } catch (error) {
@@ -586,15 +588,13 @@ const onWsClose = () => {
   })
 }
 
-/** 根据视口高度计算“仍在底部”的允许像素余量，避免单条气泡过高导致误判（仅用于「回到底部」按钮显隐） */
-const getScrollBottomEpsilon = (clientHeight: number) =>
-  Math.max(160, Math.floor(clientHeight * 0.18))
+/**
+ * 距真实底部小于该像素即视为「贴底」。该阈值同时决定：
+ * 1)「回到底部」按钮的显隐（进入此范围即隐藏）；
+ * 2) 自动跟随的触发区域（按钮隐藏 = 处于自动跟随区域）。
+ */
+const BOTTOM_FOLLOW_THRESHOLD = 120
 
-/** 恢复自动跟随所需的「贴底」严格阈值：只有真正滚回底部才重新开启跟随，避免与用户上滑相互打架 */
-const REENGAGE_BOTTOM_THRESHOLD = 32
-
-/** 上一次滚动位置，用于区分「用户主动上滑」与「内容异步撑高」 */
-let lastScrollTop = 0
 /** 合并多源滚动触发的 rAF 句柄，避免多个平滑动画互相打断造成抽搐 */
 let scrollRafId: number | null = null
 
@@ -615,14 +615,11 @@ const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
       return
     }
     wrap.scrollTo({ top: wrap.scrollHeight, behavior })
-    // 程序滚动后同步基准，避免 checkScroll 把这次贴底误判为用户上滑
-    lastScrollTop = wrap.scrollTop
   })
 }
 
-/** 点击「回到底部」按钮：恢复跟随态并平滑回到底部 */
+/** 点击「回到底部」按钮：回到底部并恢复自动跟随 */
 const handleScrollToBottomClick = () => {
-  stickToBottom.value = true
   isAtBottom.value = true
   scrollToBottom('smooth')
 }
@@ -670,7 +667,7 @@ const activateMarkdownBlocks = () => {
     }
     renderMarkdownBlocks(root, { deferDiagrams: isBusyByState.value })
       .then(() => {
-        if (stickToBottom.value) {
+        if (shouldAutoScroll()) {
           scrollToBottom()
         }
       })
@@ -685,46 +682,31 @@ const checkScroll = () => {
     return
   }
   const { scrollTop, scrollHeight, clientHeight } = scrollbarRef.value.wrapRef
-  const epsilon = getScrollBottomEpsilon(clientHeight)
   const distFromBottom = scrollHeight - clientHeight - scrollTop
-  // scrollTop 明显减小 = 用户主动上滑（内容异步撑高只增大 distFromBottom、不减小 scrollTop）
-  const scrolledUp = scrollTop < lastScrollTop - 2
-  if (distFromBottom <= REENGAGE_BOTTOM_THRESHOLD) {
-    // 用户真正滚回底部：恢复自动跟随
-    stickToBottom.value = true
-  } else if (scrolledUp) {
-    // 用户上滑离开底部：立刻停止自动下滚，把滚动主动权交还用户
-    stickToBottom.value = false
-  }
-  // 跟随态下始终视为在底部，避免内容撑高的瞬间闪现「回到底部」
-  isAtBottom.value = stickToBottom.value || distFromBottom <= epsilon
-  lastScrollTop = scrollTop
+  // 按钮显隐与自动跟随触发区域共用同一阈值：进入贴底区即隐藏按钮，并允许自动跟随
+  isAtBottom.value = distFromBottom <= BOTTOM_FOLLOW_THRESHOLD
 }
 
-/** 用户主动上滑：立即停止自动跟随，避免流式内容把视口又拽回底部 */
-const handleUserScrollUpIntent = () => {
-  if (stickToBottom.value) {
-    stickToBottom.value = false
+/** 标记用户正在滚动，并在停手一段时间后复位（停手前一律不自动下滚） */
+const markUserScrolling = () => {
+  userScrolling = true
+  if (userScrollIdleTimer !== null) {
+    clearTimeout(userScrollIdleTimer)
   }
+  userScrollIdleTimer = setTimeout(() => {
+    userScrolling = false
+    userScrollIdleTimer = null
+  }, USER_SCROLL_IDLE_MS)
 }
 
-const handleScrollWheel = (event: WheelEvent) => {
-  if (event.deltaY < 0) {
-    handleUserScrollUpIntent()
-  }
+const handleScrollWheel = () => {
+  markUserScrolling()
 }
-
-let lastTouchY = 0
-const handleScrollTouchStart = (event: TouchEvent) => {
-  lastTouchY = event.touches[0]?.clientY ?? 0
+const handleScrollTouchStart = () => {
+  markUserScrolling()
 }
-const handleScrollTouchMove = (event: TouchEvent) => {
-  const y = event.touches[0]?.clientY ?? lastTouchY
-  // 手指下移 => 内容上滑（查看更早的消息）
-  if (y - lastTouchY > 2) {
-    handleUserScrollUpIntent()
-  }
-  lastTouchY = y
+const handleScrollTouchMove = () => {
+  markUserScrolling()
 }
 
 let scrollIntentEl: HTMLElement | null = null
@@ -1018,8 +1000,6 @@ const newChat = () => {
   inputMessage.value = ''
   messageContext.value = []
   isAtBottom.value = true
-  stickToBottom.value = false
-  lastScrollTop = 0
   getNewContextId().then((contextIdDto) => {
     contextId.value = contextIdDto.data.contextId
   })
@@ -1056,7 +1036,7 @@ watch(messageListRef, (el) => {
   messageListResizeObserver = undefined
   if (el && typeof ResizeObserver !== 'undefined') {
     messageListResizeObserver = new ResizeObserver(() => {
-      if (stickToBottom.value) {
+      if (shouldAutoScroll()) {
         scrollToBottom('auto')
       }
     })
@@ -1090,7 +1070,7 @@ const historyChat = (historyId) => {
   contextId.value = undefined
   resetTurnStates()
   inputMessage.value = ''
-  stickToBottom.value = false
+  isAtBottom.value = true
   if (historyId !== previousContextId) {
     chatManageRef.value.getHistoryListData()
   }
@@ -1164,6 +1144,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   unbindUserScrollIntent()
+  if (userScrollIdleTimer !== null) {
+    clearTimeout(userScrollIdleTimer)
+    userScrollIdleTimer = null
+  }
   bottomDockResizeObserver?.disconnect()
   bottomDockResizeObserver = undefined
   messageListResizeObserver?.disconnect()

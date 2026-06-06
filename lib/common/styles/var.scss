@@ -277,6 +277,9 @@
   --n-table-row-bg: var(--n-color-neutral-w);
   --n-table-row-stripe-bg: var(--n-color-neutral-0);
   --n-table-row-hover-bg: var(--n-color-neutral-1);
+  /* 浮层菜单项 hover：实色底，避免毛玻璃叠加后对比不足 */
+  --n-overlay-item-hover-bg: var(--n-color-neutral-1);
+  --n-overlay-item-selected-hover-bg: color-mix(in srgb, var(--el-color-primary) 16%, var(--n-color-neutral-w));
   --n-table-row-current-bg: var(--n-color-neutral-1);
   --n-table-border: var(--n-color-border-soft);
   --el-table-header-bg-color: var(--n-table-header-bg);

@@ -26,6 +26,8 @@ export default {
 	'ai.search.history.context': '搜索历史记录',
 	'ai.add.new.chat': '新建对话',
 	'ai.history.chat': '历史对话',
+	'ai.history.loading.more': '加载更多…',
+	'ai.history.search.loading': '正在搜索全部历史…',
 	'ai.delete.all.chat': '全部清除',
 	'ai.delete.warning': '删除后对话记录无法恢复和找回，请谨慎操作',
 	'ai.delete.chat.confirm': '确认删除这1条对话记录吗？',
