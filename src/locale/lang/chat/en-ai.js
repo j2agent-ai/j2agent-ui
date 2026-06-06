@@ -26,6 +26,8 @@ export default {
 	'ai.search.history.context': 'Search history records',
 	'ai.add.new.chat': 'New Dialogue',
 	'ai.history.chat': 'Historical Dialogue',
+	'ai.history.loading.more': 'Loading more…',
+	'ai.history.search.loading': 'Searching all history…',
 	'ai.delete.all.chat': 'All cleared',
 	'ai.delete.warning': 'After deletion, the conversation records cannot be restored or retrieved. Please operate with caution.',
 	'ai.delete.chat.confirm': 'Are you sure to delete this 1 conversation record?',

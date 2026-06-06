@@ -18,6 +18,7 @@
 			<el-select
 				v-model="formState.providerType"
 				class="form-select"
+				fit-input-width
 				autocomplete="off"
 				@change="onProviderTypeChange"
 			>
