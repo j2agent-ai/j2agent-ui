@@ -36,6 +36,9 @@
 				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/mcp')">
 					{{ '🧩 ' + t('mcp.title') }}
 				</li>
+				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/files')">
+					{{ '📁 ' + t('files.title') }}
+				</li>
 				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/settings')">
 					{{ '⚙️ ' + t('settings.title') }}
 				</li>
