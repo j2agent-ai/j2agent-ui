@@ -100,6 +100,10 @@ import { getHistoryContextList, deleteHistoryContext } from '@/api/ai.api'
 import type { HistoryContextItem } from '@/types/ai.types'
 import { debounce, t } from '@ai-system/lib'
 import { isChatNarrowLayout } from '../layout'
+import {
+  isImageOnlyHistoryTitle,
+  resolveHistoryItemTitle
+} from '../chatHistoryTitle'
 
 const props = defineProps({
   newChat: {
@@ -137,9 +141,15 @@ const props = defineProps({
 const historyRowKey = (item: HistoryContextItem) =>
   `${item.contextId}\u0001${item.agentId ?? props.agentId}`
 
-/** 兼容后端 title / 历史 tittle 字段 */
+const LEGACY_PLACEHOLDER_TITLE = 'New Chat'
+
+const isUntitledHistoryTitle = (title?: string | null) => {
+  const raw = (title ?? '').trim()
+  return !raw || raw === LEGACY_PLACEHOLDER_TITLE
+}
+
 const historyItemTitle = (item: HistoryContextItem) =>
-  item.title ?? item.tittle ?? ''
+  resolveHistoryItemTitle(item.title ?? item.tittle, t)
 const searchInputRef = ref()
 const showSearchInput = ref(false)
 const searchKey = ref('')
@@ -240,11 +250,34 @@ const mergeHistoryPage = (items: HistoryContextItem[]) => {
   const pageItems =
     items.length > HISTORY_PAGE_SIZE ? items.slice(0, HISTORY_PAGE_SIZE) : items
   hasMore.value = items.length > HISTORY_PAGE_SIZE
-  const existing = new Set(historyList.value.map(historyRowKey))
-  const unique = pageItems.filter(item => !existing.has(historyRowKey(item)))
-  if (unique.length) {
-    historyList.value = [...historyList.value, ...unique]
+  const byKey = new Map(historyList.value.map((item) => [historyRowKey(item), item]))
+  for (const item of pageItems) {
+    const key = historyRowKey(item)
+    const existing = byKey.get(key)
+    if (existing) {
+      if (item.title !== undefined) {
+        const incoming = (item.title ?? '').trim()
+        const existingTitle = (existing.title ?? existing.tittle ?? '').trim()
+        if (incoming || isUntitledHistoryTitle(existingTitle) || isImageOnlyHistoryTitle(existingTitle)) {
+          existing.title = item.title
+        }
+      }
+      if (item.tittle !== undefined) {
+        existing.tittle = item.tittle
+      }
+      if (item.lastUpdateTime !== undefined) {
+        existing.lastUpdateTime = item.lastUpdateTime
+      }
+      if (item.agentId !== undefined) {
+        existing.agentId = item.agentId
+      }
+    } else {
+      byKey.set(key, { ...item })
+    }
   }
+  historyList.value = Array.from(byKey.values()).sort(
+    (a, b) => (b.lastUpdateTime ?? 0) - (a.lastUpdateTime ?? 0)
+  )
 }
 
 const getHistoryListData = async () => {
@@ -369,8 +402,40 @@ const filterList = (key: string, data?: HistoryContextItem[]) => {
   )
 }
 
+const upsertSessionHistoryItem = (params: {
+  contextId: string
+  agentId?: string
+  title?: string
+  lastUpdateTime?: number
+}) => {
+  const agentId = params.agentId ?? props.agentId
+  const now = params.lastUpdateTime ?? Date.now()
+  const key = `${params.contextId}\u0001${agentId}`
+  const existingIdx = historyList.value.findIndex(
+    (item) => historyRowKey(item) === key
+  )
+  if (existingIdx >= 0) {
+    const existing = historyList.value[existingIdx]
+    existing.lastUpdateTime = now
+    if (params.title) {
+      existing.title = params.title
+    }
+    historyList.value.splice(existingIdx, 1)
+    historyList.value.unshift(existing)
+  } else {
+    historyList.value.unshift({
+      contextId: params.contextId,
+      agentId,
+      title: params.title ?? '',
+      lastUpdateTime: now
+    })
+  }
+  filterList(searchKey.value)
+}
+
 defineExpose({
-  getHistoryListData
+  getHistoryListData,
+  upsertSessionHistoryItem
 })
 </script>
 <style lang="scss" scoped>
