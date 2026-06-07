@@ -1478,6 +1478,26 @@ watch(inputFocused, () => {
   })
 })
 
+/** 宽屏 → 窄屏时收起输入框，避免仍停留在桌面展开态 */
+watch(
+  () => props.isMobile,
+  (mobile, wasMobile) => {
+    if (mobile && wasMobile === false) {
+      inputFocused.value = false
+      getChatTextareaEl()?.blur()
+      syncMobileInputHeight()
+      return
+    }
+    if (!mobile && wasMobile === true) {
+      nextTick(() => {
+        clearChatTextareaInlineSize()
+        chatInputRef.value?.resizeTextarea?.()
+        scheduleChatBottomInsetUpdate()
+      })
+    }
+  }
+)
+
 onMounted(() => {
   newChat()
   nextTick(() => {
