@@ -16,13 +16,10 @@ export interface ResetPasswordRequest {
 export const sendResetPasswordCode = (payload: ResetPasswordSendCodeRequest) => {
 	return http.post<void>(
 		`/v1${globalUrlPrefix}auth/${programTag}/reset-password/send-code`,
-		payload,
-		{ suppressErrorToast: true }
+		payload
 	)
 }
 
 export const resetPasswordByEmail = (payload: ResetPasswordRequest) => {
-	return http.post<void>(`/v1${globalUrlPrefix}auth/${programTag}/reset-password`, payload, {
-		suppressErrorToast: true
-	})
+	return http.post<void>(`/v1${globalUrlPrefix}auth/${programTag}/reset-password`, payload)
 }
