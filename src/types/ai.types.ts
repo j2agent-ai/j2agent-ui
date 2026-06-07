@@ -19,6 +19,17 @@ export type MessageDto = {
 	// 用户反馈: 0: 无, 1: 赞, 2: 踩
 	feedback?: 0 | 1 | 2
 	srcFile?: FileDto[]
+	attachments?: ChatAttachmentDto[]
+}
+
+export type ChatAttachmentDto = {
+	objectKey?: string
+	name: string
+	contentType: string
+	size?: number
+	url?: string
+	/** Base64 图片字节，仅 WebSocket 发送时使用 */
+	data?: string
 }
 
 export type FileDto = {

@@ -165,7 +165,18 @@
             </template>
             <template v-else-if="message.role === 'user'">
               <div class="message-content">
+                <div v-if="message.attachments?.length" class="message-images">
+                  <img
+                    v-for="(image, imageIndex) in message.attachments"
+                    :key="image.objectKey || image.url || imageIndex"
+                    :src="image.url"
+                    :alt="image.name"
+                    class="message-image"
+                    @click.stop="openAttachmentPreview(message.attachments!, imageIndex)"
+                  />
+                </div>
                 <div
+                  v-if="message.content"
                   class="message-md"
                   v-html="renderMarkdown(message.content)"
                 ></div>
@@ -226,8 +237,48 @@
         </div>
         <div
           class="input-area"
-          :class="{ 'is-input-editing': isMobile && inputFocused }"
+          :class="{
+            'is-input-editing': isMobile && inputFocused,
+            'is-drag-over': isDragOverImages
+          }"
+          @paste="handleImagePaste"
+          @dragenter="handleInputDragEnter"
+          @dragover="handleInputDragOver"
+          @dragleave="handleInputDragLeave"
+          @drop="handleInputDrop"
         >
+          <div v-if="selectedAttachments.length" class="pending-images">
+            <div
+              v-for="(image, index) in selectedAttachments"
+              :key="image.id"
+              class="pending-image"
+              :class="{ 'is-processing': image.processing }"
+            >
+              <img
+                v-if="image.previewUrl"
+                :src="image.previewUrl"
+                :alt="image.sourceName"
+              />
+              <div v-else class="pending-image-placeholder">
+                <ElIcon class="is-loading"><Loading /></ElIcon>
+              </div>
+              <button
+                type="button"
+                :disabled="image.processing"
+                @click="removeAttachment(index)"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
+          <input
+            ref="imageInputRef"
+            class="image-file-input"
+            type="file"
+            accept="image/*"
+            multiple
+            @change="handleImageSelect"
+          />
           <ElInput
             ref="chatInputRef"
             v-model="inputMessage"
@@ -246,10 +297,22 @@
             @keyup="handleKeyup"
           />
           <ElButton
+            class="image-button"
+            text
+            :icon="Picture"
+            :disabled="isBusyByState || sendingMessage || isProcessingImages || selectedAttachments.length >= 4"
+            @click="imageInputRef?.click()"
+          />
+          <ElButton
             :type="isBusyByState ? 'danger' : 'primary'"
             class="chat-button"
             circle
-            :disabled="!isBusyByState && !inputMessage?.length"
+            :disabled="
+              !isBusyByState &&
+              ((!inputMessage.trim() && !readyAttachments.length) ||
+                sendingMessage ||
+                isProcessingImages)
+            "
             @click="isBusyByState ? interruptChat() : sendMessage()"
           >
             <ElIcon v-if="isBusyByState">
@@ -273,7 +336,7 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowDown, ChatLineSquare, DocumentCopy, Position, Refresh } from '@element-plus/icons-vue'
+import { ArrowDown, ChatLineSquare, DocumentCopy, Loading, Picture, Position, Refresh } from '@element-plus/icons-vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   ElAvatar,
@@ -289,7 +352,13 @@ import {
 import ChatManage from './chatManage.vue'
 import AgentTurnTimeline from './AgentTurnTimeline.vue'
 import AgentThinkingBlock from './AgentThinkingBlock.vue'
-import { AgentUiEventEnvelope, ChatRequestDto, convertSrcFilesToMd, MessageDto } from '@/types/ai.types'
+import {
+  AgentUiEventEnvelope,
+  ChatAttachmentDto,
+  ChatRequestDto,
+  convertSrcFilesToMd,
+  MessageDto
+} from '@/types/ai.types'
 import { t } from '@ai-system/lib'
 import {
   addMessageFeedback,
@@ -299,6 +368,8 @@ import {
   getQaTemplate
 } from '@/api/ai.api'
 import { resolveTurnErrorDisplayText } from './agentTurnError'
+import { IMAGE_ONLY_HISTORY_TITLE_KEY } from '../chatHistoryTitle'
+import { processChatImageFile } from '../chatImageProcess'
 import { useAgentEventDispatcher } from './useAgentEventDispatcher'
 import { MARKDOWN_RENDERER_REVISION, renderMarkdown, renderMarkdownBlocks } from '@/utils/markdownRenderer'
 
@@ -332,6 +403,190 @@ const visibleMessageContext = computed(() =>
   messageContext.value.filter((m) => m.displayInChat !== false)
 )
 const inputMessage = ref<string>('')
+const imageInputRef = ref<HTMLInputElement>()
+const selectedAttachments = ref<PendingChatImage[]>([])
+const sendingMessage = ref(false)
+const isDragOverImages = ref(false)
+let inputAreaDragDepth = 0
+
+const SESSION_TITLE_MAX_LENGTH = 64
+
+type PendingChatImage = {
+  id: string
+  file: File | null
+  previewUrl: string | null
+  contentType: string
+  processing: boolean
+  sourceName: string
+}
+
+const readyAttachments = computed(() =>
+  selectedAttachments.value.filter((item) => !item.processing && item.file)
+)
+const isProcessingImages = computed(() =>
+  selectedAttachments.value.some((item) => item.processing)
+)
+
+const fileToBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result !== 'string') {
+        reject(new Error('failed to read image'))
+        return
+      }
+      const comma = result.indexOf(',')
+      resolve(comma >= 0 ? result.slice(comma + 1) : result)
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('failed to read image'))
+    reader.readAsDataURL(file)
+  })
+
+const revokeBlobUrl = (url?: string) => {
+  if (url?.startsWith('blob:')) {
+    URL.revokeObjectURL(url)
+  }
+}
+
+const revokeBlobUrlsInMessages = (messages: MessageDto[]) => {
+  for (const message of messages) {
+    for (const attachment of message.attachments ?? []) {
+      revokeBlobUrl(attachment.url)
+    }
+  }
+}
+
+const revokePendingAttachmentUrls = (pending: PendingChatImage[]) => {
+  for (const item of pending) {
+    revokeBlobUrl(item.previewUrl ?? undefined)
+  }
+}
+
+const buildOutboundAttachments = async (
+  pending: PendingChatImage[]
+): Promise<ChatAttachmentDto[]> =>
+  Promise.all(
+    pending
+      .filter((item): item is PendingChatImage & { file: File } => !!item.file)
+      .map(async (item) => ({
+        name: item.file.name,
+        contentType: item.contentType,
+        size: item.file.size,
+        data: await fileToBase64(item.file)
+      }))
+  )
+
+const buildDisplayAttachments = (
+  pending: PendingChatImage[]
+): ChatAttachmentDto[] =>
+  pending
+    .filter((item): item is PendingChatImage & { file: File; previewUrl: string } =>
+      !!item.file && !!item.previewUrl
+    )
+    .map((item) => ({
+      name: item.file.name,
+      contentType: item.contentType,
+      size: item.file.size,
+      url: item.previewUrl
+    }))
+
+const createPendingAttachmentId = () =>
+  `${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+const addProcessingPlaceholder = (sourceName: string): string => {
+  const id = createPendingAttachmentId()
+  selectedAttachments.value.push({
+    id,
+    file: null,
+    previewUrl: null,
+    contentType: 'image/jpeg',
+    processing: true,
+    sourceName
+  })
+  return id
+}
+
+const finishPendingAttachment = (id: string, file: File) => {
+  const item = selectedAttachments.value.find((entry) => entry.id === id)
+  if (!item) {
+    return
+  }
+  item.file = file
+  item.contentType = file.type
+  item.previewUrl = URL.createObjectURL(file)
+  item.processing = false
+}
+
+const removePendingAttachmentById = (id: string) => {
+  const index = selectedAttachments.value.findIndex((entry) => entry.id === id)
+  if (index >= 0) {
+    removeAttachment(index)
+  }
+}
+
+const hasImageInTransfer = (transfer: DataTransfer | null) => {
+  if (!transfer) return false
+  return Array.from(transfer.items).some(
+    (item) => item.kind === 'file' && item.type.startsWith('image/')
+  )
+}
+
+const normalizePastedFile = (file: File): File => {
+  if (file.name) return file
+  const ext =
+    file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png'
+  return new File([file], `pasted-${Date.now()}.${ext}`, { type: file.type })
+}
+
+const ensureContextId = async (): Promise<string | undefined> => {
+  if (contextId.value) {
+    return contextId.value
+  }
+  try {
+    const response = await getNewContextId()
+    contextId.value = response.data.contextId
+    return contextId.value
+  } catch {
+    ElMessage.error(t('ai.image.upload.failed'))
+    return undefined
+  }
+}
+
+const uploadImageFiles = async (files: File[]) => {
+  if (!files.length) return
+  if (isBusyByState.value || sendingMessage.value || isProcessingImages.value) {
+    ElMessage.info(t('ai.assistant.waiting'))
+    return
+  }
+  const remaining = 4 - selectedAttachments.value.length
+  if (remaining <= 0) {
+    ElMessage.warning(t('ai.image.max'))
+    return
+  }
+  if (files.length > remaining) {
+    ElMessage.warning(t('ai.image.max'))
+  }
+  let rejected = 0
+  for (const rawFile of files.slice(0, remaining)) {
+    const placeholderId = addProcessingPlaceholder(rawFile.name || 'image')
+    try {
+      const processed = await processChatImageFile(rawFile)
+      if (!processed) {
+        removePendingAttachmentById(placeholderId)
+        rejected++
+        continue
+      }
+      finishPendingAttachment(placeholderId, processed)
+    } catch {
+      removePendingAttachmentById(placeholderId)
+      rejected++
+    }
+  }
+  if (rejected > 0) {
+    ElMessage.warning(t('ai.image.process.failed'))
+  }
+}
 
 /** 聊天图片/图表全屏预览是否可见 */
 const imagePreviewVisible = ref(false)
@@ -500,76 +755,165 @@ const detachChatWebSocket = (ws: WebSocket | undefined) => {
   }
 }
 
-const sendMessage = (msg?: string) => {
-  if (!isBusyByState.value) {
-    getNewContextId().then(() => {
-      if (msg) {
-        inputMessage.value = msg
-      }
-      if (inputMessage.value.trim()) {
-        detachChatWebSocket(chatWebsocketClient)
-        chatWebsocketClient = undefined
-        clearSuggestedFollowUps()
-        const message: MessageDto = {
-          index: messageContext.value.length,
-          content: inputMessage.value,
-          role: 'user'
+const sendMessage = async (msg?: string) => {
+  if (isBusyByState.value || sendingMessage.value || isProcessingImages.value) {
+    ElMessage.info(isProcessingImages.value ? t('ai.image.processing') : t('ai.assistant.waiting'))
+    return
+  }
+  if (msg) {
+    inputMessage.value = msg
+  }
+  if (!inputMessage.value.trim() && !readyAttachments.value.length) {
+    return
+  }
+  const activeContextId = await ensureContextId()
+  if (!activeContextId) {
+    return
+  }
+  sendingMessage.value = true
+  try {
+    const pendingImages = [...readyAttachments.value]
+    const displayAttachments = buildDisplayAttachments(pendingImages)
+    const outboundAttachments = pendingImages.length
+      ? await buildOutboundAttachments(pendingImages)
+      : []
+    detachChatWebSocket(chatWebsocketClient)
+    chatWebsocketClient = undefined
+    clearSuggestedFollowUps()
+    const message: MessageDto = {
+      index: messageContext.value.length,
+      content: inputMessage.value,
+      role: 'user',
+      attachments: displayAttachments
+    }
+    messageContext.value.push(message)
+    inputMessage.value = ''
+    selectedAttachments.value = []
+    const isImageOnlyMessage =
+      !message.content?.trim() && message.attachments.length > 0
+    const sessionTitle = isImageOnlyMessage
+      ? IMAGE_ONLY_HISTORY_TITLE_KEY
+      : message.content.trim().slice(0, SESSION_TITLE_MAX_LENGTH)
+    chatManageRef.value?.upsertSessionHistoryItem({
+      contextId: activeContextId,
+      agentId: props.agentId,
+      title: sessionTitle
+    })
+    beginOptimisticTurn()
+    isAtBottom.value = true
+    scrollToBottomAfterMessageFlush()
+    const chatRequestDto: ChatRequestDto = {
+      contextId: activeContextId,
+      messages: [
+        {
+          ...message,
+          attachments: outboundAttachments
         }
-        messageContext.value.push(message)
-        inputMessage.value = ''
-        beginOptimisticTurn()
-        isAtBottom.value = true
-        scrollToBottomAfterMessageFlush()
-        const chatRequestDto: ChatRequestDto = {
-          contextId: contextId.value,
-          messages: [message],
-          retrievalKb: true,
-          systemPrompt: 'GENERAL_ASSISTANT'
-        }
-        chatWebsocketClient = chatWebsocketClientApi(
-          contextId.value,
-          props.agentId
-        )
-        // 连接打开时的处理
-        chatWebsocketClient.onopen = () => {
-          chatWebsocketClient.send(JSON.stringify(chatRequestDto))
-          isNewLlmResponse.value = false
+      ],
+      retrievalKb: true,
+      systemPrompt: 'GENERAL_ASSISTANT'
+    }
+    chatWebsocketClient = chatWebsocketClientApi(activeContextId, props.agentId)
+    chatWebsocketClient.onopen = () => {
+      chatWebsocketClient.send(JSON.stringify(chatRequestDto))
+      isNewLlmResponse.value = false
+      scrollToBottom()
+    }
+    chatWebsocketClient.onmessage = (event) => {
+      try {
+        const payload: AgentUiEventEnvelope = JSON.parse(event.data)
+        handleAgentEvent(payload)
+        if (shouldAutoScroll()) {
           scrollToBottom()
         }
-        // 接收新消息通知
-        chatWebsocketClient.onmessage = (event) => {
-          try {
-            const payload: AgentUiEventEnvelope = JSON.parse(event.data)
-            handleAgentEvent(payload)
-            // 流式内容增长不改变 scrollTop，故 isAtBottom 维持上次「真实滚动」时的判定：
-            // 跟随态下持续贴底；用户已上滑离开则不打扰。
-            if (shouldAutoScroll()) {
-              scrollToBottom()
-            }
-          } catch (error) {
-            console.error('解析Agent事件失败:', error)
-          }
-        }
-        // 错误处理
-        chatWebsocketClient.onerror = (error: any) => {
-          if (error.responseCode === 401) {
-            window.location.assign('/#/login')
-          } else if (error.responseCode !== 0) {
-            console.error(error)
-            ElMessage.error(t('ai.assistant.service.unavailable'))
-            isNewLlmResponse.value = true
-            recordTerminalState('FAILED')
-          }
-        }
-        // 关闭处理
-        chatWebsocketClient.onclose = () => {
-          onWsClose()
-        }
+      } catch (error) {
+        console.error('解析Agent事件失败:', error)
       }
-    })
-  } else {
-    ElMessage.info(t('ai.assistant.waiting'))
+    }
+    chatWebsocketClient.onerror = (error: any) => {
+      if (error.responseCode === 401) {
+        window.location.assign('/#/login')
+      } else if (error.responseCode !== 0) {
+        console.error(error)
+        ElMessage.error(t('ai.assistant.service.unavailable'))
+        isNewLlmResponse.value = true
+        recordTerminalState('FAILED')
+      }
+    }
+    chatWebsocketClient.onclose = () => {
+      onWsClose()
+    }
+  } catch {
+    ElMessage.error(t('ai.image.upload.failed'))
+  } finally {
+    sendingMessage.value = false
   }
+}
+
+const handleImageSelect = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  input.value = ''
+  await uploadImageFiles(files)
+}
+
+const handleImagePaste = (event: ClipboardEvent) => {
+  const items = event.clipboardData?.items
+  if (!items?.length) return
+  const files: File[] = []
+  for (const item of items) {
+    if (item.kind !== 'file') continue
+    const file = item.getAsFile()
+    if (!file) continue
+    if (file.type && !file.type.startsWith('image/')) continue
+    files.push(normalizePastedFile(file))
+  }
+  if (!files.length) return
+  event.preventDefault()
+  event.stopPropagation()
+  void uploadImageFiles(files)
+}
+
+const handleInputDragEnter = (event: DragEvent) => {
+  if (!hasImageInTransfer(event.dataTransfer)) return
+  inputAreaDragDepth++
+  isDragOverImages.value = true
+}
+
+const handleInputDragOver = (event: DragEvent) => {
+  if (!hasImageInTransfer(event.dataTransfer)) return
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+const handleInputDragLeave = () => {
+  inputAreaDragDepth = Math.max(0, inputAreaDragDepth - 1)
+  if (inputAreaDragDepth === 0) {
+    isDragOverImages.value = false
+  }
+}
+
+const handleInputDrop = (event: DragEvent) => {
+  inputAreaDragDepth = 0
+  isDragOverImages.value = false
+  event.preventDefault()
+  const files = Array.from(event.dataTransfer?.files || [])
+  void uploadImageFiles(files)
+}
+
+const removeAttachment = (index: number) => {
+  const [removed] = selectedAttachments.value.splice(index, 1)
+  if (removed?.previewUrl) {
+    revokeBlobUrl(removed.previewUrl)
+  }
+}
+
+const openAttachmentPreview = (attachments: ChatAttachmentDto[], index: number) => {
+  imagePreviewUrlList.value = attachments.map((item) => item.url || '')
+  imagePreviewIndex.value = index
+  imagePreviewVisible.value = true
 }
 const onWsClose = () => {
   if (!isTerminalState.value) {
@@ -734,7 +1078,7 @@ const unbindUserScrollIntent = () => {
   scrollIntentEl = null
 }
 
-let send: boolean = true
+let send = false
 
 const lastAssistantTurnStepsLength = computed(() => {
   const list = visibleMessageContext.value
@@ -757,8 +1101,8 @@ const handleInput = () => {
   send = false
 }
 
-const handleKeyup = () => {
-  if (send) {
+const handleKeyup = (event: KeyboardEvent) => {
+  if (send && event.key === 'Enter') {
     send = false
     sendMessage()
   }
@@ -998,6 +1342,9 @@ const newChat = () => {
   contextId.value = undefined
   resetTurnStates()
   inputMessage.value = ''
+  revokePendingAttachmentUrls(selectedAttachments.value)
+  selectedAttachments.value = []
+  revokeBlobUrlsInMessages(messageContext.value)
   messageContext.value = []
   isAtBottom.value = true
   getNewContextId().then((contextIdDto) => {
@@ -1070,6 +1417,9 @@ const historyChat = (historyId) => {
   contextId.value = undefined
   resetTurnStates()
   inputMessage.value = ''
+  revokePendingAttachmentUrls(selectedAttachments.value)
+  selectedAttachments.value = []
+  revokeBlobUrlsInMessages(messageContext.value)
   isAtBottom.value = true
   if (historyId !== previousContextId) {
     chatManageRef.value.getHistoryListData()
@@ -1398,15 +1748,14 @@ defineExpose({
       padding: 4px 10px;
     }
 
-    /* 窄屏：平时矮框，聚焦加高；发送钮仍在输入框内右下角 */
-    .input-area .el-textarea.chat-input {
-      --chat-input-pad-y: 12px;
-      --chat-input-pad-x: 16px;
-      --chat-input-pad-end: 48px;
+    /* 窄屏：平时矮框，聚焦加高；与桌面共用 inset 变量 */
+    .input-area {
+      --chat-input-inset-x: 14px;
+      --chat-input-inset-y: 12px;
+    }
 
+    .input-area .el-textarea.chat-input {
       :deep(.el-textarea__inner) {
-        box-sizing: border-box;
-        padding: var(--chat-input-pad-y) var(--chat-input-pad-end) var(--chat-input-pad-y) var(--chat-input-pad-x);
         line-height: 1.5;
         font-size: var(--n-font-size-2);
         transition: min-height 0.2s ease,
@@ -1422,19 +1771,21 @@ defineExpose({
 
     .input-area:not(.is-input-editing) .el-textarea.chat-input {
       :deep(.el-textarea__inner) {
-        min-height: 58px;
-        height: 58px !important;
-        max-height: 58px;
+        min-height: 82px;
+        height: 82px !important;
+        max-height: 82px;
         overflow-y: hidden;
-      }
-
-      :deep(.el-input__count) {
-        bottom: 12px;
       }
     }
 
+    .input-area:not(.is-input-editing) {
+      --chat-input-pad-bottom: calc(
+        var(--chat-input-inset-y) + var(--chat-input-action-size) + 2px
+      );
+    }
+
     .input-area.is-input-editing .el-textarea.chat-input {
-      --chat-input-pad-y: 14px;
+      --chat-input-inset-y: 14px;
 
       :deep(.el-textarea__inner) {
         min-height: 148px;
@@ -1442,19 +1793,6 @@ defineExpose({
         max-height: 148px;
         overflow-y: auto;
       }
-
-      :deep(.el-input__count) {
-        bottom: 14px;
-      }
-    }
-
-    .input-area .el-button.chat-button {
-      right: 12px;
-      bottom: 13px;
-    }
-
-    .input-area.is-input-editing .el-button.chat-button {
-      bottom: 14px;
     }
   }
 
@@ -1659,6 +1997,21 @@ defineExpose({
       display: flex;
       flex-direction: column;
       color: var(--n-color-text-primary);
+    }
+
+    .message-images {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 180px));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .message-image {
+      width: 100%;
+      max-height: 220px;
+      object-fit: cover;
+      border-radius: 10px;
+      cursor: zoom-in;
     }
 
     .message-md :deep(p),
@@ -1898,14 +2251,114 @@ defineExpose({
   padding: 0;
   border-radius: 15px;
   position: relative;
+  flex-wrap: wrap;
+  --chat-input-inset-x: 16px;
+  --chat-input-inset-y: 14px;
+  --chat-input-action-size: 32px;
+  --chat-input-action-gap: 8px;
+  --chat-input-pad-end: calc(
+    var(--chat-input-inset-x) + var(--chat-input-action-size) + var(--chat-input-action-gap)
+  );
+  --chat-input-pad-bottom: calc(
+    var(--chat-input-inset-y) + var(--chat-input-action-size) + 2px
+  );
+
+  &.is-drag-over {
+    outline: 2px dashed var(--el-color-primary);
+    outline-offset: 2px;
+  }
+
+  .image-file-input {
+    display: none;
+  }
+
+  .pending-images {
+    display: flex;
+    width: 100%;
+    gap: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border-radius: 15px;
+    @include n-glass-surface(1);
+  }
+
+  .pending-image {
+    position: relative;
+    width: 72px;
+    height: 72px;
+
+    &.is-processing {
+      opacity: 0.85;
+    }
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 10px;
+    }
+
+    .pending-image-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.06);
+      color: var(--el-color-primary);
+      font-size: 22px;
+    }
+
+    button {
+      position: absolute;
+      top: -7px;
+      right: -7px;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      color: #fff;
+      background: rgba(0, 0, 0, 0.68);
+      cursor: pointer;
+
+      &:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+    }
+  }
+
+  .el-button.image-button {
+    position: absolute;
+    left: var(--chat-input-inset-x);
+    bottom: var(--chat-input-inset-y);
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--chat-input-action-size);
+    height: var(--chat-input-action-size);
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-radius: 50%;
+    @include n-glass-surface(1);
+
+    :deep(.el-icon) {
+      font-size: 18px;
+    }
+  }
 
   .el-textarea {
     &.chat-input {
       overflow: visible;
+      width: 100%;
 
       :deep(.el-input__count) {
-        right: 60px;
-        bottom: 16px;
+        right: var(--chat-input-pad-end);
+        bottom: var(--chat-input-inset-y);
         z-index: 2;
         padding: 2px 8px;
         border-radius: 8px;
@@ -1916,7 +2369,8 @@ defineExpose({
       :deep(.el-textarea__inner) {
         @include n-glass-surface(2);
         box-sizing: border-box;
-        padding: 15px 48px 15px 20px;
+        padding: var(--chat-input-inset-y) var(--chat-input-pad-end) var(--chat-input-pad-bottom)
+          var(--chat-input-inset-x);
         line-height: 1.5;
         font-size: var(--n-font-size-2);
         border-radius: 15px;
@@ -1942,9 +2396,12 @@ defineExpose({
 
   .el-button.chat-button {
     position: absolute;
-    right: 20px;
-    bottom: 15px;
+    right: var(--chat-input-inset-x);
+    bottom: var(--chat-input-inset-y);
     z-index: 2;
+    width: var(--chat-input-action-size);
+    height: var(--chat-input-action-size);
+    padding: 0;
     border: none;
     @include n-glass-surface(1);
 
