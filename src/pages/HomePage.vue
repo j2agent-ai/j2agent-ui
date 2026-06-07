@@ -21,6 +21,11 @@
 				<h3>{{ t('mcp.title') }}</h3>
 				<p>{{ t('mcp.desc') }}</p>
 			</div>
+			<div class="feature-card" v-if="canAccessAdmin" @click="goTo('/files')">
+				<div class="card-icon">📁</div>
+				<h3>{{ t('files.title') }}</h3>
+				<p>{{ t('files.desc') }}</p>
+			</div>
 			<div class="feature-card" v-if="canAccessAdmin" @click="goTo('/settings')">
 				<div class="card-icon">⚙️</div>
 				<h3>{{ t('settings.title') }}</h3>

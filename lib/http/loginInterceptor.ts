@@ -1,5 +1,4 @@
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
 import { goTo } from '@/routes'
 
 const http = axios.create({
@@ -23,20 +22,7 @@ http.interceptors.response.use(
 			goTo('/login')
 		}
 
-		const suppressErrorToast = (error.config as { suppressErrorToast?: boolean })
-			?.suppressErrorToast
-		if (
-			!suppressErrorToast &&
-			(status === 400 || status === 429 || status === 500 || status === 502 || status === 503)
-		) {
-			const data = error.response?.data
-			const msg = data?.message || data?.error
-			if (msg) {
-				ElMessage.error(`${status}: ${msg}`)
-			}
-		}
-
-		// 抛出错误
+		// 业务错误由调用方统一展示，避免拦截器与页面 catch 重复弹出提示。
 		return Promise.reject(error)
 	}
 )

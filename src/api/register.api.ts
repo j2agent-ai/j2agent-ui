@@ -27,13 +27,10 @@ export const getRegisterEnabled = () => {
 export const sendRegisterCode = (payload: RegisterSendCodeRequest) => {
 	return http.post<void>(
 		`/v1${globalUrlPrefix}auth/${programTag}/register/send-code`,
-		payload,
-		{ suppressErrorToast: true }
+		payload
 	)
 }
 
 export const registerByEmail = (payload: RegisterRequest) => {
-	return http.post<void>(`/v1${globalUrlPrefix}auth/${programTag}/register`, payload, {
-		suppressErrorToast: true
-	})
+	return http.post<void>(`/v1${globalUrlPrefix}auth/${programTag}/register`, payload)
 }
