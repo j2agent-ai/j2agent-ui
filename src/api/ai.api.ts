@@ -2,6 +2,7 @@ import {
 	AgentInfoList,
 	AgentPluginStatus,
 	AgentReloadResult,
+	ChatAttachmentDto,
 	ChatContextDto,
 	ContextIdDto,
 	HistoryContextList,
@@ -106,4 +107,16 @@ export const getQaTemplate = (agentId: string, limit?: number) => {
 			limit
 		}
 	})
+}
+
+/**
+ * 获取聊天图片 OSS 预签名直链（预签名过期时刷新展示 URL）
+ */
+export const getChatAttachmentPreviewUrl = (objectKey: string) => {
+	return http.get<ChatAttachmentDto>(
+		`/v1${globalUrlPrefix}rest/${programTag}/chat/files/preview`,
+		{
+			params: { objectKey }
+		}
+	)
 }

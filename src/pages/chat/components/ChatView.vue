@@ -169,9 +169,10 @@
                   <img
                     v-for="(image, imageIndex) in message.attachments"
                     :key="image.objectKey || image.url || imageIndex"
-                    :src="image.url"
+                    :src="resolveAttachmentImageSrc(image)"
                     :alt="image.name"
                     class="message-image"
+                    @error="handleAttachmentImageError(image)"
                     @click.stop="openAttachmentPreview(message.attachments!, imageIndex)"
                   />
                 </div>
@@ -369,6 +370,12 @@ import {
 } from '@/api/ai.api'
 import { resolveTurnErrorDisplayText } from './agentTurnError'
 import { IMAGE_ONLY_HISTORY_TITLE_KEY } from '../chatHistoryTitle'
+import {
+  buildChatAttachmentContentUrl,
+  isChatAttachmentContentUrl,
+  resolveAttachmentImageSrc,
+  resolveAttachmentsDisplayUrls
+} from '../chatAttachmentUrl'
 import { processChatImageFile } from '../chatImageProcess'
 import { useAgentEventDispatcher } from './useAgentEventDispatcher'
 import { MARKDOWN_RENDERER_REVISION, renderMarkdown, renderMarkdownBlocks } from '@/utils/markdownRenderer'
@@ -910,8 +917,30 @@ const removeAttachment = (index: number) => {
   }
 }
 
+const normalizeMessageAttachmentUrls = (messages: MessageDto[]) => {
+  for (const message of messages) {
+    if (message.attachments?.length) {
+      message.attachments =
+        resolveAttachmentsDisplayUrls(message.attachments) ?? message.attachments
+    }
+  }
+}
+
+const handleAttachmentImageError = (attachment: ChatAttachmentDto) => {
+  if (attachment.url?.startsWith('blob:')) {
+    return
+  }
+  if (!attachment.objectKey) {
+    return
+  }
+  if (isChatAttachmentContentUrl(attachment.url)) {
+    return
+  }
+  attachment.url = buildChatAttachmentContentUrl(attachment.objectKey)
+}
+
 const openAttachmentPreview = (attachments: ChatAttachmentDto[], index: number) => {
-  imagePreviewUrlList.value = attachments.map((item) => item.url || '')
+  imagePreviewUrlList.value = attachments.map((item) => resolveAttachmentImageSrc(item))
   imagePreviewIndex.value = index
   imagePreviewVisible.value = true
 }
@@ -1427,6 +1456,7 @@ const historyChat = (historyId) => {
   contextId.value = historyId
   getHistoryContext(historyId, props.agentId).then((res) => {
     messageContext.value = res.data.messages
+    normalizeMessageAttachmentUrls(messageContext.value)
     scrollToBottom()
   })
 }

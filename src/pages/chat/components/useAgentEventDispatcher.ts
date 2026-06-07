@@ -4,6 +4,7 @@ import type {
 	AgentState,
 	AgentTurnFailurePayload,
 	AgentUiEventEnvelope,
+	ChatAttachmentDto,
 	ChatResponseDto,
 	MessageDto,
 	TurnStepItem
@@ -13,6 +14,7 @@ import {
 	isBusyAgentState,
 	isTerminalAgentState
 } from './agentStateI18n'
+import { resolveAttachmentsDisplayUrls } from '../chatAttachmentUrl'
 import { resolveRendererKey } from './agentRendererRegistry'
 
 type DispatcherOptions = {
@@ -53,6 +55,19 @@ const isSuggestedFollowUpsNotice = (event: AgentUiEventEnvelope) => {
 	const payload = (event.payload || {}) as Record<string, unknown>
 	return (
 		payload.notice === 'suggested-follow-ups' && Array.isArray(payload.items)
+	)
+}
+
+/** 用户图片已上传 OSS，回传稳定直链供气泡展示。 */
+const isUserAttachmentsReadyNotice = (event: AgentUiEventEnvelope) => {
+	if (event.eventType !== 'NOTICE') {
+		return false
+	}
+	const payload = (event.payload || {}) as Record<string, unknown>
+	return (
+		payload.notice === 'user-attachments-ready' &&
+		typeof payload.messageIndex === 'number' &&
+		Array.isArray(payload.attachments)
 	)
 }
 
@@ -485,6 +500,33 @@ export const useAgentEventDispatcher = (options: DispatcherOptions) => {
 			.map((s) => (s.length > maxLen ? `${s.slice(0, maxLen)}…` : s))
 	}
 
+	const applyUserAttachmentsReady = (event: AgentUiEventEnvelope) => {
+		const expectedCtx = sessionContextId?.value
+		if (
+			!expectedCtx ||
+			!event.contextId ||
+			event.contextId !== expectedCtx
+		) {
+			return
+		}
+		const payload = (event.payload || {}) as Record<string, unknown>
+		const messageIndex = payload.messageIndex as number
+		const attachments = payload.attachments as ChatAttachmentDto[]
+		const message = messageContext.value.find(
+			(item) => item.role === 'user' && item.index === messageIndex
+		)
+		if (!message) {
+			return
+		}
+		for (const attachment of message.attachments ?? []) {
+			if (attachment.url?.startsWith('blob:')) {
+				URL.revokeObjectURL(attachment.url)
+			}
+		}
+		message.attachments =
+			resolveAttachmentsDisplayUrls(attachments) ?? attachments
+	}
+
 	/** 移除 THINKING 阶段插入的无内容 assistant 占位，避免失败轮仍显示空气泡。 */
 	const removeEmptyAssistantTail = () => {
 		const tail = messageContext.value[messageContext.value.length - 1]
@@ -596,6 +638,8 @@ export const useAgentEventDispatcher = (options: DispatcherOptions) => {
 			applyMessageDelta(payload)
 		} else if (isSuggestedFollowUpsNotice(event)) {
 			applySuggestedFollowUps(event)
+		} else if (isUserAttachmentsReadyNotice(event)) {
+			applyUserAttachmentsReady(event)
 		} else {
 			applySystemNotice(event)
 		}

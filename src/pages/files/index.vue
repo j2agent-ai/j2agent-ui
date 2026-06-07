@@ -472,6 +472,7 @@ import {
 	resolveObjectStorageDiffs,
 	uploadObjectFileDirect
 } from '@/api/file.api'
+import { resolveObjectFilePreviewUrl } from '@/utils/ossDisplayUrl'
 
 const activePanel = ref('files')
 const files = ref<ObjectFileItem[]>([])
@@ -689,7 +690,8 @@ function uploadStatusTagType(status: BatchUploadStatus) {
 async function preview(row: ObjectFileItem) {
 	try {
 		const response = await getObjectFilePreviewUrl(row.objectKey)
-		window.open(response.data.url, '_blank', 'noopener')
+		const url = resolveObjectFilePreviewUrl(row.objectKey, response.data.url)
+		window.open(url, '_blank', 'noopener')
 	} catch {
 		ElMessage.error(t('files.preview.failed'))
 	}
