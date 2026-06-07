@@ -1,5 +1,3 @@
-@use '@/styles/platform' as *;
-
 .message-md {
   --md-diagram-max-height: min(360px, 42vh);
   --md-diagram-body-padding-vertical: 28px;
@@ -92,14 +90,12 @@
     vertical-align: baseline;
   }
 
-  /* 围栏代码块：与深度思考同款深色玻璃 */
+  /* 围栏代码块：深色面板（勿用 backdrop-filter，避免气泡 resize 时脏色块遮挡内容） */
   pre {
     margin: 10px 0;
     padding: 12px 14px;
     border-radius: 10px;
-    background: var(--n-dark-panel-bg);
-    backdrop-filter: blur(var(--n-dark-panel-blur)) saturate(var(--n-dark-panel-saturate));
-    -webkit-backdrop-filter: blur(var(--n-dark-panel-blur)) saturate(var(--n-dark-panel-saturate));
+    background: color-mix(in srgb, var(--n-dark-panel-tint) 88%, transparent);
     border: 1px solid var(--n-dark-panel-border);
     box-shadow: var(--n-dark-panel-shadow);
     color: var(--n-dark-panel-text);
@@ -107,7 +103,6 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: var(--n-font-size-1);
     line-height: 1.55;
-    isolation: isolate;
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--n-dark-panel-text) 40%, transparent) transparent;
   }
@@ -144,7 +139,7 @@
     opacity: 0.92;
   }
 
-  /* 表格：与状态栏同款白色玻璃卡片 */
+  /* 表格：白色玻璃卡片（勿用 backdrop-filter，避免气泡 resize 时脏色块遮挡内容） */
   .md-table-wrap {
     width: 100%;
     max-width: 100%;
@@ -154,12 +149,10 @@
     -webkit-overflow-scrolling: touch;
     border-radius: 10px;
     border: none;
-    @include n-glass-surface(2);
-    background: var(--n-color-bg-glass);
+    background: var(--n-color-bg-glass-strong);
     box-shadow: inset 0 1px 0 color-mix(in srgb, var(--n-glass-highlight) 95%, transparent),
     0 4px 10px rgba(0, 0, 0, 0.06),
     0 12px 32px rgba(0, 0, 0, 0.1);
-    isolation: isolate;
     scrollbar-width: thin;
     scrollbar-color: var(--n-color-scrollbar-thumb) transparent;
   }
