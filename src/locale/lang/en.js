@@ -23,19 +23,32 @@ export default {
 	'common.file.change': 'File changed, please click submit',
 	'common.create.time': 'Create Time',
 	'common.update.time': 'Update Time',
-	'homepage': 'Homepage',
+	homepage: 'Homepage',
 	'files.title': 'File Management',
-	'files.desc': 'Manage object storage files and inspect database synchronization',
+	'files.desc':
+		'Manage object storage files and inspect storage/database differences',
 	'files.menu.manage': 'Files',
-	'files.menu.sync': 'Synchronization',
-	'files.upload': 'Upload File',
+	'files.menu.sync': 'Difference Check',
+	'files.upload': 'Upload Files',
 	'files.upload.success': 'File uploaded',
-	'files.upload.failed': 'Upload failed or a file with the same name already exists',
+	'files.upload.failed':
+		'Upload failed or a file with the same name already exists',
+	'files.upload.batch.success': 'Files uploaded',
+	'files.upload.batch.result': 'Batch upload completed',
+	'files.upload.batch.failed': 'Failed files',
+	'files.upload.batch.details': 'Upload Details',
+	'files.upload.progress': 'Progress',
+	'files.upload.status.PENDING': 'Pending',
+	'files.upload.status.UPLOADING': 'Uploading',
+	'files.upload.status.SUCCESS': 'Succeeded',
+	'files.upload.status.FAILED': 'Failed',
 	'files.batch.delete': 'Batch Delete',
-	'files.delete.confirm': 'This removes both the object and its database record. Continue?',
+	'files.delete.confirm':
+		'This removes both the object and its database record. Continue?',
 	'files.preview': 'Preview/Download',
 	'files.preview.failed': 'Failed to get file URL',
-	'files.load.failed': 'Failed to load files. Verify that object storage is enabled.',
+	'files.load.failed':
+		'Failed to load files. Verify that object storage is enabled.',
 	'files.root': 'Root',
 	'files.name': 'Name',
 	'files.object.key': 'Object Key',
@@ -43,7 +56,12 @@ export default {
 	'files.type': 'Type',
 	'files.modified': 'Modified',
 	'files.status': 'Status',
-	'files.sync.scan': 'Scan Storage and Database',
+	'files.sync.scan': 'Start Difference Check',
+	'files.sync.cancel': 'Stop Check',
+	'files.sync.cancel.confirm':
+		'Stop the current difference check? Temporary results from this run will be discarded.',
+	'files.sync.cancel.requested': 'Difference check cancellation requested',
+	'files.sync.cancel.failed': 'Failed to stop difference check',
 	'files.sync.scanned': 'Scanned',
 	'files.sync.diff.type': 'Difference Type',
 	'files.sync.oss.info': 'Storage Metadata',
@@ -57,12 +75,20 @@ export default {
 		'Only the database ledger record exists; the object is missing from storage.',
 	'files.sync.diff.METADATA_MISMATCH.help':
 		'The object key exists on both sides, but its ETag, size, or last modified time differs.',
+	'files.sync.diff.IN_PROGRESS.help':
+		'The ledger is in UPLOADING or DELETING state; both sides may not have converged yet and no manual action is needed.',
 	'files.sync.resolution': 'Resolution Status',
+	'files.sync.resolution.PENDING': 'Pending',
+	'files.sync.resolution.RESOLVED': 'Resolved',
+	'files.sync.resolution.STALE': 'Stale',
+	'files.sync.resolution.FAILED': 'Failed',
 	'files.sync.action': 'Batch Resolution',
 	'files.sync.execute': 'Execute',
-	'files.sync.start.failed': 'Failed to start scan. Another task may be running.',
-	'files.sync.load.failed': 'Failed to load synchronization differences',
-	'files.sync.delete.confirm': 'This operation deletes data from storage or the database. Continue?',
+	'files.sync.start.failed':
+		'Failed to start difference check. Another check may be running.',
+	'files.sync.load.failed': 'Failed to load difference results',
+	'files.sync.delete.confirm':
+		'This operation deletes data from storage or the database. Continue?',
 	'files.sync.action.REGISTER_DB': 'Register in Database',
 	'files.sync.action.DELETE_OSS': 'Delete from Storage',
 	'files.sync.action.DELETE_DB': 'Delete Database Record',
@@ -88,7 +114,8 @@ export default {
 	'mcp.config.invalid': 'Invalid JSON format',
 	'mcp.config.load.failed': 'Failed to load MCP config',
 	'agentGlobalConfig.config.title': 'Agent Global Config',
-	'agentGlobalConfig.config.placeholder': 'Enter agent global config JSON, e.g. {"datasource":{"jdbcUrl":"","username":"","password":"","driverClassName":"com.mysql.cj.jdbc.Driver"},"service":{"baseUrl":""}}',
+	'agentGlobalConfig.config.placeholder':
+		'Enter agent global config JSON, e.g. {"datasource":{"jdbcUrl":"","username":"","password":"","driverClassName":"com.mysql.cj.jdbc.Driver"},"service":{"baseUrl":""}}',
 	'agentGlobalConfig.config.format': 'Format',
 	'agentGlobalConfig.config.invalid': 'Invalid JSON format',
 	'agentGlobalConfig.config.load.failed': 'Failed to load agent global config',
@@ -127,11 +154,14 @@ export default {
 	'settings.openai.section': 'OpenAI Compatible Settings',
 	'settings.openai.desc': 'Effective when provider is OpenAI compatible',
 	'settings.embedding.rebuild.title': 'Rebuild Knowledge Base',
-	'settings.embedding.rebuild.confirm': 'Embedding settings changed. Saving requires rebuilding the knowledge base. Continue?',
+	'settings.embedding.rebuild.confirm':
+		'Embedding settings changed. Saving requires rebuilding the knowledge base. Continue?',
 	'settings.embedding.rebuild.confirm.ok': 'Save Anyway',
 	'settings.embedding.rebuild.confirm.cancel': 'Cancel',
-	'providerConfig.hint.llm': 'Save multiple LLM configurations; activate one to switch instantly.',
-	'providerConfig.hint.embedding': 'Save multiple Embedding configurations; activating a new one rebuilds the knowledge base.',
+	'providerConfig.hint.llm':
+		'Save multiple LLM configurations; activate one to switch instantly.',
+	'providerConfig.hint.embedding':
+		'Save multiple Embedding configurations; activating a new one rebuilds the knowledge base.',
 	'providerConfig.section.basic': 'Basic',
 	'providerConfig.section.params': 'Connection Parameters',
 	'providerConfig.section.runtime': 'Runtime Parameters',
@@ -188,31 +218,45 @@ export default {
 	'providerConfig.activate.failed': 'Failed to activate',
 	'providerConfig.validate.configName': 'Configuration name is required',
 	'providerConfig.validate.modelName': 'Model name is required',
-	'providerConfig.validate.maxTokens': 'Max Tokens is required for Anthropic Compatible (positive integer)',
+	'providerConfig.validate.maxTokens':
+		'Max Tokens is required for Anthropic Compatible (positive integer)',
 	'providerConfig.contextLength.placeholder': 'Leave empty for model default',
-	'providerConfig.field.configName.tip': 'Display name for your reference; duplicates are allowed under the same type.',
+	'providerConfig.field.configName.tip':
+		'Display name for your reference; duplicates are allowed under the same type.',
 	'providerConfig.field.providerType.tip':
 		'Anthropic Compatible for Messages API gateways or the official API; OpenAI compatible for Chat Completions gateways. Use baseUrl and paths per gateway docs.',
-	'providerConfig.field.baseUrl.tip': 'Service root URL without API path; see the example below for your provider type.',
-	'providerConfig.field.enabled.tip': 'Disabled entries cannot be set as current.',
-	'providerConfig.field.makeCurrent.tip': 'Activate immediately after create and hot-reload runtime.',
-	'providerConfig.field.description.tip': 'Optional note shown in the list only.',
-	'providerConfig.field.modelName.tip': 'Model ID or name on the provider side.',
-	'providerConfig.field.apiKey.tip': 'Authentication key; leave empty on edit to keep the existing key.',
-	'providerConfig.field.completionsPath.tip': 'Relative path for OpenAI-compatible chat completions.',
-	'providerConfig.field.embeddingsPath.tip': 'Relative path for OpenAI-compatible embeddings.',
-	'providerConfig.field.keepAliveSeconds.tip': 'Ollama model keep-alive in seconds; 0 uses server default.',
-	'providerConfig.field.contextLength.tip': 'Ollama only (num_ctx). Leave empty to use the model or Ollama default.',
+	'providerConfig.field.baseUrl.tip':
+		'Service root URL without API path; see the example below for your provider type.',
+	'providerConfig.field.enabled.tip':
+		'Disabled entries cannot be set as current.',
+	'providerConfig.field.makeCurrent.tip':
+		'Activate immediately after create and hot-reload runtime.',
+	'providerConfig.field.description.tip':
+		'Optional note shown in the list only.',
+	'providerConfig.field.modelName.tip':
+		'Model ID or name on the provider side.',
+	'providerConfig.field.apiKey.tip':
+		'Authentication key; leave empty on edit to keep the existing key.',
+	'providerConfig.field.completionsPath.tip':
+		'Relative path for OpenAI-compatible chat completions.',
+	'providerConfig.field.embeddingsPath.tip':
+		'Relative path for OpenAI-compatible embeddings.',
+	'providerConfig.field.keepAliveSeconds.tip':
+		'Ollama model keep-alive in seconds; 0 uses server default.',
+	'providerConfig.field.contextLength.tip':
+		'Ollama only (num_ctx). Leave empty to use the model or Ollama default.',
 	'providerConfig.field.maxTokens.tip':
 		'Required for Anthropic Compatible (Messages API max_tokens). Set the max output tokens per reply per your model and platform docs.',
 	'providerConfig.maxTokens.placeholder': 'e.g. 16384',
-	'providerConfig.field.temperature.tip': 'Sampling temperature; higher = more random, lower = more deterministic.',
+	'providerConfig.field.temperature.tip':
+		'Sampling temperature; higher = more random, lower = more deterministic.',
 	'providerConfig.thinkingMode': 'Deep thinking',
 	'providerConfig.thinkingMode.providerDefault': 'Provider default',
 	'providerConfig.thinkingMode.on': 'On',
 	'providerConfig.thinkingMode.off': 'Off',
 	'providerConfig.thinkingBudgetTokens': 'Thinking token budget',
-	'providerConfig.thinkingBudgetTokens.hint': 'Default is 10240; you may change it.',
+	'providerConfig.thinkingBudgetTokens.hint':
+		'Default is 10240; you may change it.',
 	'providerConfig.field.thinkingMode.tip':
 		'Anthropic Compatible and Ollama only. Provider default: omit thinking/think and use model or gateway defaults; On/Off set explicitly.',
 	'providerConfig.field.thinkingBudgetTokens.tip':
@@ -252,15 +296,19 @@ export default {
 	'user.emailRegister.goRegister': 'Create account',
 	'user.emailRegister.disabled': 'Email registration is disabled',
 	'user.emailRegister.codeSent': 'Verification code sent. Check your inbox.',
-	'user.emailRegister.rateLimit': 'Too many requests (max 5 per 60 seconds). Please try again later.',
+	'user.emailRegister.rateLimit':
+		'Too many requests (max 5 per 60 seconds). Please try again later.',
 	'user.emailRegister.sendCode.failed': 'Failed to send verification code',
 	'user.emailRegister.success': 'Registration successful. Please sign in.',
 	'user.emailRegister.failed': 'Registration failed',
 	'user.emailRegister.error.title': 'Notice',
-	'user.emailRegister.captchaRequired': 'Please complete the captcha verification first',
+	'user.emailRegister.captchaRequired':
+		'Please complete the captcha verification first',
 	'user.emailRegister.save': 'Save email settings',
-	'user.emailRegister.load.failed': 'Failed to load email registration settings',
-	'user.emailRegister.save.failed': 'Failed to save email registration settings',
+	'user.emailRegister.load.failed':
+		'Failed to load email registration settings',
+	'user.emailRegister.save.failed':
+		'Failed to save email registration settings',
 	'user.emailRegister.smtp.host': 'SMTP host',
 	'user.emailRegister.smtp.port': 'Port',
 	'user.emailRegister.smtp.username': 'Username',
@@ -271,11 +319,15 @@ export default {
 	'user.emailRegister.whitelist.title': 'Email whitelist',
 	'user.emailRegister.whitelist.enabled': 'Enable whitelist',
 	'user.emailRegister.whitelist.rules': 'Whitelist rules',
-	'user.emailRegister.whitelist.rules.placeholder': '*@company.com, admin@company.com',
-	'user.emailRegister.whitelist.rules.hint': 'Comma-separated; *@domain for any address on that domain, or a full email',
+	'user.emailRegister.whitelist.rules.placeholder':
+		'*@company.com, admin@company.com',
+	'user.emailRegister.whitelist.rules.hint':
+		'Comma-separated; *@domain for any address on that domain, or a full email',
 	'user.emailRegister.whitelist.deniedMessage': 'Rejection message',
-	'user.emailRegister.whitelist.deniedMessage.placeholder': 'Leave empty for default: This email is not allowed to register',
-	'user.emailRegister.whitelist.rules.required': 'Enter at least one rule when whitelist is enabled',
+	'user.emailRegister.whitelist.deniedMessage.placeholder':
+		'Leave empty for default: This email is not allowed to register',
+	'user.emailRegister.whitelist.rules.required':
+		'Enter at least one rule when whitelist is enabled',
 	'user.resetPassword.pageTitle': 'Reset password',
 	'user.resetPassword.email': 'Email',
 	'user.resetPassword.code': 'Email verification code',
@@ -287,12 +339,14 @@ export default {
 	'user.resetPassword.backLogin': 'Back to login',
 	'user.resetPassword.goForgot': 'Forgot password',
 	'user.resetPassword.codeSent': 'Verification code sent. Check your inbox.',
-	'user.resetPassword.rateLimit': 'Too many requests (max 5 per 60 seconds). Please try again later.',
+	'user.resetPassword.rateLimit':
+		'Too many requests (max 5 per 60 seconds). Please try again later.',
 	'user.resetPassword.sendCode.failed': 'Failed to send verification code',
 	'user.resetPassword.success': 'Password reset. Please sign in.',
 	'user.resetPassword.failed': 'Failed to reset password',
 	'user.resetPassword.error.title': 'Notice',
-	'user.resetPassword.captchaRequired': 'Please complete the captcha verification first',
+	'user.resetPassword.captchaRequired':
+		'Please complete the captcha verification first',
 	'user.resetPassword.passwordMismatch': 'Passwords do not match',
 	'account.title': 'Change Password',
 	'account.desc': 'Update your login password',
@@ -308,7 +362,7 @@ export default {
 	'login.powFail': 'Verification failed. Please try again.',
 	'captcha.tip': 'Please slide the block to the right to log in',
 	'captcha.validate.fail': 'verification failed',
-	'logout': 'Logout',
+	logout: 'Logout',
 	...enAi,
 	...enKb
 }

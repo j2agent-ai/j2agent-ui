@@ -21,6 +21,16 @@ export type ObjectFileList = {
 	total: number
 }
 
+export type ObjectFileUploadInit = {
+	objectKey: string
+	provider: string
+	uploadUrl: string
+	method: string
+	headers?: Record<string, string>
+	expiresAt: number
+	providerExtras?: Record<string, string>
+}
+
 export type ObjectStorageSyncTask = {
 	id: string
 	bucket: string
@@ -31,6 +41,7 @@ export type ObjectStorageSyncTask = {
 	ossOnlyCount: number
 	dbOnlyCount: number
 	mismatchCount: number
+	inProgressCount: number
 	errorMessage?: string
 	createdAt: number
 	startedAt?: number
@@ -40,7 +51,7 @@ export type ObjectStorageSyncTask = {
 export type ObjectStorageSyncDiff = {
 	id: string
 	objectKey: string
-	diffType: 'IN_SYNC' | 'OSS_ONLY' | 'DB_ONLY' | 'METADATA_MISMATCH'
+	diffType: 'IN_SYNC' | 'OSS_ONLY' | 'DB_ONLY' | 'METADATA_MISMATCH' | 'IN_PROGRESS'
 	resolutionStatus: string
 	ossEtag?: string
 	ossSize?: number
