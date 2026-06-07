@@ -15,6 +15,27 @@
     border-bottom-color: var(--n-table-border);
   }
 
+  /* 多级表头与固定列均使用实色底，避免横向滚动时透明叠层 */
+  thead.is-group th.el-table__cell {
+    background: var(--n-table-header-bg);
+  }
+
+  .el-table__header-wrapper th.el-table__cell.el-table-fixed-column--left,
+  .el-table__header-wrapper th.el-table__cell.el-table-fixed-column--right,
+  .el-table__fixed-right-patch {
+    background: var(--n-table-header-bg);
+  }
+
+  .el-table__body-wrapper td.el-table__cell.el-table-fixed-column--left,
+  .el-table__body-wrapper td.el-table__cell.el-table-fixed-column--right {
+    background: var(--n-table-row-bg);
+  }
+
+  .el-table__body-wrapper tr:hover > td.el-table__cell.el-table-fixed-column--left,
+  .el-table__body-wrapper tr:hover > td.el-table__cell.el-table-fixed-column--right {
+    background: var(--n-table-row-hover-bg);
+  }
+
   tbody tr {
     background-color: var(--n-table-row-bg);
   }
