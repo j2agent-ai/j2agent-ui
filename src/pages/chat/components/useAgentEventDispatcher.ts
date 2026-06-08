@@ -682,6 +682,7 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		currentAgentState,
 		lastTurnStates,
 		displayTurnStates,
+		getDisplayTurnSteps: toTurnSteps,
 		isBusyByState,
 		isTerminalState,
 		suggestedFollowUps,
