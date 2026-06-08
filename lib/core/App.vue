@@ -1,7 +1,12 @@
 <template>
 	<div class="web-app" :class="classObj">
 		<el-config-provider :locale="elLocale">
-			<router-view></router-view>
+			<router-view v-slot="{ Component }">
+				<keep-alive :include="['pageChatAssistant']">
+					<component :is="Component" />
+				</keep-alive>
+			</router-view>
+			<ChatActivityPanel />
 		</el-config-provider>
 	</div>
 </template>
@@ -12,6 +17,10 @@ import { useElementLocale } from '@ai-system/hooks'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { t } from '@ai-system/lib'
+import ChatActivityPanel from '@/pages/chat/components/ChatActivityPanel.vue'
+import { useWarnBeforeUnloadOnActiveTasks } from '@/pages/chat/useWarnBeforeUnloadOnActiveTasks'
+
+useWarnBeforeUnloadOnActiveTasks()
 document.getElementsByTagName('title')[0].innerHTML = t('ai.title')
 const { elLocale } = useElementLocale()
 

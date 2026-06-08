@@ -126,6 +126,11 @@
     word-wrap: normal;
   }
 
+  /* 仅含一张图且已成功加载：去掉 line-height strut（须 !important 压过内联 line-height） */
+  p.md-p-image {
+    line-height: 0 !important;
+  }
+
   img {
     max-width: 100%;
     height: auto;

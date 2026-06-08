@@ -89,7 +89,7 @@ const isTurnFailurePayload = (
 	)
 }
 
-export const useAgentEventDispatcher = (options: DispatcherOptions) => {
+export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 	const {
 		messageContext,
 		isNewLlmResponse,
@@ -690,3 +690,8 @@ export const useAgentEventDispatcher = (options: DispatcherOptions) => {
 		clearTurnFailureMessage
 	}
 }
+
+export type AgentEventDispatcher = ReturnType<typeof createAgentEventDispatcher>
+
+export const useAgentEventDispatcher = (options: DispatcherOptions) =>
+	createAgentEventDispatcher(options)

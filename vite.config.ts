@@ -36,5 +36,5 @@ export default defineConfig(({ command, mode }) => {
 			secure: proxySecure
 		}
 	]
-	return viteConfig(command, mode, proxyServer, 3111, '0.0.0.0')
+	return viteConfig(command, mode, proxyServer, 3112, '0.0.0.0')
 })

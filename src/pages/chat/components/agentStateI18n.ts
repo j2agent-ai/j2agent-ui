@@ -1,6 +1,6 @@
 import type { AgentState, TurnStepItem, TurnStepStatus } from '@/types/ai.types'
 
-/** 状态机非终态 busy 集合（与 docs/agent-ui 2.1 一致）。 */
+/** 状态机非终态 busy 集合 **/
 export const BUSY_AGENT_STATES: AgentState[] = [
 	'THINKING',
 	'STREAMING_TEXT',

@@ -48,7 +48,7 @@ const MARKDOWN_REVISION_ATTR = 'data-md-revision'
  * 图表后处理逻辑变更时递增，用于让历史气泡在 SPA 内重新渲染（非 Mermaid 缓存）。
  * 与 ChatView 中 v-html 的 :key 保持一致。
  */
-export const MARKDOWN_RENDERER_REVISION = '12'
+export const MARKDOWN_RENDERER_REVISION = '14'
 /** 与 markdown.scss 中 --md-diagram-max-height 回退值保持一致 */
 const MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK = 360
 /** body 垂直内边距合计（padding-top + padding-bottom，各 14px） */
@@ -404,7 +404,9 @@ md.renderer.rules.fence = (tokens, idx, options, env, self) => {
   return self.renderToken(tokens, idx, options)
 }
 
-md.renderer.rules.paragraph_open = function() {
+const MD_P_IMAGE_CLASS = 'md-p-image'
+
+md.renderer.rules.paragraph_open = function () {
   return '<p style="line-height: var(--n-font-line-height-4);">'
 }
 
@@ -1503,6 +1505,76 @@ const renderBlock = async (
   }
 }
 
+const isImageOnlyParagraphElement = (p: HTMLParagraphElement): boolean => {
+  const meaningful = [...p.childNodes].filter((node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return (node.textContent ?? '').trim().length > 0
+    }
+    return node.nodeType === Node.ELEMENT_NODE
+  })
+  if (meaningful.length === 1) {
+    const only = meaningful[0]
+    if (only instanceof HTMLImageElement) {
+      return true
+    }
+    if (only instanceof HTMLAnchorElement) {
+      const imgs = only.querySelectorAll('img')
+      return imgs.length === 1 && (only.textContent ?? '').trim().length === 0
+    }
+  }
+  return false
+}
+
+const applyImageParagraphNormalization = (p: HTMLParagraphElement) => {
+  p.classList.add(MD_P_IMAGE_CLASS)
+  p.style.lineHeight = '0'
+}
+
+const clearImageParagraphNormalization = (p: HTMLParagraphElement) => {
+  p.classList.remove(MD_P_IMAGE_CLASS)
+  p.style.lineHeight = ''
+}
+
+const isImageLoadedSuccessfully = (img: HTMLImageElement) =>
+  img.complete && img.naturalWidth > 0 && img.naturalHeight > 0
+
+const bindImageLoadNormalization = (img: HTMLImageElement) => {
+  const normalizeOnSuccess = () => {
+    if (!isImageLoadedSuccessfully(img)) {
+      return
+    }
+    const p = img.closest('p')
+    if (p instanceof HTMLParagraphElement && isImageOnlyParagraphElement(p)) {
+      applyImageParagraphNormalization(p)
+    }
+  }
+
+  const normalizeOnError = () => {
+    const p = img.closest('p')
+    if (p instanceof HTMLParagraphElement) {
+      clearImageParagraphNormalization(p)
+    }
+  }
+
+  if (isImageLoadedSuccessfully(img)) {
+    normalizeOnSuccess()
+  } else if (img.complete) {
+    normalizeOnError()
+  } else {
+    img.addEventListener('load', normalizeOnSuccess, { once: true })
+    img.addEventListener('error', normalizeOnError, { once: true })
+  }
+}
+
+/**
+ * 图片加载成功后压缩单图段落的 line-height；加载失败时保持正常行高，避免 alt 文本叠在一起。
+ */
+export const normalizeMarkdownImageParagraphs = (root: ParentNode | Element) => {
+  root.querySelectorAll<HTMLImageElement>('.message-md img').forEach((img) => {
+    bindImageLoadNormalization(img)
+  })
+}
+
 /** 在 root 内渲染 mermaid/plantuml/vegalite/html 等异步 Markdown 块 */
 export const renderMarkdownBlocks = async (
   root: ParentNode | Element,
@@ -1513,6 +1585,7 @@ export const renderMarkdownBlocks = async (
   )
   await Promise.all(blocks.map((block) => renderBlock(block, options)))
   refitDiagramBlocksInRoot(root)
+  normalizeMarkdownImageParagraphs(root)
 }
 
 /** 对 root 内已渲染图表按当前宽度重新适配外框高度 */

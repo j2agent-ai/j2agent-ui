@@ -15,7 +15,6 @@
       :history-chat="historyChat"
       :curr-context-id="contextId"
       :message-context="messageContext"
-      :is-busy="isBusyByState"
       :agent-id="props.agentId"
       @show-chat-manage="(val) => (showChatManage = val)"
     />
@@ -27,8 +26,8 @@
       <el-scrollbar ref="scrollbarRef" class="scroll" @scroll="checkScroll">
         <div class="message-init">
           <div class="ai-logo">
-            <!--						<img src="/src/assets/ai-logo-b.png" />-->
-            <span class="ai-logo-emoji">🤖</span>
+            <img v-if="chatLogoUrl" :src="chatLogoUrl" alt="" />
+            <span v-else class="ai-logo-emoji">{{ chatLogoEmoji }}</span>
           </div>
           <h2 class="title">{{ $t('ai.hi.assistant') }}</h2>
           <div v-if="showHotQuestions" class="hot-questions">
@@ -71,15 +70,15 @@
             <template v-if="message.role === 'assistant'">
               <div class="avatar-wrap">
                 <el-avatar :size="messageAvatarSize" class="ai-chat-logo">
-                  <!--									<img src="/src/assets/ai-logo-w.png" />-->
-                  <span class="avatar-emoji">🤖</span>
+                  <img v-if="chatLogoUrl" :src="chatLogoUrl" alt="" />
+                  <span v-else class="avatar-emoji">{{ chatLogoEmoji }}</span>
                 </el-avatar>
               </div>
               <div
                 class="message-bubble-wrap"
                 :class="{
 									'thinking-bubble':
-										isActiveAssistantTurn(index) && isBusyByState
+										isActiveAssistantTurn(index) && isActiveContextStreaming
 								}"
               >
                 <div class="message-content">
@@ -338,7 +337,7 @@
 
 <script setup lang="ts">
 import { ArrowDown, ChatLineSquare, DocumentCopy, Loading, Picture, Position, Refresh } from '@element-plus/icons-vue'
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   ElAvatar,
   ElButton,
@@ -354,7 +353,6 @@ import ChatManage from './chatManage.vue'
 import AgentTurnTimeline from './AgentTurnTimeline.vue'
 import AgentThinkingBlock from './AgentThinkingBlock.vue'
 import {
-  AgentUiEventEnvelope,
   ChatAttachmentDto,
   ChatRequestDto,
   convertSrcFilesToMd,
@@ -363,13 +361,15 @@ import {
 import { t } from '@ai-system/lib'
 import {
   addMessageFeedback,
-  chatWebsocketClientApi,
   getHistoryContext,
-  getNewContextId,
   getQaTemplate
 } from '@/api/ai.api'
-import { resolveTurnErrorDisplayText } from './agentTurnError'
-import { IMAGE_ONLY_HISTORY_TITLE_KEY } from '../chatHistoryTitle'
+import { chatActivityStore } from '../chatActivityStore'
+import { chatSessionRegistry } from '../chatSessionRegistry'
+import { startTurn, stopTurn } from '../chatStreamService'
+import { useActiveChatSessionBindings } from '../useActiveChatSessionBindings'
+import type { PendingChatImage } from '../chatSessionTypes'
+import { buildSessionTitle } from '../chatHistoryTitle'
 import {
   buildChatAttachmentContentUrl,
   isChatAttachmentContentUrl,
@@ -377,8 +377,8 @@ import {
   resolveAttachmentsDisplayUrls
 } from '../chatAttachmentUrl'
 import { processChatImageFile } from '../chatImageProcess'
-import { useAgentEventDispatcher } from './useAgentEventDispatcher'
 import { MARKDOWN_RENDERER_REVISION, renderMarkdown, renderMarkdownBlocks } from '@/utils/markdownRenderer'
+import { chatLogoEmoji, chatLogoUrl } from '@/oem'
 
 const showChatManage = ref(false)
 const chatManageRef = ref(null)
@@ -389,8 +389,18 @@ const bottomDockRef = ref<HTMLElement>()
 let bottomDockResizeObserver: ResizeObserver | undefined
 /** 监听消息列表高度变化（图片/iframe/图表异步撑高），跟随态下瞬时贴底 */
 let messageListResizeObserver: ResizeObserver | undefined
-const contextId = ref<string>()
-let keepAliveWsClient: WebSocket
+const {
+  activeSession,
+  contextId,
+  messageContext,
+  inputMessage,
+  selectedAttachments,
+  sendingMessage,
+  isBusyByState,
+  currentAgentState,
+  suggestedFollowUps,
+  requireActiveSession
+} = useActiveChatSessionBindings()
 const scrollbarRef = ref()
 const messageListRef = ref<HTMLElement>()
 /** 「回到底部」按钮隐藏（即处于贴底自动跟随区域）时为 true；完全由滚动位置决定 */
@@ -402,30 +412,15 @@ let userScrollIdleTimer: ReturnType<typeof setTimeout> | null = null
 const USER_SCROLL_IDLE_MS = 200
 /** 自动下滚的统一条件：处于贴底区域（按钮已隐藏）且用户当前没有在滚动 */
 const shouldAutoScroll = () => isAtBottom.value && !userScrolling
-const messageContext = ref<MessageDto[]>([])
 /**
  * 仅展示后端标记为可展示的消息；displayInChat === false 的条目仍保留在上下文中，但不渲染气泡。
  */
 const visibleMessageContext = computed(() =>
   messageContext.value.filter((m) => m.displayInChat !== false)
 )
-const inputMessage = ref<string>('')
 const imageInputRef = ref<HTMLInputElement>()
-const selectedAttachments = ref<PendingChatImage[]>([])
-const sendingMessage = ref(false)
 const isDragOverImages = ref(false)
 let inputAreaDragDepth = 0
-
-const SESSION_TITLE_MAX_LENGTH = 64
-
-type PendingChatImage = {
-  id: string
-  file: File | null
-  previewUrl: string | null
-  contentType: string
-  processing: boolean
-  sourceName: string
-}
 
 const readyAttachments = computed(() =>
   selectedAttachments.value.filter((item) => !item.processing && item.file)
@@ -453,20 +448,6 @@ const fileToBase64 = (file: File): Promise<string> =>
 const revokeBlobUrl = (url?: string) => {
   if (url?.startsWith('blob:')) {
     URL.revokeObjectURL(url)
-  }
-}
-
-const revokeBlobUrlsInMessages = (messages: MessageDto[]) => {
-  for (const message of messages) {
-    for (const attachment of message.attachments ?? []) {
-      revokeBlobUrl(attachment.url)
-    }
-  }
-}
-
-const revokePendingAttachmentUrls = (pending: PendingChatImage[]) => {
-  for (const item of pending) {
-    revokeBlobUrl(item.previewUrl ?? undefined)
   }
 }
 
@@ -502,8 +483,12 @@ const createPendingAttachmentId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 const addProcessingPlaceholder = (sourceName: string): string => {
+  const session = requireActiveSession()
+  if (!session) {
+    return ''
+  }
   const id = createPendingAttachmentId()
-  selectedAttachments.value.push({
+  session.selectedAttachments.value.push({
     id,
     file: null,
     previewUrl: null,
@@ -515,7 +500,11 @@ const addProcessingPlaceholder = (sourceName: string): string => {
 }
 
 const finishPendingAttachment = (id: string, file: File) => {
-  const item = selectedAttachments.value.find((entry) => entry.id === id)
+  const session = requireActiveSession()
+  if (!session) {
+    return
+  }
+  const item = session.selectedAttachments.value.find((entry) => entry.id === id)
   if (!item) {
     return
   }
@@ -526,7 +515,11 @@ const finishPendingAttachment = (id: string, file: File) => {
 }
 
 const removePendingAttachmentById = (id: string) => {
-  const index = selectedAttachments.value.findIndex((entry) => entry.id === id)
+  const session = requireActiveSession()
+  if (!session) {
+    return
+  }
+  const index = session.selectedAttachments.value.findIndex((entry) => entry.id === id)
   if (index >= 0) {
     removeAttachment(index)
   }
@@ -547,13 +540,16 @@ const normalizePastedFile = (file: File): File => {
 }
 
 const ensureContextId = async (): Promise<string | undefined> => {
-  if (contextId.value) {
-    return contextId.value
+  const session = requireActiveSession()
+  if (!session) {
+    return undefined
+  }
+  if (session.contextId.value) {
+    return session.contextId.value
   }
   try {
-    const response = await getNewContextId()
-    contextId.value = response.data.contextId
-    return contextId.value
+    const created = await chatSessionRegistry.createNewSession(props.agentId)
+    return created.contextId.value
   } catch {
     ElMessage.error(t('ai.image.upload.failed'))
     return undefined
@@ -604,38 +600,6 @@ const imagePreviewIndex = ref(0)
 /** 图表预览产生的 blob URL，关闭时需释放 */
 const previewBlobUrls = ref<string[]>([])
 
-const isNewLlmResponse = ref<boolean>(true)
-const {
-  handleAgentEvent,
-  recordTerminalState,
-  beginOptimisticTurn,
-  resetTurnStates,
-  currentAgentState,
-  isBusyByState,
-  isTerminalState,
-  suggestedFollowUps,
-  clearSuggestedFollowUps
-} = useAgentEventDispatcher({
-  messageContext,
-  isNewLlmResponse,
-  sessionContextId: contextId,
-  resolveTurnErrorMessage: (errorCode, errorMessage) =>
-    resolveTurnErrorDisplayText(errorCode, errorMessage, t),
-  onTurnFailure: (displayMessage, raw) => {
-    let msg = displayMessage
-    if (raw?.errorMessage?.trim()) {
-      msg = `${displayMessage}: ${raw.errorMessage.trim()}`
-    } else if (raw?.errorCode) {
-      msg = `${displayMessage} (${raw.errorCode})`
-    }
-    ElMessage.error({
-      message: msg,
-      duration: 6000,
-      showClose: true
-    })
-  }
-})
-
 /** 非终态 busy 时当前轮 assistant 在可见列表中的下标。 */
 const activeAssistantVisibleIndex = computed(() => {
   if (!isBusyByState.value) {
@@ -672,6 +636,12 @@ const props = defineProps({
     type: Boolean,
     default: false
   }
+})
+
+/** 当前活跃会话是否在全局活动中心标记为进行中（驱动主区光晕动画）。 */
+const isActiveContextStreaming = computed(() => {
+  chatActivityStore.activeKeySet.value
+  return chatActivityStore.isActive(props.agentId, contextId.value || '')
 })
 
 /** 窄屏缩小消息行头像，与气泡字号更协调 */
@@ -735,78 +705,50 @@ const onChatInputBlur = () => {
   syncMobileInputHeight()
 }
 
-let chatWebsocketClient: WebSocket | undefined
-
-/** 拆除 WebSocket 回调，避免旧连接晚到的包在新会话里被处理。 */
-const detachChatWebSocket = (ws: WebSocket | undefined) => {
-  if (!ws) {
-    return
-  }
-  try {
-    ws.onopen = null
-    ws.onmessage = null
-    ws.onerror = null
-    ws.onclose = null
-  } catch {
-    /* ignore */
-  }
-  try {
-    if (
-      ws.readyState === WebSocket.OPEN ||
-      ws.readyState === WebSocket.CONNECTING
-    ) {
-      ws.close()
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
 const sendMessage = async (msg?: string) => {
-  if (isBusyByState.value || sendingMessage.value || isProcessingImages.value) {
+  const session = requireActiveSession()
+  if (!session || isBusyByState.value || sendingMessage.value || isProcessingImages.value) {
     ElMessage.info(isProcessingImages.value ? t('ai.image.processing') : t('ai.assistant.waiting'))
     return
   }
   if (msg) {
-    inputMessage.value = msg
+    session.inputMessage.value = msg
   }
-  if (!inputMessage.value.trim() && !readyAttachments.value.length) {
+  if (!session.inputMessage.value.trim() && !readyAttachments.value.length) {
     return
   }
   const activeContextId = await ensureContextId()
   if (!activeContextId) {
     return
   }
-  sendingMessage.value = true
+  session.sendingMessage.value = true
   try {
     const pendingImages = [...readyAttachments.value]
     const displayAttachments = buildDisplayAttachments(pendingImages)
     const outboundAttachments = pendingImages.length
       ? await buildOutboundAttachments(pendingImages)
       : []
-    detachChatWebSocket(chatWebsocketClient)
-    chatWebsocketClient = undefined
-    clearSuggestedFollowUps()
+    session.dispatcher.clearSuggestedFollowUps()
     const message: MessageDto = {
-      index: messageContext.value.length,
-      content: inputMessage.value,
+      index: session.messageContext.value.length,
+      content: session.inputMessage.value,
       role: 'user',
       attachments: displayAttachments
     }
-    messageContext.value.push(message)
-    inputMessage.value = ''
-    selectedAttachments.value = []
-    const isImageOnlyMessage =
-      !message.content?.trim() && message.attachments.length > 0
-    const sessionTitle = isImageOnlyMessage
-      ? IMAGE_ONLY_HISTORY_TITLE_KEY
-      : message.content.trim().slice(0, SESSION_TITLE_MAX_LENGTH)
+    session.messageContext.value.push(message)
+    session.inputMessage.value = ''
+    session.selectedAttachments.value = []
+    const sessionTitle = buildSessionTitle(
+      message.content,
+      message.attachments.length
+    )
     chatManageRef.value?.upsertSessionHistoryItem({
       contextId: activeContextId,
       agentId: props.agentId,
       title: sessionTitle
     })
-    beginOptimisticTurn()
+    session.dispatcher.beginOptimisticTurn()
+    chatActivityStore.markActive(props.agentId, activeContextId, 'THINKING')
     isAtBottom.value = true
     scrollToBottomAfterMessageFlush()
     const chatRequestDto: ChatRequestDto = {
@@ -820,40 +762,17 @@ const sendMessage = async (msg?: string) => {
       retrievalKb: true,
       systemPrompt: 'GENERAL_ASSISTANT'
     }
-    chatWebsocketClient = chatWebsocketClientApi(activeContextId, props.agentId)
-    chatWebsocketClient.onopen = () => {
-      chatWebsocketClient.send(JSON.stringify(chatRequestDto))
-      isNewLlmResponse.value = false
-      scrollToBottom()
-    }
-    chatWebsocketClient.onmessage = (event) => {
-      try {
-        const payload: AgentUiEventEnvelope = JSON.parse(event.data)
-        handleAgentEvent(payload)
+    startTurn(session, chatRequestDto, {
+      onScrollRequest: () => {
         if (shouldAutoScroll()) {
           scrollToBottom()
         }
-      } catch (error) {
-        console.error('解析Agent事件失败:', error)
       }
-    }
-    chatWebsocketClient.onerror = (error: any) => {
-      if (error.responseCode === 401) {
-        window.location.assign('/#/login')
-      } else if (error.responseCode !== 0) {
-        console.error(error)
-        ElMessage.error(t('ai.assistant.service.unavailable'))
-        isNewLlmResponse.value = true
-        recordTerminalState('FAILED')
-      }
-    }
-    chatWebsocketClient.onclose = () => {
-      onWsClose()
-    }
+    })
   } catch {
     ElMessage.error(t('ai.image.upload.failed'))
   } finally {
-    sendingMessage.value = false
+    session.sendingMessage.value = false
   }
 }
 
@@ -911,7 +830,11 @@ const handleInputDrop = (event: DragEvent) => {
 }
 
 const removeAttachment = (index: number) => {
-  const [removed] = selectedAttachments.value.splice(index, 1)
+  const session = requireActiveSession()
+  if (!session) {
+    return
+  }
+  const [removed] = session.selectedAttachments.value.splice(index, 1)
   if (removed?.previewUrl) {
     revokeBlobUrl(removed.previewUrl)
   }
@@ -944,23 +867,6 @@ const openAttachmentPreview = (attachments: ChatAttachmentDto[], index: number) 
   imagePreviewIndex.value = index
   imagePreviewVisible.value = true
 }
-const onWsClose = () => {
-  if (!isTerminalState.value) {
-    recordTerminalState('CANCELLED')
-  }
-  isNewLlmResponse.value = true
-  nextTick(() => {
-    detachChatWebSocket(chatWebsocketClient)
-    chatWebsocketClient = undefined
-    if (
-      keepAliveWsClient &&
-      keepAliveWsClient.readyState === keepAliveWsClient.OPEN
-    ) {
-      keepAliveWsClient.close()
-    }
-  })
-}
-
 /**
  * 距真实底部小于该像素即视为「贴底」。该阈值同时决定：
  * 1)「回到底部」按钮的显隐（进入此范围即隐藏）；
@@ -1365,29 +1271,23 @@ const copyMessage = async (content?: string) => {
   }
 }
 
-const newChat = () => {
-  interruptChat()
-  // 先使当前会话 ID 失效，避免旧连接迟到的 NOTICE 仍与「当前会话」匹配
-  contextId.value = undefined
-  resetTurnStates()
-  inputMessage.value = ''
-  revokePendingAttachmentUrls(selectedAttachments.value)
-  selectedAttachments.value = []
-  revokeBlobUrlsInMessages(messageContext.value)
-  messageContext.value = []
+const newChat = async () => {
+  await chatSessionRegistry.createNewSession(props.agentId)
   isAtBottom.value = true
-  getNewContextId().then((contextIdDto) => {
-    contextId.value = contextIdDto.data.contextId
-  })
   getHotQuestions()
   scrollToBottom()
 }
 
-/** 切换智能体时重置会话，避免沿用上一次的上下文与连接 */
+/** 切换智能体时恢复该智能体最近活跃的内存会话，无则新建 */
 watch(
   () => props.agentId,
-  () => {
-    newChat()
+  async () => {
+    await chatSessionRegistry.ensureActiveSessionForAgent(props.agentId)
+    getHotQuestions()
+    nextTick(() => {
+      scrollToBottom()
+      activateMarkdownBlocks()
+    })
   }
 )
 
@@ -1428,7 +1328,7 @@ watch(scrollbarRef, () => {
 })
 
 watch(
-  messageContext,
+  () => activeSession.value?.messageContext.value,
   () => {
     activateMarkdownBlocks()
   },
@@ -1440,40 +1340,56 @@ watch(isBusyByState, () => {
   activateMarkdownBlocks()
 })
 
-const historyChat = (historyId) => {
-  interruptChat()
-  const previousContextId = contextId.value
-  contextId.value = undefined
-  resetTurnStates()
-  inputMessage.value = ''
-  revokePendingAttachmentUrls(selectedAttachments.value)
-  selectedAttachments.value = []
-  revokeBlobUrlsInMessages(messageContext.value)
-  isAtBottom.value = true
-  if (historyId !== previousContextId) {
-    chatManageRef.value.getHistoryListData()
+/** 后台会话流式更新时，活跃会话 pendingScroll 由 ChatView 消费 */
+watch(
+  () => activeSession.value?.pendingScroll.value,
+  (pending) => {
+    if (!pending) {
+      return
+    }
+    if (shouldAutoScroll()) {
+      scrollToBottom()
+    }
+    const session = requireActiveSession()
+    if (session) {
+      session.pendingScroll.value = false
+    }
   }
-  contextId.value = historyId
-  getHistoryContext(historyId, props.agentId).then((res) => {
-    messageContext.value = res.data.messages
-    normalizeMessageAttachmentUrls(messageContext.value)
-    scrollToBottom()
-  })
+)
+
+watch(
+  () => chatSessionRegistry.activeSessionKey.value,
+  () => {
+    nextTick(() => {
+      scrollToBottom()
+      activateMarkdownBlocks()
+      bindUserScrollIntent()
+    })
+  }
+)
+
+const historyChat = async (historyId: string) => {
+  const session = chatSessionRegistry.activateSession(props.agentId, historyId)
+  isAtBottom.value = true
+  if (!session.loadedFromServer.value && session.messageContext.value.length === 0) {
+    try {
+      const res = await getHistoryContext(historyId, props.agentId)
+      session.messageContext.value = res.data.messages ?? []
+      normalizeMessageAttachmentUrls(session.messageContext.value)
+      session.loadedFromServer.value = true
+    } catch {
+      ElMessage.error(t('ai.assistant.service.unavailable'))
+    }
+  }
+  scrollToBottom()
+  activateMarkdownBlocks()
 }
 
-// 中止正在进行的对话
+// 中止当前活跃会话正在进行的对话
 const interruptChat = () => {
-  if (isBusyByState.value) {
-    recordTerminalState('CANCELLED')
-  }
-  isNewLlmResponse.value = true
-  detachChatWebSocket(chatWebsocketClient)
-  chatWebsocketClient = undefined
-  if (
-    keepAliveWsClient &&
-    keepAliveWsClient.readyState === keepAliveWsClient.OPEN
-  ) {
-    keepAliveWsClient.close()
+  const session = requireActiveSession()
+  if (session) {
+    stopTurn(session)
   }
 }
 
@@ -1528,8 +1444,9 @@ watch(
   }
 )
 
-onMounted(() => {
-  newChat()
+onMounted(async () => {
+  await chatSessionRegistry.ensureActiveSessionForAgent(props.agentId)
+  getHotQuestions()
   nextTick(() => {
     bindUserScrollIntent()
     scheduleChatBottomInsetUpdate()
@@ -1538,6 +1455,16 @@ onMounted(() => {
         updateChatBottomInset()
       })
       bottomDockResizeObserver.observe(bottomDockRef.value)
+    }
+  })
+})
+
+onActivated(() => {
+  nextTick(() => {
+    bindUserScrollIntent()
+    if (activeSession.value?.pendingScroll.value && shouldAutoScroll()) {
+      scrollToBottom()
+      activeSession.value.pendingScroll.value = false
     }
   })
 })
@@ -1556,7 +1483,6 @@ onUnmounted(() => {
     cancelAnimationFrame(scrollRafId)
     scrollRafId = null
   }
-  interruptChat()
   revokePreviewBlobUrls()
 })
 
@@ -1575,12 +1501,16 @@ defineExpose({
   showChatManage,
   chatManageRef,
   isBusyByState,
-  getHistoryListData: () => chatManageRef.value.getHistoryListData(),
-  newChat
+  getHistoryListData: () => chatManageRef.value?.getHistoryListData(),
+  newChat,
+  historyChat,
+  removeSession: (contextId: string) =>
+    chatSessionRegistry.removeSession(props.agentId, contextId)
 })
 </script>
 <style scoped lang="scss">
 @use '@/styles/platform' as *;
+@use '../chatThinkGlow.scss' as thinkGlow;
 
 /* 聊天气泡：水晶染色 + 细棱线；$with-black-shadow 控制是否带黑色外投影 */
 @mixin chat-bubble-crystal-glass($pale, $vivid, $deep, $blur, $with-black-shadow: true) {
@@ -2207,21 +2137,11 @@ defineExpose({
         }
       }
 
-      /* 思考态外围光晕：下方变量可调；双伪元素透明度交替，避免插值发黑 */
       .message-bubble-wrap.thinking-bubble {
-        --think-glow-orange: rgba(255, 147, 68, 0.85);
-        --think-glow-blue: rgba(64, 158, 255, 0.85);
-        --think-glow-blur: 18px;
-        --think-glow-spread: 6px;
-        --think-glow-duration: 1.4s;
         overflow: visible;
       }
 
       .message-bubble-wrap.thinking-bubble .message-content {
-        position: relative;
-        z-index: 0;
-        overflow: visible;
-
         @include chat-bubble-crystal-glass(
           #f2f1ef,
           color-mix(in srgb, #f2f1ef 70%, transparent),
@@ -2229,27 +2149,7 @@ defineExpose({
           10px,
           false
         );
-
-        &::before,
-        &::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          border-radius: inherit;
-          pointer-events: none;
-          z-index: -1;
-          box-shadow: 0 0 var(--think-glow-blur) var(--think-glow-spread) currentColor;
-        }
-
-        &::before {
-          color: var(--think-glow-orange);
-          animation: think-glow-orange var(--think-glow-duration) ease-in-out infinite;
-        }
-
-        &::after {
-          color: var(--think-glow-blue);
-          animation: think-glow-blue var(--think-glow-duration) ease-in-out infinite;
-        }
+        @include thinkGlow.think-glow-ring;
       }
 
       .message-bubble-wrap.thinking-bubble .message-content:hover {
@@ -2566,27 +2466,6 @@ defineExpose({
   );
   box-shadow: var(--n-shadow-card);
   transform: translateY(-1px);
-}
-
-// 思考光晕：只动画 opacity，橙蓝叠化（中间不会插值出黑影）
-@keyframes think-glow-orange {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-}
-
-@keyframes think-glow-blue {
-  0%,
-  100% {
-    opacity: 0;
-  }
-  50% {
-    opacity: 1;
-  }
 }
 
 .avatar-wrap {

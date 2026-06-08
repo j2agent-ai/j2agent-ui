@@ -140,7 +140,6 @@ export type AgentUiEventEnvelope = {
 
 /**
  * 回合成功后 `eventType=NOTICE` 且 `state=COMPLETED` 时的「建议追问」载荷（与后端一致）。
- * @see docs/agent-ui交互机制/README.md
  */
 export type SuggestedFollowUpsNoticePayload = {
 	notice: 'suggested-follow-ups'

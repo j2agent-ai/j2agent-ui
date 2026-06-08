@@ -1,0 +1,53 @@
+// 思考态外围光晕：双伪元素透明度交替，避免橙蓝插值发黑
+@mixin think-glow-ring {
+	--think-glow-orange: rgba(255, 147, 68, 0.85);
+	--think-glow-blue: rgba(64, 158, 255, 0.85);
+	--think-glow-blur: 18px;
+	--think-glow-spread: 6px;
+	--think-glow-duration: 1.4s;
+
+	position: relative;
+	z-index: 0;
+	overflow: visible;
+
+	&::before,
+	&::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		pointer-events: none;
+		z-index: -1;
+		box-shadow: 0 0 var(--think-glow-blur) var(--think-glow-spread) currentColor;
+	}
+
+	&::before {
+		color: var(--think-glow-orange);
+		animation: think-glow-orange var(--think-glow-duration) ease-in-out infinite;
+	}
+
+	&::after {
+		color: var(--think-glow-blue);
+		animation: think-glow-blue var(--think-glow-duration) ease-in-out infinite;
+	}
+}
+
+@keyframes think-glow-orange {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0;
+	}
+}
+
+@keyframes think-glow-blue {
+	0%,
+	100% {
+		opacity: 0;
+	}
+	50% {
+		opacity: 1;
+	}
+}

@@ -212,6 +212,7 @@ onMounted(() => {
 <style lang="scss" scoped>
 @use '@/styles/platform' as *;
 @use './login-captcha.scss';
+@use './login-form.scss' as loginForm;
 
 .login-container {
 	display: flex;
@@ -242,36 +243,7 @@ onMounted(() => {
 		width: 100%;
 	}
 
-	:deep(.el-form-item) {
-		margin-bottom: 12px;
-	}
-
-	:deep(.el-input__wrapper) {
-		min-height: 38px;
-		background: var(--n-color-bg-glass-weak) !important;
-		backdrop-filter: blur(var(--n-glass-blur-1));
-		border-radius: 5px;
-	}
-
-	:deep(.el-input__inner) {
-		background-color: transparent !important;
-		color: var(--n-color-text-primary);
-		font-family: inherit !important;
-	}
-
-	:deep(.el-input__inner::placeholder) {
-		color: var(--el-text-color-placeholder);
-	}
-
-	:deep(input:-webkit-autofill),
-	:deep(input:-webkit-autofill:hover),
-	:deep(input:-webkit-autofill:focus),
-	:deep(input:-webkit-autofill:active) {
-		-webkit-box-shadow: 0 0 0 1000px var(--n-color-bg-glass-weak) inset !important;
-		-webkit-text-fill-color: var(--n-color-text-primary) !important;
-		caret-color: var(--n-color-text-primary);
-		transition: background-color 9999s ease-out;
-	}
+	@include loginForm.login-auth-form-controls;
 
 	.footer-link {
 		display: flex;

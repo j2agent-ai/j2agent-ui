@@ -296,3 +296,138 @@
 		--el-input-placeholder-color: #8f959e;
 	}
 }
+
+/** 与聊天输入区发送按钮一致：顶缘高光 + 柔和外阴影 */
+@mixin n-glass-button {
+	border: none !important;
+	@include n-glass-surface(1);
+}
+
+.el-button:not(.is-text):not(.is-link):not(.pop-btn) {
+	@include n-glass-button;
+
+	&.el-button--default:not(.is-disabled) {
+		color: var(--n-color-text-primary) !important;
+		background: var(--n-color-bg-glass-weak) !important;
+
+		&:hover,
+		&:focus {
+			color: var(--el-color-primary) !important;
+			background: var(--n-color-bg-glass) !important;
+		}
+	}
+
+	&.el-button--primary:not(.is-disabled) {
+		color: var(--n-color-text-inverse) !important;
+		background: var(--el-color-primary) !important;
+
+		&:hover,
+		&:focus {
+			background: color-mix(in srgb, var(--el-color-primary), #000 8%) !important;
+		}
+	}
+
+	&.el-button--danger:not(.is-disabled) {
+		color: var(--n-color-text-inverse) !important;
+		background: var(--el-color-danger) !important;
+
+		&:hover,
+		&:focus {
+			background: color-mix(in srgb, var(--el-color-danger), #000 8%) !important;
+		}
+	}
+
+	&.el-button--warning:not(.is-disabled) {
+		color: var(--n-color-text-inverse) !important;
+		background: var(--el-color-warning) !important;
+
+		&:hover,
+		&:focus {
+			background: color-mix(in srgb, var(--el-color-warning), #000 8%) !important;
+		}
+	}
+
+	&.el-button--success:not(.is-disabled) {
+		color: var(--n-color-text-inverse) !important;
+		background: var(--el-color-success) !important;
+
+		&:hover,
+		&:focus {
+			background: color-mix(in srgb, var(--el-color-success), #000 8%) !important;
+		}
+	}
+
+	&.el-button--info:not(.is-disabled) {
+		color: var(--n-color-text-inverse) !important;
+		background: var(--el-color-info) !important;
+
+		&:hover,
+		&:focus {
+			background: color-mix(in srgb, var(--el-color-info), #000 8%) !important;
+		}
+	}
+
+	&.is-disabled {
+		opacity: 1;
+		cursor: not-allowed;
+		--btn-disabled-tint: var(--n-color-text-muted);
+
+		&.el-button--primary {
+			--btn-disabled-tint: var(--el-color-primary);
+		}
+
+		&.el-button--danger {
+			--btn-disabled-tint: var(--el-color-danger);
+		}
+
+		&.el-button--warning {
+			--btn-disabled-tint: var(--el-color-warning);
+		}
+
+		&.el-button--success {
+			--btn-disabled-tint: var(--el-color-success);
+		}
+
+		&.el-button--info {
+			--btn-disabled-tint: var(--el-color-info);
+		}
+
+		color: color-mix(
+			in srgb,
+			var(--btn-disabled-tint) 78%,
+			var(--n-color-text-muted)
+		) !important;
+		background: color-mix(
+			in srgb,
+			var(--btn-disabled-tint) 22%,
+			var(--n-color-bg-glass-strong)
+		) !important;
+	}
+}
+
+.n-glass-button {
+	@include n-glass-button;
+	cursor: pointer;
+	font: inherit;
+	color: var(--n-color-text-inverse);
+	background: var(--el-color-primary) !important;
+
+	&:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--el-color-primary), #000 8%) !important;
+	}
+
+	&:disabled {
+		opacity: 1;
+		cursor: not-allowed;
+		color: color-mix(
+			in srgb,
+			var(--el-color-primary) 78%,
+			var(--n-color-text-muted)
+		) !important;
+		background: color-mix(
+			in srgb,
+			var(--el-color-primary) 22%,
+			var(--n-color-bg-glass-strong)
+		) !important;
+	}
+}

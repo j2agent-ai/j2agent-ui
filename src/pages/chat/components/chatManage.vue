@@ -1,6 +1,6 @@
 <template>
   <div class="chat-manage-container" @click.self="closeOnBackdrop">
-    <div class="chat-manage-card" :class="{ 'is-busy': isBusy }">
+    <div class="chat-manage-card">
       <div class="chat-manage-header">
         <el-input
           v-if="showSearchInput"
@@ -9,59 +9,62 @@
           class="search-input"
           :placeholder="$t('ai.search.history.context')"
           :suffix-icon="Search"
-          :disabled="isBusy"
           autofocus
           @blur="showSearchInput = false"
         />
         <template v-else>
-          <el-button type="primary" class="add" round :disabled="isBusy" @click="addNewChat">
+          <el-button type="primary" class="add" round @click="addNewChat">
             <i class="iconfont icon-chat-new"></i>{{ $t('ai.add.new.chat') }}
           </el-button>
           <el-button
             class="search-button"
             :icon="Search"
             circle
-            :disabled="isBusy"
             @click="handleShowSearch()"
           />
         </template>
       </div>
-      <div v-show="filteredHistoryList?.length" class="chat-list">
+      <div
+        v-show="filteredHistoryList?.length || listRefreshing"
+        class="chat-list"
+      >
         <div class="list-title fx">
           <div class="text">{{ $t('ai.history.chat') }}</div>
-          <div class="delete" :class="{ disabled: isBusy }" @click="deleteHistoryChat()">
+          <div class="delete" @click="deleteHistoryChat()">
             <i class="iconfont icon-trash-alt"></i
             >{{ $t('ai.delete.all.chat') }}
           </div>
         </div>
-        <div
-          v-loading="listLoading"
-          class="list-content"
-          @scroll="onListScroll"
-        >
+        <div class="list-content" @scroll="onListScroll">
           <div
             v-for="item in filteredHistoryList"
             :key="historyRowKey(item)"
             class="list-item fx"
-            :class="{ active: checkedHistoryId === item.contextId, disabled: isBusy }"
+            :class="{
+              active: checkedHistoryId === item.contextId,
+              'is-streaming': isHistoryItemBusy(item)
+            }"
           >
             <div
               class="cont fx"
-              :class="{ disabled: isBusy }"
               style="height: 100%;"
               @click="goHistoryChat(item.contextId)"
             >
+              <span
+                v-if="isHistoryItemBusy(item)"
+                class="streaming-orb"
+                aria-hidden="true"
+              />
               <i class="iconfont icon-lishiduihua"></i>
               <p>{{ historyItemTitle(item) }}</p>
             </div>
-            <el-dropdown trigger="hover" placement="bottom-end" :disabled="isBusy">
-							<span class="el-dropdown-link" :class="{ disabled: isBusy }">
-								<span class="iconfont icon-vgengduo">...</span>
-							</span>
+            <el-dropdown trigger="hover" placement="bottom-end">
+              <span class="el-dropdown-link">
+                <span class="iconfont icon-vgengduo">...</span>
+              </span>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item
-                    :disabled="isBusy"
                     @click.stop="deleteHistoryChat(item.contextId)"
                   ><i class="iconfont icon-trash-alt"></i>
                     {{ t('common.delete') }}
@@ -75,6 +78,10 @@
             v-else-if="searchLoading"
             class="list-status"
           >{{ t('ai.history.search.loading') }}
+          </div>
+          <div v-if="listRefreshing" class="list-refresh-footer">
+            <div class="list-refresh-bar" aria-hidden="true" />
+            <div class="list-status">{{ t('ai.history.refreshing') }}</div>
           </div>
         </div>
       </div>
@@ -100,10 +107,10 @@ import { getHistoryContextList, deleteHistoryContext } from '@/api/ai.api'
 import type { HistoryContextItem } from '@/types/ai.types'
 import { debounce, t } from '@ai-system/lib'
 import { isChatNarrowLayout } from '../layout'
-import {
-  isImageOnlyHistoryTitle,
-  resolveHistoryItemTitle
-} from '../chatHistoryTitle'
+import { resolveHistoryItemTitle } from '../chatHistoryTitle'
+import { chatActivityStore } from '../chatActivityStore'
+import { chatSessionRegistry } from '../chatSessionRegistry'
+import { buildSessionKey } from '../chatSessionTypes'
 
 const props = defineProps({
   newChat: {
@@ -126,10 +133,6 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
-  isBusy: {
-    type: Boolean,
-    default: false
-  },
   /** 与 ChatView/WebSocket 一致，用于列表过滤与删除范围 */
   agentId: {
     type: String,
@@ -139,14 +142,7 @@ const props = defineProps({
 
 /** 列表行稳定 key（同 context 多智能体时区分） */
 const historyRowKey = (item: HistoryContextItem) =>
-  `${item.contextId}\u0001${item.agentId ?? props.agentId}`
-
-const LEGACY_PLACEHOLDER_TITLE = 'New Chat'
-
-const isUntitledHistoryTitle = (title?: string | null) => {
-  const raw = (title ?? '').trim()
-  return !raw || raw === LEGACY_PLACEHOLDER_TITLE
-}
+  buildSessionKey(item.agentId ?? props.agentId, item.contextId)
 
 const historyItemTitle = (item: HistoryContextItem) =>
   resolveHistoryItemTitle(item.title ?? item.tittle, t)
@@ -157,7 +153,7 @@ const searchKey = ref('')
 const historyList = ref<HistoryContextItem[]>([])
 const filteredHistoryList = ref<HistoryContextItem[]>([])
 const checkedHistoryId = ref(props.currContextId)
-const listLoading = ref(false)
+const listRefreshing = ref(false)
 const loadingMore = ref(false)
 const searchLoading = ref(false)
 const hasMore = ref(true)
@@ -184,30 +180,10 @@ watch(
   }
 )
 
-watch(
-  () => props.isBusy,
-  (val) => {
-    if (val) {
-      showSearchInput.value = false
-    }
-  }
-)
-
-const blockWhenBusy = (messageKey = 'ai.assistant.waiting') => {
-  if (!props.isBusy) {
-    return false
-  }
-  ElMessage({
-    message: t(messageKey),
-    type: 'info'
-  })
-  return true
-}
+const isHistoryItemBusy = (item: HistoryContextItem) =>
+  chatActivityStore.activeKeySet.value.has(historyRowKey(item))
 
 const handleShowSearch = () => {
-  if (blockWhenBusy()) {
-    return
-  }
   showSearchInput.value = true
   nextTick(() => {
     searchKey.value = ''
@@ -215,9 +191,6 @@ const handleShowSearch = () => {
   })
 }
 const addNewChat = () => {
-  if (blockWhenBusy()) {
-    return
-  }
   emit('showChatManage', false)
   if (!props.messageContext?.length) {
     ElMessage({
@@ -228,13 +201,9 @@ const addNewChat = () => {
   }
   checkedHistoryId.value = ''
   props.newChat()
-  getHistoryListData()
 }
 
-const goHistoryChat = (constextId) => {
-  if (blockWhenBusy('ai.history.stop.chat.first')) {
-    return
-  }
+const goHistoryChat = (constextId: string) => {
   emit('showChatManage', false)
   checkedHistoryId.value = constextId
   props.historyChat(constextId)
@@ -246,21 +215,22 @@ const fetchHistoryPage = async (offset: number) => {
   return (res.data?.data ?? []) as HistoryContextItem[]
 }
 
-const mergeHistoryPage = (items: HistoryContextItem[]) => {
+const mergeHistoryPage = (
+  items: HistoryContextItem[],
+  options?: { replace?: boolean }
+) => {
   const pageItems =
     items.length > HISTORY_PAGE_SIZE ? items.slice(0, HISTORY_PAGE_SIZE) : items
   hasMore.value = items.length > HISTORY_PAGE_SIZE
-  const byKey = new Map(historyList.value.map((item) => [historyRowKey(item), item]))
+  const byKey = options?.replace
+    ? new Map<string, HistoryContextItem>()
+    : new Map(historyList.value.map((item) => [historyRowKey(item), item]))
   for (const item of pageItems) {
     const key = historyRowKey(item)
     const existing = byKey.get(key)
     if (existing) {
-      if (item.title !== undefined) {
-        const incoming = (item.title ?? '').trim()
-        const existingTitle = (existing.title ?? existing.tittle ?? '').trim()
-        if (incoming || isUntitledHistoryTitle(existingTitle) || isImageOnlyHistoryTitle(existingTitle)) {
-          existing.title = item.title
-        }
+      if (item.title !== undefined && (item.title ?? '').trim()) {
+        existing.title = item.title
       }
       if (item.tittle !== undefined) {
         existing.tittle = item.tittle
@@ -281,20 +251,19 @@ const mergeHistoryPage = (items: HistoryContextItem[]) => {
 }
 
 const getHistoryListData = async () => {
-  listLoading.value = true
+  listRefreshing.value = true
   hasMore.value = true
-  historyList.value = []
   try {
     const page = await fetchHistoryPage(0)
-    mergeHistoryPage(page)
+    mergeHistoryPage(page, { replace: true })
     filterList(searchKey.value)
   } finally {
-    listLoading.value = false
+    listRefreshing.value = false
   }
 }
 
 const loadMoreHistory = async () => {
-  if (!hasMore.value || loadingMore.value || listLoading.value || searchLoading.value) {
+  if (!hasMore.value || loadingMore.value || listRefreshing.value || searchLoading.value) {
     return
   }
   loadingMore.value = true
@@ -325,9 +294,6 @@ const onListScroll = (event: Event) => {
 }
 
 const deleteHistoryChat = (contextId?: string) => {
-  if (blockWhenBusy()) {
-    return
-  }
   ElMessageBox.confirm(
     t('ai.delete.warning'),
     contextId ? t('ai.delete.chat.confirm') : t('ai.delete.all.chat.confirm'),
@@ -354,6 +320,9 @@ const deleteHistoryChat = (contextId?: string) => {
       return
     }
     await deleteHistoryContext(contextIds, props.agentId)
+    for (const id of contextIds) {
+      chatSessionRegistry.removeSession(props.agentId, id)
+    }
     await getHistoryListData()
     if (contextId) {
       if (contextId === checkedHistoryId.value) {
@@ -410,7 +379,7 @@ const upsertSessionHistoryItem = (params: {
 }) => {
   const agentId = params.agentId ?? props.agentId
   const now = params.lastUpdateTime ?? Date.now()
-  const key = `${params.contextId}\u0001${agentId}`
+  const key = buildSessionKey(agentId, params.contextId)
   const existingIdx = historyList.value.findIndex(
     (item) => historyRowKey(item) === key
   )
@@ -478,10 +447,6 @@ defineExpose({
     padding: 20px;
     box-sizing: border-box;
     overflow: hidden;
-
-    &.is-busy {
-      opacity: 0.8;
-    }
   }
 
   .chat-manage-header {
@@ -604,11 +569,6 @@ defineExpose({
         }
       }
 
-      .delete.disabled {
-        cursor: not-allowed;
-        opacity: 0.5;
-        pointer-events: none;
-      }
     }
 
     .list-content {
@@ -653,30 +613,80 @@ defineExpose({
           0 0 24px color-mix(in srgb, var(--el-color-primary) 14%, transparent);
         }
 
-        &.disabled {
-          cursor: default;
-        }
-
         .cont {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
           width: calc(100% - 20px);
           flex-grow: 1;
+          min-width: 0;
+
+          .streaming-orb {
+            position: relative;
+            flex-shrink: 0;
+            width: 14px;
+            height: 14px;
+            display: inline-block;
+
+            /* 外层柔光雾晕 */
+            &::before {
+              content: '';
+              position: absolute;
+              left: 50%;
+              top: 50%;
+              width: 20px;
+              height: 20px;
+              margin: -10px 0 0 -10px;
+              border-radius: 50%;
+              background: radial-gradient(
+                circle at 50% 50%,
+                rgba(255, 180, 120, 0.5) 0%,
+                rgba(140, 190, 255, 0.38) 38%,
+                rgba(255, 160, 100, 0.12) 58%,
+                transparent 72%
+              );
+              filter: blur(5px);
+              animation: streaming-orb-mist 2.4s ease-in-out infinite;
+            }
+
+            /* 内层渐变彩球 */
+            &::after {
+              content: '';
+              position: absolute;
+              left: 50%;
+              top: 50%;
+              width: 8px;
+              height: 8px;
+              margin: -4px 0 0 -4px;
+              border-radius: 50%;
+              background: conic-gradient(
+                from 0deg,
+                rgba(255, 147, 68, 0.82),
+                rgba(200, 220, 255, 0.92),
+                rgba(90, 160, 255, 0.88),
+                rgba(255, 175, 110, 0.8),
+                rgba(255, 147, 68, 0.82)
+              );
+              filter: blur(0.8px);
+              box-shadow:
+                0 0 5px rgba(255, 147, 68, 0.42),
+                0 0 9px rgba(64, 158, 255, 0.28);
+              animation: streaming-orb-spin 2s linear infinite;
+            }
+          }
+
+          .iconfont {
+            flex-shrink: 0;
+            margin-right: 0;
+          }
 
           p {
+            flex: 1;
+            min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
           }
-        }
-
-        .cont.disabled {
-          cursor: not-allowed;
-          opacity: 0.5;
-        }
-
-        .el-dropdown-link.disabled {
-          cursor: not-allowed;
-          opacity: 0.5;
-          pointer-events: none;
         }
 
         .el-dropdown {
@@ -695,6 +705,43 @@ defineExpose({
       .el-dropdown-link {
         display: flex;
         align-items: center;
+      }
+
+      .list-refresh-footer {
+        position: sticky;
+        bottom: calc(-1 * var(--chat-list-pad-bottom));
+        z-index: 2;
+        margin-top: 10px;
+        pointer-events: none;
+      }
+
+      .list-refresh-bar {
+        height: 2px;
+        margin: 0 0 6px;
+        border-radius: 2px;
+        overflow: hidden;
+        background: color-mix(in srgb, var(--el-color-primary) 8%, transparent);
+
+        &::after {
+          content: '';
+          display: block;
+          height: 100%;
+          width: 32%;
+          border-radius: inherit;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            color-mix(in srgb, var(--el-color-primary) 55%, transparent),
+            transparent
+          );
+          animation: list-refresh-slide 1.15s ease-in-out infinite;
+        }
+      }
+
+      .list-refresh-footer .list-status {
+        padding: 0 0 2px;
+        font-size: 11px;
+        opacity: 0.55;
       }
 
       .list-status {
@@ -727,6 +774,36 @@ defineExpose({
     :deep(input:-webkit-autofill:focus) {
       -webkit-box-shadow: 0 0 0 1000px var(--n-color-bg-glass) inset !important;
     }
+  }
+}
+
+@keyframes streaming-orb-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes streaming-orb-mist {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.9) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1) rotate(180deg);
+  }
+}
+
+@keyframes list-refresh-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(380%);
   }
 }
 </style>
