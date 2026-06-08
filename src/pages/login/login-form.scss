@@ -1,0 +1,43 @@
+@use '@/styles/platform' as *;
+
+@mixin login-auth-form-controls {
+	:deep(.el-form-item) {
+		margin-bottom: 12px;
+	}
+
+	:deep(.el-input__wrapper) {
+		min-height: 38px;
+		border: none !important;
+		border-radius: 6px;
+		box-shadow: var(--n-shadow-elevation-1) !important;
+		background: var(--n-color-bg-glass-weak) !important;
+		backdrop-filter: blur(var(--n-glass-blur-1)) saturate(var(--n-glass-saturate));
+		-webkit-backdrop-filter: blur(var(--n-glass-blur-1)) saturate(var(--n-glass-saturate));
+		transition: box-shadow 0.2s ease;
+	}
+
+	:deep(.el-input__wrapper:hover),
+	:deep(.el-input__wrapper.is-focus) {
+		box-shadow: var(--n-shadow-elevation-2) !important;
+	}
+
+	:deep(.el-input__inner) {
+		background-color: transparent !important;
+		color: var(--n-color-text-primary);
+		font-family: inherit !important;
+	}
+
+	:deep(.el-input__inner::placeholder) {
+		color: var(--el-text-color-placeholder);
+	}
+
+	:deep(input:-webkit-autofill),
+	:deep(input:-webkit-autofill:hover),
+	:deep(input:-webkit-autofill:focus),
+	:deep(input:-webkit-autofill:active) {
+		-webkit-box-shadow: 0 0 0 1000px var(--n-color-bg-glass-weak) inset !important;
+		-webkit-text-fill-color: var(--n-color-text-primary) !important;
+		caret-color: var(--n-color-text-primary);
+		transition: background-color 9999s ease-out;
+	}
+}

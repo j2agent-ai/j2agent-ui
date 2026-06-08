@@ -1,5 +1,5 @@
 // 这里配置全局 OEM 需求
-export const programTag = 'j2agent'
+export const programTag = 'j2agent';
 // eg: /v*${globalUrlPrefix}rest/${programTag}/**
 export const globalUrlPrefix = '/';
 // 网页title
@@ -9,4 +9,19 @@ export const webTitleEn = 'J2Agent Platform'
 export const aiIntroduceZh = '你好，我是 J2Agent AI'
 export const aiIntroduceEn = 'Hello, I am J2Agent AI'
 // 顶栏名称
-export const topBarTittle = 'J2Agent AI'
+export const topBarTittle = 'J2Agent AI';
+
+// 主色（唯一需手改的值）
+export const primaryColor = '#5182e4';
+
+// 由 primaryColor 自动推导，避免 RGB 与 hex 不一致
+export const primaryColorRgb = (() => {
+	const n = parseInt(primaryColor.slice(1), 16);
+	return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+})();
+
+// Logo
+export const faviconUrl = '/favicon.ico';
+export const topBarLogoUrl = '';
+export const chatLogoUrl = ''; // 留空则使用 emoji
+export const chatLogoEmoji = '🤖';

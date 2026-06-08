@@ -49,7 +49,7 @@
 					{{ t('account.title') }}
 				</li>
 				<hr />
-				<li class="menu-card-item" @click="goTo('/logout')">
+				<li class="menu-card-item" @click="handleLogout">
 					{{ t('logout') }}
 				</li>
 			</ul>
@@ -60,7 +60,7 @@
 import { t } from '@ai-system/lib'
 import { ElTooltip } from 'element-plus'
 import { computed, ref, onUnmounted, watch } from 'vue'
-import { goTo } from '@/routes'
+import { goTo, goToLogout } from '@/routes'
 import { hasRoleAccess, ROLE_ADMIN, ROLE_USER } from '@/utils/role'
 
 defineExpose({
@@ -89,6 +89,10 @@ const canAccessAdmin = computed(() => hasRoleAccess(ROLE_ADMIN))
 const menuTitle = computed(() => props.title || t('common.system.options'))
 const menuTitleRef = ref<HTMLElement | null>(null)
 const menuTitleOverflow = ref(false)
+
+function handleLogout() {
+	void goToLogout()
+}
 
 function syncMenuTitleOverflow() {
 	const el = menuTitleRef.value

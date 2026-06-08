@@ -39,70 +39,63 @@
 	}
 }
 
-/* Dialog / MessageBox 底部按钮：避免毛玻璃 token 导致发白 */
+/* Dialog / MessageBox 底部按钮：与发送按钮一致的毛玻璃边缘质感 */
 @mixin n-overlay-footer-buttons {
+	.el-button:not(.is-text):not(.is-link):not(.is-disabled) {
+		border: none !important;
+		box-shadow: var(--n-shadow-elevation-1) !important;
+		backdrop-filter: blur(var(--n-glass-blur-1)) saturate(var(--n-glass-saturate));
+		-webkit-backdrop-filter: blur(var(--n-glass-blur-1)) saturate(var(--n-glass-saturate));
+	}
+
 	.el-button--default:not(.is-disabled) {
 		color: var(--n-color-text-primary) !important;
-		background-color: transparent !important;
-		border: 1px solid var(--el-switch-border-color) !important;
+		background-color: var(--n-color-bg-glass-weak) !important;
 
 		&:hover,
 		&:focus {
 			color: var(--el-color-primary) !important;
-			background-color: color-mix(in srgb, var(--n-color-neutral-w) 14%, transparent) !important;
-			border-color: var(--el-switch-border-color-hover) !important;
+			background-color: var(--n-color-bg-glass) !important;
 		}
 	}
 
 	.el-button--primary:not(.is-disabled) {
 		color: var(--n-color-text-inverse) !important;
 		background-color: var(--el-color-primary) !important;
-		border: 1px solid var(--el-color-primary) !important;
 
 		&:hover,
 		&:focus {
-			color: var(--n-color-text-inverse) !important;
-			background-color: color-mix(in srgb, var(--el-color-primary), #000 10%) !important;
-			border-color: color-mix(in srgb, var(--el-color-primary), #000 10%) !important;
+			background-color: color-mix(in srgb, var(--el-color-primary), #000 8%) !important;
 		}
 	}
 
 	.el-button--warning:not(.is-disabled) {
 		color: var(--n-color-text-inverse) !important;
 		background-color: var(--el-color-warning) !important;
-		border: 1px solid color-mix(in srgb, var(--el-color-warning), #000 14%) !important;
 
 		&:hover,
 		&:focus {
-			color: var(--n-color-text-inverse) !important;
-			background-color: color-mix(in srgb, var(--el-color-warning), #000 10%) !important;
-			border-color: color-mix(in srgb, var(--el-color-warning), #000 12%) !important;
+			background-color: color-mix(in srgb, var(--el-color-warning), #000 8%) !important;
 		}
 	}
 
 	.el-button--danger:not(.is-disabled) {
 		color: var(--n-color-text-inverse) !important;
 		background-color: var(--el-color-error) !important;
-		border: 1px solid var(--el-color-error) !important;
 
 		&:hover,
 		&:focus {
-			color: var(--n-color-text-inverse) !important;
-			background-color: color-mix(in srgb, var(--el-color-error), #000 10%) !important;
-			border-color: color-mix(in srgb, var(--el-color-error), #000 10%) !important;
+			background-color: color-mix(in srgb, var(--el-color-error), #000 8%) !important;
 		}
 	}
 
 	.el-button--success:not(.is-disabled) {
 		color: var(--n-color-text-inverse) !important;
 		background-color: var(--el-color-success) !important;
-		border: 1px solid var(--el-color-success) !important;
 
 		&:hover,
 		&:focus {
-			color: var(--n-color-text-inverse) !important;
-			background-color: color-mix(in srgb, var(--el-color-success), #000 10%) !important;
-			border-color: color-mix(in srgb, var(--el-color-success), #000 10%) !important;
+			background-color: color-mix(in srgb, var(--el-color-success), #000 8%) !important;
 		}
 	}
 }

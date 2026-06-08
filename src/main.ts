@@ -8,7 +8,9 @@ import { setSessionInfo } from '@/utils/role'
 import './styles/index.scss'
 import './styles/markdown.scss'
 import { installDraggableMessageBox } from '@ai-system/common/elementPlusDialog'
+import { applyOemBranding } from '@/utils/applyOemBranding'
 
+applyOemBranding()
 installDraggableMessageBox()
 
 document.documentElement.classList.remove('dark')
@@ -18,7 +20,7 @@ async function APP() {
 	const app = new App({
 		routeType: 'hash',
 		routes,
-		routeBase: import.meta.env.BASE_URL,
+		routeBase: '/',
 		langLoaders: [langLoaders],
 		plugins: [ElLoading]
 	})

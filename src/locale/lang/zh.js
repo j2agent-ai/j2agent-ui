@@ -23,7 +23,8 @@ export default {
 	'common.file.change': '文件已改变，请重新选择',
 	'common.create.time': '创建时间',
 	'common.update.time': '更新时间',
-	homepage: '首页',
+	'homepage': '首页',
+
 	'files.title': '文件管理',
 	'files.desc': '管理对象存储文件并检查 OSS 与数据库差异',
 	'files.menu.manage': '文件管理',
@@ -109,8 +110,7 @@ export default {
 	'mcp.config.invalid': 'JSON 格式不正确',
 	'mcp.config.load.failed': '加载 MCP 配置失败',
 	'agentGlobalConfig.config.title': '智能体全局配置',
-	'agentGlobalConfig.config.placeholder':
-		'请输入智能体全局配置 JSON，例如 {"datasource":{"jdbcUrl":"","username":"","password":"","driverClassName":"com.mysql.cj.jdbc.Driver"},"service":{"baseUrl":""}}',
+	'agentGlobalConfig.config.placeholder': '请输入智能体全局配置 JSON，例如 {"datasource":{"jdbcUrl":"","username":"","password":"","driverClassName":"com.mysql.cj.jdbc.Driver"},"service":{"baseUrl":""}}',
 	'agentGlobalConfig.config.format': '格式化',
 	'agentGlobalConfig.config.invalid': 'JSON 格式不正确',
 	'agentGlobalConfig.config.load.failed': '加载智能体全局配置失败',
@@ -149,14 +149,11 @@ export default {
 	'settings.openai.section': 'OpenAI 兼容配置',
 	'settings.openai.desc': '仅在服务商为 OpenAI 兼容时生效',
 	'settings.embedding.rebuild.title': '重建知识库确认',
-	'settings.embedding.rebuild.confirm':
-		'检测到 Embedding 配置变更，保存后需要重建知识库，是否继续？',
+	'settings.embedding.rebuild.confirm': '检测到 Embedding 配置变更，保存后需要重建知识库，是否继续？',
 	'settings.embedding.rebuild.confirm.ok': '继续保存',
 	'settings.embedding.rebuild.confirm.cancel': '取消保存',
-	'providerConfig.hint.llm':
-		'可保存多个 LLM 模型配置，选择一个「设为当前」即可立即生效。',
-	'providerConfig.hint.embedding':
-		'可保存多个 Embedding 模型配置；切换当前生效项会触发知识库重建。',
+	'providerConfig.hint.llm': '可保存多个 LLM 模型配置，选择一个「设为当前」即可立即生效。',
+	'providerConfig.hint.embedding': '可保存多个 Embedding 模型配置；切换当前生效项会触发知识库重建。',
 	'providerConfig.section.basic': '基本信息',
 	'providerConfig.section.params': '模型连接参数',
 	'providerConfig.section.runtime': '运行时参数',
@@ -213,29 +210,21 @@ export default {
 	'providerConfig.activate.failed': '切换当前生效配置失败',
 	'providerConfig.validate.configName': '请填写配置名称',
 	'providerConfig.validate.modelName': '请填写模型名称',
-	'providerConfig.validate.maxTokens':
-		'Anthropic 兼容须填写 Max Tokens（正整数）',
+	'providerConfig.validate.maxTokens': 'Anthropic 兼容须填写 Max Tokens（正整数）',
 	'providerConfig.contextLength.placeholder': '留空使用模型默认',
-	'providerConfig.field.configName.tip':
-		'便于识别的展示名称，同一类型下可重复。',
+	'providerConfig.field.configName.tip': '便于识别的展示名称，同一类型下可重复。',
 	'providerConfig.field.providerType.tip':
 		'Anthropic 兼容用于 Messages API 网关或官方 API；OpenAI 兼容用于 Chat Completions 网关。baseUrl 与路径以网关文档为准。',
 	'providerConfig.field.enabled.tip': '禁用后不可设为当前生效项。',
-	'providerConfig.field.makeCurrent.tip':
-		'创建后立即作为该类型的当前生效配置并热更新运行时。',
+	'providerConfig.field.makeCurrent.tip': '创建后立即作为该类型的当前生效配置并热更新运行时。',
 	'providerConfig.field.description.tip': '可选备注，仅用于列表展示。',
 	'providerConfig.field.modelName.tip': '提供商侧的实际模型 ID 或名称。',
-	'providerConfig.field.baseUrl.tip':
-		'服务根地址，不含 completions/embeddings 路径；下方示例随提供商类型变化。',
+	'providerConfig.field.baseUrl.tip': '服务根地址，不含 completions/embeddings 路径；下方示例随提供商类型变化。',
 	'providerConfig.field.apiKey.tip': '认证密钥；编辑时留空表示不修改原密钥。',
-	'providerConfig.field.completionsPath.tip':
-		'OpenAI 兼容 Chat Completions 相对路径。',
-	'providerConfig.field.embeddingsPath.tip':
-		'OpenAI 兼容 Embeddings 相对路径。',
-	'providerConfig.field.keepAliveSeconds.tip':
-		'Ollama 模型在内存中驻留时间（秒），0 表示由服务端默认处理。',
-	'providerConfig.field.contextLength.tip':
-		'仅 Ollama 生效，对应 num_ctx；留空则使用模型 Modelfile 或 Ollama 默认值。',
+	'providerConfig.field.completionsPath.tip': 'OpenAI 兼容 Chat Completions 相对路径。',
+	'providerConfig.field.embeddingsPath.tip': 'OpenAI 兼容 Embeddings 相对路径。',
+	'providerConfig.field.keepAliveSeconds.tip': 'Ollama 模型在内存中驻留时间（秒），0 表示由服务端默认处理。',
+	'providerConfig.field.contextLength.tip': '仅 Ollama 生效，对应 num_ctx；留空则使用模型 Modelfile 或 Ollama 默认值。',
 	'providerConfig.field.maxTokens.tip':
 		'Anthropic 兼容必填，对应 Messages API max_tokens；请按模型与平台文档填写单次回复输出上限。',
 	'providerConfig.maxTokens.placeholder': '例如 16384',
@@ -304,15 +293,11 @@ export default {
 	'user.emailRegister.whitelist.title': '邮箱白名单',
 	'user.emailRegister.whitelist.enabled': '启用白名单',
 	'user.emailRegister.whitelist.rules': '白名单规则',
-	'user.emailRegister.whitelist.rules.placeholder':
-		'*@company.com, admin@company.com',
-	'user.emailRegister.whitelist.rules.hint':
-		'逗号分隔；*@域名 表示该域名下任意邮箱，或填写完整邮箱',
+	'user.emailRegister.whitelist.rules.placeholder': '*@company.com, admin@company.com',
+	'user.emailRegister.whitelist.rules.hint': '逗号分隔；*@域名 表示该域名下任意邮箱，或填写完整邮箱',
 	'user.emailRegister.whitelist.deniedMessage': '拒绝提示',
-	'user.emailRegister.whitelist.deniedMessage.placeholder':
-		'留空则提示：此邮箱禁止注册',
-	'user.emailRegister.whitelist.rules.required':
-		'启用白名单时请填写至少一条规则',
+	'user.emailRegister.whitelist.deniedMessage.placeholder': '留空则提示：此邮箱禁止注册',
+	'user.emailRegister.whitelist.rules.required': '启用白名单时请填写至少一条规则',
 	'user.resetPassword.pageTitle': '找回密码',
 	'user.resetPassword.email': '邮箱',
 	'user.resetPassword.code': '邮箱验证码',
@@ -345,7 +330,7 @@ export default {
 	'login.powFail': '验证未通过，请重试',
 	'captcha.tip': '请拖动滑块对齐图像以登录',
 	'captcha.validate.fail': '验证失败',
-	logout: '退出登录',
+	'logout': '退出登录',
 	...zhAi,
 	...zhKb
 }

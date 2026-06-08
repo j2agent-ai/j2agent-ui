@@ -1,7 +1,9 @@
+@use './oem-vars' as *;
+
 @forward 'element-plus/theme-chalk/src/common/var.scss' with (
   $colors: (
     'primary': (
-      'base': #5182e4,
+      'base': $oem-primary,
     ),
     'success': (
       'base': #52AC82,
@@ -18,13 +20,13 @@
 
 // 默认浅色主题
 :root {
-  --el-color-primary: #5182e4; // 主色
+  --el-color-primary: #{$oem-primary}; // 主色
 
   --el-color-success: #52AC82; // 成功色
   --el-color-warning: #DCB447; // 警告色
   --el-color-error: #f36b6b; // 错误色
   --el-color-info: #637A9E; // 主色
-  --el-color-primary-rgb: 241, 90, 34;
+  --el-color-primary-rgb: #{$oem-primary-rgb};
   --n-color-neutral-w: #fff;
   --n-color-neutral-b: #000000;
   --n-color-neutral-0: #f5f7fa; // fill-color-light

@@ -1,3 +1,5 @@
+@use '@/styles/platform' as *;
+
 .captcha-check-panel {
 	display: flex;
 	align-items: center;
@@ -5,16 +7,19 @@
 	box-sizing: border-box;
 	height: 68px;
 	padding: 0 16px;
-	border: 1px solid var(--el-border-color);
 	border-radius: 6px;
-	background: var(--n-color-bg-glass-weak);
 	user-select: none;
 	cursor: pointer;
-	transition: border-color 0.2s ease;
+	@include n-glass-surface(1);
+	transition: box-shadow 0.2s ease;
 }
 
 .captcha-check-panel:hover {
-	border-color: var(--el-color-primary);
+	box-shadow: var(--n-shadow-elevation-2);
+}
+
+.captcha-check-panel.is-checked {
+	box-shadow: var(--n-shadow-elevation-2);
 }
 
 .captcha-check-panel.is-disabled,

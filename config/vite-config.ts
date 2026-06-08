@@ -5,8 +5,20 @@ import path from 'path'
 import DefineOptions from 'unplugin-vue-define-options/vite'
 import VueJsx from '@vitejs/plugin-vue-jsx'
 import fs from 'fs'
+import { faviconUrl, primaryColor, primaryColorRgb } from '../src/oem.js'
 
 const rootDir = path.join(__dirname, '../')
+const oemVarsScssPath = path.join(rootDir, 'lib/common/styles/_oem-vars.scss')
+
+function syncOemScssVars() {
+	const content = [
+		'// 由 oem.js 自动生成，请勿手动编辑',
+		`$oem-primary: ${primaryColor};`,
+		`$oem-primary-rgb: ${primaryColorRgb};`,
+		''
+	].join('\n')
+	fs.writeFileSync(oemVarsScssPath, content, 'utf-8')
+}
 
 interface ProxyServer {
 	path: string
@@ -66,9 +78,14 @@ export function viteConfig(
 		}
 	})
 
+	const viteBase =
+		command === 'serve'
+			? '/'
+			: env.VITE_BASE?.trim() || './'
+
 	let config = {
-		// 指定在构建生产版本时，HTML文件所在的基础路径，默认情况下为相对路径（./）
-		base: env.VITE_BASE,
+		// 生产默认 ./：页面在 /ai-center/ 下时，chunks 解析为 /ai-center/chunks/*，而非域名根 /chunks/*
+		base: viteBase,
 		cacheDir: './node_modules/.vite',
 		optimizeDeps: {
 			include: ['vue', 'vue-router'] // 预构建核心依赖
@@ -96,6 +113,21 @@ export function viteConfig(
 			}
 		},
 		plugins: [
+			{
+				name: 'oem-scss-vars',
+				config() {
+					syncOemScssVars()
+				}
+			},
+			{
+				name: 'oem-favicon-html',
+				transformIndexHtml(html: string) {
+					return html.replace(
+						/<link rel="icon" href="[^"]*">/,
+						`<link rel="icon" href="${faviconUrl}">`
+					)
+				}
+			},
 			VueJsx(),
 			DefineOptions(),
 			vue({
@@ -107,21 +139,21 @@ export function viteConfig(
 			}),
 			{
 				name: 'copy-index-html-plugin',
-				writeBundle() {
-					console.log('Vite 打包完成，执行自定义脚本...')
-					const indexPath = path.join(rootDir, 'dist/index.html')
+				closeBundle() {
+					const outDir = path.resolve(rootDir, env.VITE_OUT_DIR || 'dist')
+					const indexPath = path.join(outDir, 'index.html')
 					if (!fs.existsSync(indexPath)) {
-						console.warn('[copy-index-html-plugin] skip: dist/index.html not found')
+						console.warn(
+							`[copy-index-html-plugin] skip: ${indexPath} not found`
+						)
 						return
 					}
-					// 复制 index.html
-					const content = fs.readFileSync(indexPath, {
-						encoding: 'utf-8'
-					})
+					console.log('Vite 打包完成，执行自定义脚本...')
+					const content = fs.readFileSync(indexPath, { encoding: 'utf-8' })
 					// 这几个文件的长度不能一样,否则文件的etag相同
-					fs.writeFileSync(path.join(rootDir, 'dist/index-zh.html'), content)
+					fs.writeFileSync(path.join(outDir, 'index-zh.html'), content)
 					fs.writeFileSync(
-						path.join(rootDir, 'dist/index-en.html'),
+						path.join(outDir, 'index-en.html'),
 						content
 							.replace(
 								'ai_system_language_variable = "zh"',
@@ -152,17 +184,20 @@ export function viteConfig(
 		],
 		build: {
 			outDir: env.VITE_OUT_DIR,
-			emptyOutDir: true,
+			emptyOutDir: false,
 			assetsDir: './assets/',
 			minify: 'terser',
 			terserOptions: {
+				ecma: 2018,
+				safari10: true,
 				compress: {
 					drop_console: true,
 					drop_debugger: true
-				}
+				},
+				format: { comments: false }
 			},
 			sourcemap: mode === 'development',
-			target: 'es2020',
+			target: 'es2018',
 			rollupOptions: {
 				input: {
 					index: path.join(rootDir, 'index.html')

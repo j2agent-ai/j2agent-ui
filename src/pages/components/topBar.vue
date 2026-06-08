@@ -1,7 +1,7 @@
 <template>
 	<div class="top-bar">
 		<h3 class="tittle" @click="goTo('/')">
-<!--			<img class="top-bar-logo" src="/logo-w.png" alt="" />-->
+			<img class="top-bar-logo" :src="topBarLogoUrl" alt="" />
 			<span class="title-text">
 				{{ topBarTittle
 				}}<span v-if="titleSuffix" class="title-suffix">&nbsp;-&nbsp;{{ titleSuffix }}</span>
@@ -73,7 +73,7 @@
 import { ElTooltip } from 'element-plus'
 import { computed, ref } from 'vue'
 import MenuCard from '@/pages/components/menuCard.vue'
-import { topBarTittle } from '@/oem'
+import { topBarLogoUrl, topBarTittle } from '@/oem'
 import { goTo } from '@/routes'
 import defaultAvatar from '@/assets/avatar.png'
 import { getSessionInfo } from '@/utils/role'
