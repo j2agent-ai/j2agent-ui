@@ -97,6 +97,18 @@ export const deleteHistoryContext = (contextId: string | string[], agentId?: str
 }
 
 /**
+ * 清空当前用户历史；可选 agentId 过滤。服务端跳过运行中会话，无需传 context-id。
+ */
+export const clearAllHistoryContext = (agentId?: string) => {
+	return http.delete(`/v1${globalUrlPrefix}rest/${programTag}/context`, {
+		params: {
+			'clear-all': true,
+			...(agentId !== undefined ? { 'agent-id': agentId } : {})
+		}
+	})
+}
+
+/**
  * 获取指定智能体的热门问题
  */
 export const getQaTemplate = (agentId: string, limit?: number) => {
