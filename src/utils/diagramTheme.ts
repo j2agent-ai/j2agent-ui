@@ -37,7 +37,7 @@ export const DIAGRAM_THEME_COLORS = {
   activationBorder: '#7DD3FC'
 } as const
 
-const PLANTUML_THEME_MARKER = '@@j2agent-diagram-theme@@'
+const PLANTUML_THEME_MARKER = '@@diagram-theme@@'
 
 const buildPlantUmlSkinparams = () => {
   const c = DIAGRAM_THEME_COLORS
