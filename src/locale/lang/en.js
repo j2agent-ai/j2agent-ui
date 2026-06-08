@@ -331,6 +331,7 @@ export default {
 	'login.fail': 'Username or password error',
 	'login.submit': 'Log in',
 	'login.check.captcha': "I'm not a robot",
+	'login.captchaRequired': 'Please complete the captcha verification first',
 	'login.verifying': 'Verifying',
 	'login.powFail': 'Verification failed. Please try again.',
 	'captcha.tip': 'Please slide the block to the right to log in',

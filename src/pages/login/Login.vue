@@ -27,7 +27,7 @@
 					placeholder="密码"
 				></el-input>
 			</el-form-item>
-			<el-form-item>
+			<el-form-item prop="captcha">
 				<div
 					class="captcha-check-panel"
 					:class="{
@@ -65,7 +65,6 @@
 					type="primary"
 					class="submit-btn"
 					:loading="loading"
-					:disabled="!captchaToken || powLoading || challengeLoading || captchaDialogShow"
 					@click="handleLoginClick"
 				>
 					{{ t('login.submit') }}
@@ -100,7 +99,7 @@
 
 <script setup lang="ts">
 import axios from 'axios'
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
 	ElForm,
@@ -143,13 +142,32 @@ function slideCaptchaSuccess(e: { code: string; hash: string }) {
 
 const loginData = reactive({
 	username: '',
-	password: ''
+	password: '',
+	captcha: ''
 })
 
 const rules = {
 	username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-	password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+	password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+	captcha: [
+		{
+			validator: (_rule, _value, callback) => {
+				if (captchaToken.value) {
+					callback()
+				} else {
+					callback(new Error(t('login.captchaRequired')))
+				}
+			},
+			trigger: 'change'
+		}
+	]
 }
+
+watch(captchaToken, (token) => {
+	if (token) {
+		loginForm.value?.clearValidate('captcha')
+	}
+})
 
 function onDialogClose() {
 	onCaptchaDialogClose()
@@ -157,7 +175,6 @@ function onDialogClose() {
 }
 
 async function submitLogin() {
-	if (!captchaToken.value) return
 	const form = loginForm.value
 	if (!form) return
 	try {

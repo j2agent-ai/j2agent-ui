@@ -87,7 +87,6 @@
 					type="primary"
 					class="submit-btn"
 					:loading="loading"
-					:disabled="!captchaToken || powLoading || challengeLoading || captchaDialogShow"
 					@click="handleRegister"
 				>
 					{{ t('user.emailRegister.submit') }}
