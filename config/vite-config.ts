@@ -122,9 +122,11 @@ export function viteConfig(
 			{
 				name: 'oem-favicon-html',
 				transformIndexHtml(html: string) {
+					// 子路径 + hash 路由部署：favicon 也走相对 ./，去掉前导 /
+					const relFavicon = faviconUrl.replace(/^\//, '')
 					return html.replace(
 						/<link rel="icon" href="[^"]*">/,
-						`<link rel="icon" href="${faviconUrl}">`
+						`<link rel="icon" href="${relFavicon}">`
 					)
 				}
 			},
