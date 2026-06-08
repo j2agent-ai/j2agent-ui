@@ -90,7 +90,7 @@ export const startTurn = (
 	ws.onerror = (error: unknown) => {
 		const err = error as { responseCode?: number }
 		if (err.responseCode === 401) {
-			window.location.assign('/#/login')
+			location.hash = '/login'
 		} else if (err.responseCode !== 0) {
 			console.error(error)
 			ElMessage.error(t('ai.assistant.service.unavailable'))
