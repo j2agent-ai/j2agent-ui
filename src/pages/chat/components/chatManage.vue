@@ -400,17 +400,16 @@ const exitBatchMode = () => {
   selectedKeys.value = new Set()
 }
 
-const deleteSessionsByContextIds = (contextIds: string[]) => {
+const deleteSessionsByContextIds = async (contextIds: string[]) => {
+  // 须在 removeSession 之前记录：删除后 currContextId 会随活跃会话清空而无法比对
+  const currentId = props.currContextId
+  const removedCurrent = !!(currentId && contextIds.includes(currentId))
   for (const id of contextIds) {
     chatSessionRegistry.removeSession(props.agentId, id)
   }
-}
-
-const handleCurrentContextRemoved = (removedContextIds: string[]) => {
-  const currentId = props.currContextId
-  if (currentId && removedContextIds.includes(currentId)) {
+  if (removedCurrent) {
     checkedHistoryId.value = ''
-    props.newChat()
+    await props.newChat()
   }
 }
 
@@ -430,9 +429,8 @@ const deleteSingleHistoryChat = (item: HistoryContextItem) => {
   }).then(async () => {
     const contextId = item.contextId
     await deleteHistoryContext([contextId], props.agentId)
-    deleteSessionsByContextIds([contextId])
+    await deleteSessionsByContextIds([contextId])
     await getHistoryListData()
-    handleCurrentContextRemoved([contextId])
   })
 }
 
@@ -452,10 +450,9 @@ const confirmBatchDelete = () => {
     }
   ).then(async () => {
     await deleteHistoryContext(contextIds, props.agentId)
-    deleteSessionsByContextIds(contextIds)
+    await deleteSessionsByContextIds(contextIds)
     exitBatchMode()
     await getHistoryListData()
-    handleCurrentContextRemoved(contextIds)
   })
 }
 
@@ -485,9 +482,8 @@ const clearAllHistoryChat = () => {
         return
       }
       await clearAllHistoryContext(props.agentId)
-      deleteSessionsByContextIds(deletableContextIds)
+      await deleteSessionsByContextIds(deletableContextIds)
       await getHistoryListData()
-      handleCurrentContextRemoved(deletableContextIds)
     } finally {
       exitBatchMode()
     }
