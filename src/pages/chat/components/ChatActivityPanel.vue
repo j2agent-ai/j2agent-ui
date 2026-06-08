@@ -68,18 +68,33 @@
 				</div>
 				<ul v-else class="activity-panel-list">
 					<li
-						v-for="entry in sortedEntries"
-						:key="entry.sessionKey"
+						v-for="item in entryDisplays"
+						:key="item.entry.sessionKey"
 						class="activity-panel-item"
-						@click.stop="handleEntryClick(entry)"
+						@click.stop="handleEntryClick(item.entry)"
 					>
 						<span class="streaming-orb" aria-hidden="true" />
 						<div class="activity-panel-item-body">
-							<p class="activity-panel-item-title">{{ displayFor(entry).title }}</p>
+							<p class="activity-panel-item-title">{{ item.display.title }}</p>
 							<p class="activity-panel-item-meta">
-								<span class="activity-panel-item-agent">{{ displayFor(entry).agentName }}</span>
-								<span v-if="displayFor(entry).stateText" class="activity-panel-item-state">
-									{{ displayFor(entry).stateText }}
+								<span class="activity-panel-item-agent">{{ item.display.agentName }}</span>
+								<span
+									v-if="item.display.stateText"
+									class="activity-panel-item-state"
+								>
+									<span
+										class="activity-state-dot"
+										:class="{ 'is-running': item.display.isTurnActive }"
+										aria-hidden="true"
+									/>
+									<span
+										class="activity-state-text"
+										:class="{ 'is-running': item.display.isTurnActive }"
+									>{{ item.display.stateText }}</span>
+									<code
+										v-if="item.display.toolName"
+										class="activity-state-tool"
+									>{{ item.display.toolName }}</code>
 								</span>
 							</p>
 						</div>
@@ -94,10 +109,15 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { t } from '@ai-system/lib'
-import { getAgentList } from '@/api/ai.api'
-import type { AgentInfoDto } from '@/types/ai.types'
+import {
+	agentNameMap,
+	ensureAgentNamesLoaded,
+	hasAgentDisplayName,
+	refreshAgentNames
+} from '../agentNameRegistry'
 import { chatActivityStore } from '../chatActivityStore'
 import type { ChatActivityEntry } from '../chatActivityStore'
+import { chatSessionRegistry } from '../chatSessionRegistry'
 import { goTo } from '@/routes'
 import { hasRoleAccess, ROLE_USER } from '@/utils/role'
 import { openChatSession } from '../openChatSession'
@@ -154,7 +174,6 @@ const createDefaultPos = () => ({
 const defaultPos = createDefaultPos()
 const posLeft = ref(defaultPos.left)
 const posTop = ref(defaultPos.top)
-const agentNameMap = ref(new Map<string, string>())
 const clickOutsideEnabled = ref(false)
 
 const activeCount = computed(() => chatActivityStore.activeEntries.value.length)
@@ -285,8 +304,34 @@ const shellStyle = computed(() => {
 	}
 })
 
-const displayFor = (entry: ChatActivityEntry) =>
-	resolveActiveEntryDisplay(entry, agentNameMap.value)
+const entryDisplays = computed(() => {
+	chatActivityStore.activeKeySet.value
+	agentNameMap.value
+	const entries = sortedEntries.value
+	for (const entry of entries) {
+		const session = chatSessionRegistry.peekSession(entry.agentId, entry.contextId)
+		if (!session) {
+			continue
+		}
+		void session.messageContext.value
+		void session.dispatcher.displayTurnStates.value
+		void session.dispatcher.currentAgentState.value
+		void session.dispatcher.isBusyByState.value
+	}
+	return entries.map((entry) => ({
+		entry,
+		display: resolveActiveEntryDisplay(entry)
+	}))
+})
+
+const refreshMissingAgentNames = () => {
+	const needsRefresh = sortedEntries.value.some(
+		(entry) => !hasAgentDisplayName(entry.agentId)
+	)
+	if (needsRefresh) {
+		void refreshAgentNames()
+	}
+}
 
 function loadPosFromSession() {
 	try {
@@ -334,29 +379,6 @@ function clampPosition() {
 	posTop.value = Math.min(Math.max(minTop, posTop.value), vh - FAB_SIZE)
 }
 
-function extractAgentsPayload(res: {
-	data?: { agents?: AgentInfoDto[]; data?: { agents?: AgentInfoDto[] } }
-}) {
-	const body = res?.data as
-		| { agents?: AgentInfoDto[]; data?: { agents?: AgentInfoDto[] } }
-		| undefined
-	return body?.agents ?? body?.data?.agents ?? []
-}
-
-async function loadAgentNames() {
-	try {
-		const res = await getAgentList()
-		const agents = extractAgentsPayload(res)
-		const map = new Map<string, string>()
-		for (const agent of agents) {
-			map.set(agent.agentId, agent.name?.trim() || agent.agentId)
-		}
-		agentNameMap.value = map
-	} catch {
-		agentNameMap.value = new Map()
-	}
-}
-
 const onShellTransitionEnd = (event: TransitionEvent) => {
 	if (event.target !== shellRef.value) {
 		return
@@ -384,6 +406,7 @@ function openPanel() {
 	layoutQuadrant.value = resolvePopupQuadrant()
 	shellAnimating.value = true
 	panelOpen.value = true
+	refreshMissingAgentNames()
 	clampPosition()
 	setTimeout(() => {
 		clickOutsideEnabled.value = true
@@ -571,10 +594,14 @@ watch(isVisible, (visible) => {
 	}
 })
 
+watch(activeCount, () => {
+	refreshMissingAgentNames()
+})
+
 onMounted(() => {
 	loadPosFromSession()
 	clampPosition()
-	loadAgentNames()
+	void ensureAgentNamesLoaded()
 	window.addEventListener('resize', onWindowResize)
 })
 
@@ -829,6 +856,7 @@ $fab-core-gradient: conic-gradient(
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
+	overflow: hidden;
 	opacity: 0;
 	visibility: hidden;
 	transform: scale(0.72);
@@ -848,7 +876,7 @@ $fab-core-gradient: conic-gradient(
 }
 
 .activity-panel-header {
-	padding: 12px 16px 8px;
+	padding: 12px 16px 10px;
 	flex-shrink: 0;
 	cursor: grab;
 	touch-action: none;
@@ -913,23 +941,41 @@ $fab-core-gradient: conic-gradient(
 .activity-panel-list {
 	list-style: none;
 	margin: 0;
-	padding: 0 12px 12px;
+	padding: 8px 12px 16px;
+	overflow-x: hidden;
 	overflow-y: auto;
 	flex: 1;
 	min-height: 0;
+	scroll-padding-top: 8px;
+	scroll-padding-bottom: 8px;
+	-webkit-overflow-scrolling: touch;
 }
 
 .activity-panel-item {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 10px 12px;
+	position: relative;
+	box-sizing: border-box;
+	padding: 10px 12px 16px 38px;
 	margin-bottom: 8px;
 	border-radius: 12px;
 	cursor: pointer;
-	@include n-glass-surface(1);
-	box-shadow: 0 0 12px rgba(0, 0, 0, 0.08);
-	transition: color 0.2s ease;
+	background: transparent;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+	transition:
+		color 0.2s ease,
+		box-shadow 0.2s ease;
+	isolation: isolate;
+
+	&::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		z-index: 0;
+		pointer-events: none;
+		@include n-glass-surface(1);
+		box-shadow: inset 0 1px 0
+			color-mix(in srgb, var(--n-glass-highlight) 90%, transparent);
+	}
 
 	&:last-child {
 		margin-bottom: 0;
@@ -937,18 +983,20 @@ $fab-core-gradient: conic-gradient(
 
 	&:hover {
 		color: var(--el-color-primary);
+		box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
 	}
 }
 
 .activity-panel-item-body {
-	flex: 1;
+	position: relative;
+	z-index: 1;
 	min-width: 0;
 }
 
 .activity-panel-item-title {
 	margin: 0;
 	font-size: 13px;
-	line-height: 1.4;
+	line-height: 1.45;
 	color: var(--n-color-text-primary);
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -956,16 +1004,19 @@ $fab-core-gradient: conic-gradient(
 }
 
 .activity-panel-item-meta {
-	margin: 4px 0 0;
-	font-size: 11px;
-	line-height: 1.3;
-	color: var(--n-color-text-placeholder);
+	margin: 6px 0 0;
+	padding-bottom: 1px;
 	display: flex;
+	align-items: center;
 	gap: 8px;
 	min-width: 0;
+	min-height: 18px;
+	font-size: 11px;
+	line-height: 1.5;
 }
 
 .activity-panel-item-agent {
+	color: var(--n-color-text-placeholder);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -975,14 +1026,67 @@ $fab-core-gradient: conic-gradient(
 
 .activity-panel-item-state {
 	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 16px;
+	color: var(--n-color-text-secondary, var(--el-text-color-secondary));
+}
+
+.activity-state-dot {
+	flex-shrink: 0;
+	box-sizing: border-box;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: color-mix(in srgb, var(--n-color-neutral-6), transparent 30%);
+	box-shadow: 0 0 0 1.5px
+		color-mix(in srgb, var(--n-color-neutral-6), transparent 88%);
+
+	&.is-running {
+		width: 8px;
+		height: 8px;
+		background: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
+		border: 1.5px solid
+			color-mix(in srgb, var(--el-color-primary) 35%, transparent);
+		border-top-color: var(--el-color-primary);
+		box-shadow: none;
+		animation: activity-step-spin 0.9s linear infinite;
+	}
+}
+
+.activity-state-text {
+	flex-shrink: 0;
+	white-space: nowrap;
+
+	&.is-running {
+		color: var(--el-color-primary);
+		font-weight: 500;
+	}
+}
+
+.activity-state-tool {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 9px;
+	padding: 0 3px;
+	border-radius: 3px;
+	background: color-mix(in srgb, var(--n-color-neutral-6), transparent 92%);
+	border: 1px solid var(--n-glass-border-2);
+	color: var(--n-color-text-primary, var(--el-text-color-primary));
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 72px;
 }
 
 .streaming-orb {
-	position: relative;
-	flex-shrink: 0;
+	position: absolute;
+	left: 10px;
+	top: 10px;
 	width: 14px;
 	height: 14px;
 	display: inline-block;
+	z-index: 2;
 
 	&::before {
 		content: '';
@@ -1078,6 +1182,15 @@ $fab-core-gradient: conic-gradient(
 	50% {
 		opacity: 1;
 		transform: scale(1.08);
+	}
+}
+
+@keyframes activity-step-spin {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
 	}
 }
 </style>

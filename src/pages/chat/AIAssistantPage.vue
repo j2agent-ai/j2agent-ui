@@ -29,12 +29,16 @@
 </template>
 <script setup lang="ts">
 import ChatView from './components/ChatView.vue'
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { debounce } from '@ai-system/lib'
 import topBar from '@/pages/components/topBar.vue'
-import { getAgentList } from '@/api/ai.api'
-import type { AgentInfoDto } from '@/types/ai.types'
+import {
+	agentNameMap,
+	ensureAgentNamesLoaded,
+	getAgentDisplayName,
+	registeredAgents
+} from './agentNameRegistry'
 import { CHAT_NARROW_LAYOUT_MAX_WIDTH_PX, isChatNarrowLayout } from './layout'
 
 const route = useRoute()
@@ -54,43 +58,10 @@ const showHotQuestions = computed(() => {
 	return hit?.showHotQuestions === true
 })
 
-/** 已注册智能体列表，用于顶栏解析名称 */
-const registeredAgents = ref<AgentInfoDto[]>([])
-
 /** 顶栏后缀：匹配到则用 name，否则用 agentId */
-const agentTitleSuffix = ref('')
-
-/**
- * 从接口响应中取出 agents 数组（兼容 axios 单层或嵌套 data）。
- */
-function extractAgentsPayload(res: { data?: { agents?: AgentInfoDto[]; data?: { agents?: AgentInfoDto[] } } }) {
-	const body = res?.data as { agents?: AgentInfoDto[]; data?: { agents?: AgentInfoDto[] } } | undefined
-	return body?.agents ?? body?.data?.agents ?? []
-}
-
-/**
- * 根据 agentId 在列表中解析展示名。
- */
-function resolveAgentTitleSuffix(agentId: string, agents: AgentInfoDto[]) {
-	const hit = agents.find((a) => a.agentId === agentId)
-	return hit?.name?.trim() || agentId
-}
-
-/**
- * 拉取智能体列表并刷新顶栏后缀。
- */
-async function loadAgentsAndResolveTitle() {
-	try {
-		const res = await getAgentList()
-		registeredAgents.value = extractAgentsPayload(res)
-		agentTitleSuffix.value = resolveAgentTitleSuffix(agentIdFromRoute.value, registeredAgents.value)
-	} catch {
-		agentTitleSuffix.value = agentIdFromRoute.value
-	}
-}
-
-watch(agentIdFromRoute, () => {
-	agentTitleSuffix.value = resolveAgentTitleSuffix(agentIdFromRoute.value, registeredAgents.value)
+const agentTitleSuffix = computed(() => {
+	agentNameMap.value
+	return getAgentDisplayName(agentIdFromRoute.value)
 })
 
 const chatViewRef = ref<InstanceType<typeof ChatView> | null>(null)
@@ -152,8 +123,7 @@ const handleMobileSafariHeight = () => {
 }
 
 onMounted(() => {
-	agentTitleSuffix.value = agentIdFromRoute.value
-	void loadAgentsAndResolveTitle()
+	void ensureAgentNamesLoaded()
 	resize()
 	handleMobileSafariHeight()
 	if (!isMobile.value) {
