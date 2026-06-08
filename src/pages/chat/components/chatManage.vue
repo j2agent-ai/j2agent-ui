@@ -30,9 +30,28 @@
       >
         <div class="list-title fx">
           <div class="text">{{ $t('ai.history.chat') }}</div>
-          <div class="delete" @click="deleteHistoryChat()">
-            <i class="iconfont icon-trash-alt"></i
-            >{{ $t('ai.delete.all.chat') }}
+          <div class="list-title-actions fx">
+            <div
+              v-if="batchMode"
+              class="list-action clear-all"
+              @click="clearAllHistoryChat()"
+            >
+              <i class="iconfont icon-trash-alt"></i>{{ $t('ai.delete.all.chat') }}
+            </div>
+            <div
+              v-if="!batchMode"
+              class="list-action batch-delete"
+              @click="enterBatchMode()"
+            >
+              <i class="iconfont icon-trash-alt"></i>{{ $t('ai.batch.delete.chat') }}
+            </div>
+            <div
+              v-else
+              class="list-action batch-cancel"
+              @click="exitBatchMode()"
+            >
+              {{ $t('ai.batch.delete.cancel') }}
+            </div>
           </div>
         </div>
         <div class="list-content" @scroll="onListScroll">
@@ -42,9 +61,18 @@
             class="list-item fx"
             :class="{
               active: checkedHistoryId === item.contextId,
-              'is-streaming': isHistoryItemBusy(item)
+              'is-streaming': isHistoryItemBusy(item),
+              'is-batch-mode': batchMode
             }"
           >
+            <el-checkbox
+              v-if="batchMode"
+              class="batch-checkbox"
+              :model-value="isHistoryItemSelected(item)"
+              :disabled="isHistoryItemBusy(item)"
+              @click.stop
+              @update:model-value="(checked) => setHistoryItemSelected(item, !!checked)"
+            />
             <div
               class="cont fx"
               style="height: 100%;"
@@ -58,14 +86,19 @@
               <i class="iconfont icon-lishiduihua"></i>
               <p>{{ historyItemTitle(item) }}</p>
             </div>
-            <el-dropdown trigger="hover" placement="bottom-end">
+            <el-dropdown
+              v-if="!batchMode"
+              trigger="hover"
+              placement="bottom-end"
+            >
               <span class="el-dropdown-link">
                 <span class="iconfont icon-vgengduo">...</span>
               </span>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item
-                    @click.stop="deleteHistoryChat(item.contextId)"
+                    :disabled="isHistoryItemBusy(item)"
+                    @click.stop="deleteSingleHistoryChat(item)"
                   ><i class="iconfont icon-trash-alt"></i>
                     {{ t('common.delete') }}
                   </el-dropdown-item>
@@ -84,12 +117,23 @@
             <div class="list-status">{{ t('ai.history.refreshing') }}</div>
           </div>
         </div>
+        <div v-if="batchMode" class="list-batch-footer">
+          <el-button
+            type="danger"
+            size="small"
+            :disabled="selectedCount === 0"
+            @click="confirmBatchDelete()"
+          >
+            {{ t('ai.batch.delete.action') }}
+            <template v-if="selectedCount > 0"> ({{ selectedCount }})</template>
+          </el-button>
+        </div>
       </div>
     </div>
   </div>
 </template>
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 /** 历史列表分页大小（请求 limit+1 用于判断是否还有下一页） */
 const HISTORY_PAGE_SIZE = 30
@@ -97,13 +141,18 @@ import { Search } from '@element-plus/icons-vue'
 import {
   ElButton,
   ElInput,
+  ElCheckbox,
   ElDropdown,
   ElDropdownMenu,
   ElDropdownItem,
   ElMessageBox,
   ElMessage
 } from 'element-plus'
-import { getHistoryContextList, deleteHistoryContext } from '@/api/ai.api'
+import {
+  getHistoryContextList,
+  deleteHistoryContext,
+  clearAllHistoryContext
+} from '@/api/ai.api'
 import type { HistoryContextItem } from '@/types/ai.types'
 import { debounce, t } from '@ai-system/lib'
 import { isChatNarrowLayout } from '../layout'
@@ -157,6 +206,9 @@ const listRefreshing = ref(false)
 const loadingMore = ref(false)
 const searchLoading = ref(false)
 const hasMore = ref(true)
+const batchMode = ref(false)
+const selectedKeys = ref<Set<string>>(new Set())
+const selectedCount = computed(() => selectedKeys.value.size)
 const emit = defineEmits(['showChatManage'])
 
 /** 窄屏遮罩空白处点击关闭（仅移动端生效） */
@@ -293,10 +345,95 @@ const onListScroll = (event: Event) => {
   }
 }
 
-const deleteHistoryChat = (contextId?: string) => {
+const isHistoryItemSelected = (item: HistoryContextItem) =>
+  selectedKeys.value.has(historyRowKey(item))
+
+const setHistoryItemSelected = (item: HistoryContextItem, checked: boolean) => {
+  if (isHistoryItemBusy(item)) {
+    return
+  }
+  const key = historyRowKey(item)
+  const next = new Set(selectedKeys.value)
+  if (checked) {
+    next.add(key)
+  } else {
+    next.delete(key)
+  }
+  selectedKeys.value = next
+}
+
+const getSelectedContextIds = (): string[] => {
+  const ids = new Set<string>()
+  for (const key of selectedKeys.value) {
+    const item = historyList.value.find((row) => historyRowKey(row) === key)
+    if (item) {
+      ids.add(item.contextId)
+    }
+  }
+  return Array.from(ids)
+}
+
+const enterBatchMode = async () => {
+  batchMode.value = true
+  selectedKeys.value = new Set()
+  searchLoading.value = true
+  try {
+    await loadAllHistory()
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+const exitBatchMode = () => {
+  batchMode.value = false
+  selectedKeys.value = new Set()
+}
+
+const deleteSessionsByContextIds = (contextIds: string[]) => {
+  for (const id of contextIds) {
+    chatSessionRegistry.removeSession(props.agentId, id)
+  }
+}
+
+const handleCurrentContextRemoved = (removedContextIds: string[]) => {
+  if (
+    checkedHistoryId.value &&
+    removedContextIds.includes(checkedHistoryId.value)
+  ) {
+    addNewChat()
+  }
+}
+
+const deleteSingleHistoryChat = (item: HistoryContextItem) => {
+  if (isHistoryItemBusy(item)) {
+    ElMessage({
+      message: t('ai.history.stop.chat.first'),
+      type: 'warning'
+    })
+    return
+  }
+  ElMessageBox.confirm(t('ai.delete.warning'), t('ai.delete.chat.confirm'), {
+    customClass: 'n-dialog--danger',
+    confirmButtonText: t('common.ok'),
+    cancelButtonText: t('common.cancel'),
+    type: 'warning'
+  }).then(async () => {
+    const contextId = item.contextId
+    await deleteHistoryContext([contextId], props.agentId)
+    deleteSessionsByContextIds([contextId])
+    await getHistoryListData()
+    handleCurrentContextRemoved([contextId])
+  })
+}
+
+const confirmBatchDelete = () => {
+  const contextIds = getSelectedContextIds()
+  if (!contextIds.length) {
+    return
+  }
   ElMessageBox.confirm(
     t('ai.delete.warning'),
-    contextId ? t('ai.delete.chat.confirm') : t('ai.delete.all.chat.confirm'),
+    t('ai.batch.delete.confirm', { count: contextIds.length }),
     {
       customClass: 'n-dialog--danger',
       confirmButtonText: t('common.ok'),
@@ -304,35 +441,42 @@ const deleteHistoryChat = (contextId?: string) => {
       type: 'warning'
     }
   ).then(async () => {
-    let contextIds: string[]
-    if (contextId) {
-      contextIds = [contextId]
-    } else {
-      searchLoading.value = true
-      try {
-        await loadAllHistory()
-      } finally {
-        searchLoading.value = false
-      }
-      contextIds = historyList.value.map(item => item.contextId)
+    await deleteHistoryContext(contextIds, props.agentId)
+    deleteSessionsByContextIds(contextIds)
+    exitBatchMode()
+    await getHistoryListData()
+    handleCurrentContextRemoved(contextIds)
+  })
+}
+
+const clearAllHistoryChat = () => {
+  ElMessageBox.confirm(
+    t('ai.delete.warning'),
+    t('ai.delete.all.chat.confirm'),
+    {
+      customClass: 'n-dialog--danger',
+      confirmButtonText: t('common.ok'),
+      cancelButtonText: t('common.cancel'),
+      type: 'warning'
     }
-    if (!contextIds.length) {
+  ).then(async () => {
+    searchLoading.value = true
+    try {
+      await loadAllHistory()
+    } finally {
+      searchLoading.value = false
+    }
+    const deletableItems = historyList.value.filter(
+      (item) => !isHistoryItemBusy(item)
+    )
+    const deletableContextIds = deletableItems.map((item) => item.contextId)
+    if (!deletableContextIds.length) {
       return
     }
-    await deleteHistoryContext(contextIds, props.agentId)
-    for (const id of contextIds) {
-      chatSessionRegistry.removeSession(props.agentId, id)
-    }
+    await clearAllHistoryContext(props.agentId)
+    deleteSessionsByContextIds(deletableContextIds)
     await getHistoryListData()
-    if (contextId) {
-      if (contextId === checkedHistoryId.value) {
-        addNewChat()
-      }
-    } else {
-      emit('showChatManage', false)
-      checkedHistoryId.value = ''
-      props.newChat()
-    }
+    handleCurrentContextRemoved(deletableContextIds)
   })
 }
 
@@ -555,20 +699,68 @@ defineExpose({
     .list-title {
       justify-content: space-between;
       align-items: center;
+      gap: 8px;
       width: 100%;
       margin: 0 0 12px;
       padding: 0 var(--chat-list-pad-x);
       box-sizing: border-box;
 
-      .delete {
+      .text {
+        flex-shrink: 0;
+        color: var(--n-color-text-primary);
+        text-align: left;
+      }
+
+      .list-title-actions {
+        flex-shrink: 0;
+        align-items: center;
+        gap: 10px;
+        min-height: 18px;
+      }
+
+      .list-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 18px;
         color: var(--el-color-info);
         cursor: pointer;
+        font-size: 12px;
+        line-height: 18px;
+        white-space: nowrap;
+
+        .iconfont {
+          display: inline-flex;
+          align-items: center;
+          font-size: 12px;
+          line-height: 1;
+          margin-right: 4px;
+        }
 
         &:hover {
           color: var(--el-color-primary);
         }
       }
 
+      .clear-all {
+        color: var(--el-color-danger);
+
+        &:hover {
+          color: var(--el-color-danger);
+          opacity: 0.82;
+        }
+      }
+    }
+
+    .list-batch-footer {
+      flex-shrink: 0;
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px var(--chat-list-pad-x) var(--chat-list-pad-bottom);
+      box-sizing: border-box;
+      border-top: 1px solid color-mix(in srgb, var(--n-color-text-primary) 8%, transparent);
+      background: color-mix(in srgb, var(--n-color-bg-glass) 88%, transparent);
     }
 
     .list-content {
@@ -611,6 +803,15 @@ defineExpose({
           color: var(--el-color-primary);
           box-shadow: 0 0 10px color-mix(in srgb, var(--el-color-primary) 30%, transparent),
           0 0 24px color-mix(in srgb, var(--el-color-primary) 14%, transparent);
+        }
+
+        &.is-batch-mode .cont {
+          width: calc(100% - 28px);
+        }
+
+        .batch-checkbox {
+          flex-shrink: 0;
+          margin-right: 4px;
         }
 
         .cont {
