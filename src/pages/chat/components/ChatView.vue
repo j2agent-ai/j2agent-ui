@@ -364,19 +364,19 @@ import {
   getHistoryContext,
   getQaTemplate
 } from '@/api/ai.api'
-import { chatActivityStore } from '../chatActivityStore'
-import { chatSessionRegistry } from '../chatSessionRegistry'
-import { startTurn, stopTurn } from '../chatStreamService'
-import { useActiveChatSessionBindings } from '../useActiveChatSessionBindings'
-import type { PendingChatImage } from '../chatSessionTypes'
-import { buildSessionTitle } from '../chatHistoryTitle'
+import { chatActivityStore } from '../ts/activity/store'
+import { chatSessionRegistry } from '../ts/session/registry'
+import { startTurn, stopTurn } from '../ts/stream/service'
+import { useActiveChatSessionBindings } from '../ts/session/bindings'
+import type { PendingChatImage } from '../ts/session/types'
+import { buildSessionTitle } from '../ts/history/title'
 import {
   buildChatAttachmentContentUrl,
   isChatAttachmentContentUrl,
   resolveAttachmentImageSrc,
   resolveAttachmentsDisplayUrls
-} from '../chatAttachmentUrl'
-import { processChatImageFile } from '../chatImageProcess'
+} from '../ts/media/attachment'
+import { processChatImageFile } from '../ts/media/image'
 import { MARKDOWN_RENDERER_REVISION, renderMarkdown, renderMarkdownBlocks } from '@/utils/markdownRenderer'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
 
@@ -706,8 +706,11 @@ const onChatInputBlur = () => {
 }
 
 const sendMessage = async (msg?: string) => {
-  const session = requireActiveSession()
-  if (!session || isBusyByState.value || sendingMessage.value || isProcessingImages.value) {
+  let session = requireActiveSession()
+  if (!session) {
+    session = await chatSessionRegistry.ensureActiveSessionForAgent(props.agentId)
+  }
+  if (isBusyByState.value || sendingMessage.value || isProcessingImages.value) {
     ElMessage.info(isProcessingImages.value ? t('ai.image.processing') : t('ai.assistant.waiting'))
     return
   }

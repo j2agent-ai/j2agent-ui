@@ -1,3 +1,8 @@
+/**
+ * 聊天图片上传前处理。
+ * 解码、缩放、JPEG 压缩，确保体积满足 WebSocket 发送与后端上限。
+ */
+
 /** 与后端 ChatAttachmentService 上限一致 */
 const BACKEND_MAX_BYTES = 10 * 1024 * 1024
 /** WebSocket 发送前的目标体积（留余量给 Base64 膨胀） */
@@ -112,9 +117,7 @@ const encodeWithCompression = async (
 	return fallback
 }
 
-/**
- * 将任意可解码图片转为 JPEG，并按尺寸/质量压缩到可发送范围。
- */
+/** 将任意可解码图片转为 JPEG，并按尺寸/质量压缩到可发送范围 */
 export const processChatImageFile = async (rawFile: File): Promise<File | null> => {
 	if (!rawFile.size) {
 		return null

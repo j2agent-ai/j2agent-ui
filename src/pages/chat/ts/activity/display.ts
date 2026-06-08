@@ -1,15 +1,20 @@
+/**
+ * 活动面板条目展示解析。
+ * 从内存会话或 activity 条目推导标题、智能体名、当前步骤状态文案。
+ */
 import { t } from '@ai-system/lib'
 import type { AgentState, TurnStepItem } from '@/types/ai.types'
-import { getAgentDisplayName } from './agentNameRegistry'
-import type { ChatActivityEntry } from './chatActivityStore'
-import { buildSessionTitle, resolveHistoryItemTitle } from './chatHistoryTitle'
-import { chatSessionRegistry } from './chatSessionRegistry'
+import { getAgentDisplayName } from '../agent/name-registry'
+import type { ChatActivityEntry } from './store'
+import { buildSessionTitle, resolveHistoryItemTitle } from '../history/title'
+import { chatSessionRegistry } from '../session/registry'
 import {
 	formatStepLabelParts,
 	getCurrentLocale,
 	getStateI18nText
-} from './components/agentStateI18n'
+} from '../stream/agent-ui'
 
+/** 活动面板单条任务的展示结构 */
 export type ActiveEntryDisplay = {
 	title: string
 	agentName: string
@@ -54,6 +59,7 @@ const resolveCurrentStep = (entry: ChatActivityEntry): TurnStepItem | null => {
 	return state ? { state } : null
 }
 
+/** 解析活动条目标题（优先最近用户消息，否则 contextId 缩写） */
 export function resolveEntryTitle(entry: ChatActivityEntry): string {
 	const session = chatSessionRegistry.peekSession(entry.agentId, entry.contextId)
 	if (session) {
@@ -77,6 +83,7 @@ export function resolveEntryTitle(entry: ChatActivityEntry): string {
 	return shortId.length < entry.contextId.length ? `${shortId}…` : shortId
 }
 
+/** 将活动条目解析为面板展示所需的完整文案 */
 export function resolveActiveEntryDisplay(
 	entry: ChatActivityEntry
 ): ActiveEntryDisplay {

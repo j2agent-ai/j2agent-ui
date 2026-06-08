@@ -109,7 +109,7 @@ import {
 	getCurrentLocale,
 	isBusyAgentState,
 	resolveTurnStepStatus
-} from './agentStateI18n'
+} from '../ts/stream/agent-ui'
 
 const props = withDefaults(
 	defineProps<{

@@ -1,8 +1,12 @@
+/**
+ * 键盘刷新拦截（F5 / Ctrl+R）。
+ * 有进行中任务时弹出应用内确认框，避免无意刷新中断流式对话。
+ */
 import { onMounted, onUnmounted } from 'vue'
 import {
 	guardLeaveWithActiveTasks,
 	hasActiveChatTasks
-} from './chatLeaveGuard'
+} from './leave'
 
 const isRefreshShortcut = (event: KeyboardEvent) => {
 	if (event.key === 'F5') {
@@ -25,7 +29,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 	})
 }
 
-/** 有进行中的智能体任务时，拦截键盘刷新并弹出应用内确认框。 */
+/** 有进行中的智能体任务时，拦截键盘刷新并弹出应用内确认框 */
 export const useWarnBeforeUnloadOnActiveTasks = () => {
 	onMounted(() => {
 		window.addEventListener('keydown', handleKeydown, true)

@@ -1,12 +1,16 @@
+/**
+ * 活跃会话 Vue 绑定层。
+ * 将 chatSessionRegistry 中当前活跃会话的状态暴露为 ChatView 可用的 computed。
+ */
 import { computed } from 'vue'
 import type { MessageDto } from '@/types/ai.types'
-import { chatSessionRegistry } from './chatSessionRegistry'
-import type { PendingChatImage } from './chatSessionTypes'
+import { chatSessionRegistry } from './registry'
+import type { PendingChatImage } from './types'
 
 const EMPTY_MESSAGES: MessageDto[] = []
 const EMPTY_ATTACHMENTS: PendingChatImage[] = []
 
-/** 将 Registry 中当前活跃会话的状态暴露为 ChatView 可用的 computed 绑定。 */
+/** 将 Registry 中当前活跃会话的状态暴露为 ChatView 可用的 computed 绑定 */
 export const useActiveChatSessionBindings = () => {
 	const activeSession = computed(() => chatSessionRegistry.getActiveSession())
 

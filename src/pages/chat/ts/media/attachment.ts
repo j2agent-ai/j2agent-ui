@@ -1,3 +1,7 @@
+/**
+ * 聊天附件展示 URL 解析。
+ * 将后端 objectKey / 内网预签名 URL 转为前端可访问的 content 代理地址。
+ */
 import type { ChatAttachmentDto } from '@/types/ai.types'
 import {
 	buildChatAttachmentContentUrl,
@@ -14,6 +18,7 @@ export {
 	resolveOssDisplayUrl
 } from '@/utils/ossDisplayUrl'
 
+/** 单条附件解析为可展示的 URL（气泡 / 预览共用） */
 export function resolveAttachmentDisplayUrl(
 	attachment: ChatAttachmentDto
 ): ChatAttachmentDto {
@@ -44,6 +49,7 @@ export function resolveAttachmentImageSrc(attachment: ChatAttachmentDto): string
 	return resolveAttachmentDisplayUrl(attachment).url ?? ''
 }
 
+/** 批量解析消息附件列表的展示 URL */
 export function resolveAttachmentsDisplayUrls(
 	attachments?: ChatAttachmentDto[]
 ): ChatAttachmentDto[] | undefined {
