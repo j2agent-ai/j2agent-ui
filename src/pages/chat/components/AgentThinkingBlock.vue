@@ -32,7 +32,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { getCurrentLocale } from './agentStateI18n'
+import { getCurrentLocale } from '../ts/stream/agent-ui'
 
 const props = withDefaults(
 	defineProps<{

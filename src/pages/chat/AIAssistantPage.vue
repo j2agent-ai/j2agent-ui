@@ -38,8 +38,8 @@ import {
 	ensureAgentNamesLoaded,
 	getAgentDisplayName,
 	registeredAgents
-} from './agentNameRegistry'
-import { CHAT_NARROW_LAYOUT_MAX_WIDTH_PX, isChatNarrowLayout } from './layout'
+} from './ts/agent/name-registry'
+import { CHAT_NARROW_LAYOUT_MAX_WIDTH_PX, isChatNarrowLayout } from './ts/layout'
 
 const route = useRoute()
 

@@ -18,8 +18,10 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { t } from '@ai-system/lib'
 import ChatActivityPanel from '@/pages/chat/components/ChatActivityPanel.vue'
-import { ensureAgentNamesLoaded } from '@/pages/chat/agentNameRegistry'
-import { useWarnBeforeUnloadOnActiveTasks } from '@/pages/chat/useWarnBeforeUnloadOnActiveTasks'
+import {
+	ensureAgentNamesLoaded,
+	useWarnBeforeUnloadOnActiveTasks
+} from '@/pages/chat/ts/index'
 
 useWarnBeforeUnloadOnActiveTasks()
 onMounted(() => {

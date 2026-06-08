@@ -1,6 +1,19 @@
-import type { AgentState, TurnStepItem, TurnStepStatus } from '@/types/ai.types'
+/**
+ * Agent 流式 UI 辅助：状态机文案、事件渲染路由、整轮失败错误映射。
+ * 供 dispatcher、时间线组件与活动面板展示层使用。
+ */
+import type {
+	AgentEventType,
+	AgentState,
+	TurnStepItem,
+	TurnStepStatus
+} from '@/types/ai.types'
 
-/** 状态机非终态 busy 集合 **/
+// ---------------------------------------------------------------------------
+// 状态机文案与步骤展示
+// ---------------------------------------------------------------------------
+
+/** 状态机非终态 busy 集合 */
 export const BUSY_AGENT_STATES: AgentState[] = [
 	'THINKING',
 	'STREAMING_TEXT',
@@ -8,7 +21,7 @@ export const BUSY_AGENT_STATES: AgentState[] = [
 	'LOAD_SKILL'
 ]
 
-/** 状态机全量 8 态（时间线完整迁移链，与 AgentState 枚举一致）。 */
+/** 状态机全量 8 态（时间线完整迁移链，与 AgentState 枚举一致） */
 export const ALL_AGENT_STATES: AgentState[] = [
 	'IDLE',
 	...BUSY_AGENT_STATES,
@@ -17,9 +30,11 @@ export const ALL_AGENT_STATES: AgentState[] = [
 	'CANCELLED'
 ]
 
+/** 判断 Agent 状态是否处于进行中的非终态 */
 export const isBusyAgentState = (state?: AgentState | null): state is AgentState =>
 	state != null && BUSY_AGENT_STATES.includes(state)
 
+/** 判断是否为终态（完成 / 失败 / 取消） */
 export const isTerminalAgentState = (state?: AgentState | null) =>
 	state === 'COMPLETED' || state === 'FAILED' || state === 'CANCELLED'
 
@@ -49,7 +64,7 @@ const isStepRunningByStateMachine = (
 	return step.state === 'IDLE' && opts.currentState === 'THINKING'
 }
 
-/** 按状态机判定单步展示状态（与 envelope.state 对齐）。 */
+/** 按状态机判定单步展示状态（与 envelope.state 对齐） */
 export const resolveTurnStepStatus = (
 	step: TurnStepItem,
 	idx: number,
@@ -112,7 +127,7 @@ export const formatStepLabelParts = (
 	return { stateText, toolName }
 }
 
-/** 折叠标题与步骤列表共用：状态词 + 可选工具/技能名（空格分隔）。 */
+/** 折叠标题与步骤列表共用：状态词 + 可选工具/技能名（空格分隔） */
 export const formatStepLabel = (
 	step: Pick<TurnStepItem, 'state' | 'toolName'>,
 	locale?: 'zh' | 'en'
@@ -127,4 +142,62 @@ export const formatDurationSeconds = (ms: number) => {
 	}
 	const sec = Math.round(ms / 1000)
 	return `${sec}s`
+}
+
+// ---------------------------------------------------------------------------
+// 事件渲染路由
+// ---------------------------------------------------------------------------
+
+/** 基于 state + eventType 选择渲染器，避免在视图层大量 if/else 分支 */
+const STATE_EVENT_RENDERER: Record<string, string> = {
+	'STREAMING_TEXT:MESSAGE': 'message-text',
+	'CALLING_TOOL:TOOL': 'tool-card',
+	'LOAD_SKILL:TOOL': 'tool-card',
+	'FAILED:SYSTEM': 'error-notice',
+	/** 生命周期 SYSTEM 由分发器消费，不进入消息列表 */
+	'THINKING:SYSTEM': 'ignore',
+	'COMPLETED:SYSTEM': 'ignore',
+	'CANCELLED:SYSTEM': 'ignore',
+	/** 建议追问由分发器单独消费，不进入消息列表 */
+	'COMPLETED:NOTICE': 'ignore'
+}
+
+/** 根据 Agent 状态与事件类型解析 UI 渲染器 key */
+export const resolveRendererKey = (state: AgentState, eventType: AgentEventType) => {
+	return STATE_EVENT_RENDERER[`${state}:${eventType}`] || 'notice'
+}
+
+// ---------------------------------------------------------------------------
+// 整轮失败错误映射
+// ---------------------------------------------------------------------------
+
+/**
+ * 整轮失败（FAILED + SYSTEM/ERROR）errorCode 与 i18n 键映射，与后端 §3.5 对齐。
+ */
+export const TURN_ERROR_I18N_KEYS: Record<string, string> = {
+	providerError: 'ai.turn.error.provider',
+	unsupportedAgent: 'ai.turn.error.unsupportedAgent',
+	contextAccessDenied: 'ai.turn.error.contextAccessDenied',
+	noUserMessage: 'ai.turn.error.noUserMessage',
+	emptyMessages: 'ai.turn.error.emptyMessages',
+	context_id_not_found: 'ai.turn.error.contextIdRequired',
+	agent_id_not_found: 'ai.turn.error.agentIdRequired',
+	sessionMissing: 'ai.turn.error.sessionMissing',
+	handshakeError: 'ai.turn.error.handshake',
+	internalError: 'ai.turn.error.internal'
+}
+
+/** 将服务端 errorCode / errorMessage 解析为界面展示文案 */
+export const resolveTurnErrorDisplayText = (
+	errorCode: string | undefined,
+	errorMessage: string | undefined,
+	t: (key: string) => string
+): string => {
+	if (errorCode && TURN_ERROR_I18N_KEYS[errorCode]) {
+		return t(TURN_ERROR_I18N_KEYS[errorCode])
+	}
+	if (errorMessage?.trim()) {
+		return errorMessage.trim()
+	}
+	return t('ai.turn.error.generic')
 }

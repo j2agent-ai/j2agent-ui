@@ -1,13 +1,39 @@
+/**
+ * WebSocket 流式对话服务。
+ * 负责开启/停止单轮对话、维护 WS 生命周期，并与 activity/store 同步。
+ */
 import { nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { t } from '@ai-system/lib'
 import { chatWebsocketClientApi } from '@/api/ai.api'
 import type { AgentUiEventEnvelope, ChatRequestDto } from '@/types/ai.types'
-import { chatActivityStore } from './chatActivityStore'
-import type { ChatSessionRuntime } from './chatSessionTypes'
-import { detachWebSocket } from './chatWebSocketUtils'
+import { chatActivityStore } from '../activity/store'
+import type { ChatSessionRuntime } from '../session/types'
 
-export { detachWebSocket } from './chatWebSocketUtils'
+/** 拆除 WebSocket 回调并关闭连接，避免旧连接晚到的包被错误处理 */
+export const detachWebSocket = (ws: WebSocket | undefined) => {
+	if (!ws) {
+		return
+	}
+	try {
+		ws.onopen = null
+		ws.onmessage = null
+		ws.onerror = null
+		ws.onclose = null
+	} catch {
+		/* ignore */
+	}
+	try {
+		if (
+			ws.readyState === WebSocket.OPEN ||
+			ws.readyState === WebSocket.CONNECTING
+		) {
+			ws.close()
+		}
+	} catch {
+		/* ignore */
+	}
+}
 
 const clearActivity = (session: ChatSessionRuntime) => {
 	const contextId = session.contextId.value
@@ -29,15 +55,17 @@ const onTurnClose = (session: ChatSessionRuntime) => {
 	})
 }
 
-/** 用户主动停止或删除会话时中断该会话的流式连接。 */
+/** 用户主动停止或删除会话时中断该会话的流式连接 */
 export const stopTurn = (session: ChatSessionRuntime) => {
-	if (session.dispatcher.isBusyByState.value) {
+	// 先断开 WS，避免 recordTerminalState 之后仍有晚到消息把状态写回 busy
+	detachWebSocket(session.ws)
+	session.ws = undefined
+	if (!session.dispatcher.isTerminalState.value) {
 		session.dispatcher.recordTerminalState('CANCELLED')
 	}
 	session.isNewLlmResponse.value = true
+	session.sendingMessage.value = false
 	clearActivity(session)
-	detachWebSocket(session.ws)
-	session.ws = undefined
 }
 
 export type StartTurnOptions = {
@@ -45,7 +73,7 @@ export type StartTurnOptions = {
 	onScrollRequest?: () => void
 }
 
-/** 为指定会话开启一轮 WebSocket 流式对话。 */
+/** 为指定会话开启一轮 WebSocket 流式对话 */
 export const startTurn = (
 	session: ChatSessionRuntime,
 	chatRequestDto: ChatRequestDto,

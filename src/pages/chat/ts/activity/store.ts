@@ -1,7 +1,12 @@
+/**
+ * 全局聊天活动状态仓库。
+ * 跟踪所有进行中的流式会话，供历史列表「运行中」标记与活动面板使用。
+ */
 import { computed, reactive } from 'vue'
 import type { AgentState } from '@/types/ai.types'
-import { buildSessionKey } from './chatSessionTypes'
+import { buildSessionKey } from '../session/types'
 
+/** 单条进行中的会话活动记录 */
 export type ChatActivityEntry = {
 	sessionKey: string
 	agentId: string
@@ -20,6 +25,7 @@ const activeEntries = computed(() => [...entries.values()])
 const resolveKey = (agentId: string, contextId: string) =>
 	buildSessionKey(agentId, contextId)
 
+/** 标记会话开始流式（或更新其 Agent 状态） */
 const markActive = (
 	agentId: string,
 	contextId: string,
@@ -43,6 +49,7 @@ const markActive = (
 	})
 }
 
+/** 流式过程中更新 Agent 状态 */
 const updateState = (
 	agentId: string,
 	contextId: string,
@@ -57,6 +64,7 @@ const updateState = (
 	existing.agentState = agentState
 }
 
+/** 会话流式结束或中断时移除活动记录 */
 const markInactive = (agentId: string, contextId: string) => {
 	entries.delete(resolveKey(agentId, contextId))
 }

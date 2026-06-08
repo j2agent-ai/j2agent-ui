@@ -1,18 +1,22 @@
+/**
+ * 聊天会话注册表（内存多会话管理）。
+ * 负责创建/激活/淘汰会话，绑定事件分发器，并在删除时停止流式连接。
+ */
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { t } from '@ai-system/lib'
 import { getNewContextId } from '@/api/ai.api'
 import type { MessageDto } from '@/types/ai.types'
-import { createAgentEventDispatcher } from './components/useAgentEventDispatcher'
-import { resolveTurnErrorDisplayText } from './components/agentTurnError'
-import { chatActivityStore } from './chatActivityStore'
-import { detachWebSocket } from './chatWebSocketUtils'
+import { chatActivityStore } from '../activity/store'
+import { detachWebSocket } from '../stream/service'
+import { createAgentEventDispatcher } from '../stream/dispatcher'
+import { resolveTurnErrorDisplayText } from '../stream/agent-ui'
 import {
 	MAX_CHAT_SESSIONS,
 	buildSessionKey,
 	type ChatSessionRuntime,
 	type PendingChatImage
-} from './chatSessionTypes'
+} from './types'
 
 const revokeBlobUrl = (url?: string | null) => {
 	if (url?.startsWith('blob:')) {
@@ -104,6 +108,7 @@ class ChatSessionRegistry {
 		return session
 	}
 
+	/** 切换当前活跃会话（历史列表点击、活动面板跳转） */
 	activateSession(agentId: string, contextId: string): ChatSessionRuntime {
 		const session = this.getOrCreateSession(agentId, contextId)
 		this.activeSessionKey.value = session.key
@@ -111,6 +116,7 @@ class ChatSessionRegistry {
 		return session
 	}
 
+	/** 向后端申请新 contextId 并创建空白会话 */
 	async createNewSession(agentId: string): Promise<ChatSessionRuntime> {
 		const response = await getNewContextId()
 		const contextId = response.data.contextId
@@ -137,6 +143,7 @@ class ChatSessionRegistry {
 		return best
 	}
 
+	/** 确保当前智能体有可用活跃会话；无则恢复最近会话或新建 */
 	async ensureActiveSessionForAgent(
 		agentId: string
 	): Promise<ChatSessionRuntime> {
@@ -155,18 +162,20 @@ class ChatSessionRegistry {
 	}
 
 	private stopSessionStream(session: ChatSessionRuntime) {
-		if (session.dispatcher.isBusyByState.value) {
+		detachWebSocket(session.ws)
+		session.ws = undefined
+		if (!session.dispatcher.isTerminalState.value) {
 			session.dispatcher.recordTerminalState('CANCELLED')
 		}
 		session.isNewLlmResponse.value = true
-		detachWebSocket(session.ws)
-		session.ws = undefined
+		session.sendingMessage.value = false
 		const contextId = session.contextId.value
 		if (contextId) {
 			chatActivityStore.markInactive(session.agentId, contextId)
 		}
 	}
 
+	/** 移除会话并释放 blob URL；若删除的是当前活跃会话则清空 activeSessionKey */
 	removeSession(agentId: string, contextId: string) {
 		const key = buildSessionKey(agentId, contextId)
 		const session = this.sessions.get(key)
@@ -181,7 +190,7 @@ class ChatSessionRegistry {
 		}
 	}
 
-	/** 中断所有进行中的流式对话并清理活动状态（刷新/退出登录前调用）。 */
+	/** 中断所有进行中的流式对话并清理活动状态（刷新/退出登录前调用） */
 	stopAllActiveTurns() {
 		for (const entry of [...chatActivityStore.activeEntries.value]) {
 			const session = this.peekSession(entry.agentId, entry.contextId)
@@ -193,6 +202,10 @@ class ChatSessionRegistry {
 		}
 	}
 
+	/**
+	 * 超出 MAX_CHAT_SESSIONS 时淘汰最久未访问的空闲非活跃会话。
+	 * 进行中的流式会话不会被 prune。
+	 */
 	pruneIdleSessions(maxSize = MAX_CHAT_SESSIONS) {
 		if (this.sessions.size <= maxSize) {
 			return

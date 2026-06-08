@@ -155,11 +155,11 @@ import {
 } from '@/api/ai.api'
 import type { HistoryContextItem } from '@/types/ai.types'
 import { debounce, t } from '@ai-system/lib'
-import { isChatNarrowLayout } from '../layout'
-import { resolveHistoryItemTitle } from '../chatHistoryTitle'
-import { chatActivityStore } from '../chatActivityStore'
-import { chatSessionRegistry } from '../chatSessionRegistry'
-import { buildSessionKey } from '../chatSessionTypes'
+import { isChatNarrowLayout } from '../ts/layout'
+import { resolveHistoryItemTitle } from '../ts/history/title'
+import { chatActivityStore } from '../ts/activity/store'
+import { chatSessionRegistry } from '../ts/session/registry'
+import { buildSessionKey } from '../ts/session/types'
 
 const props = defineProps({
   newChat: {
@@ -330,7 +330,18 @@ const loadMoreHistory = async () => {
 
 const loadAllHistory = async () => {
   while (hasMore.value) {
-    await loadMoreHistory()
+    if (loadingMore.value || listRefreshing.value) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      continue
+    }
+    loadingMore.value = true
+    try {
+      const page = await fetchHistoryPage(historyList.value.length)
+      mergeHistoryPage(page)
+      filterList(searchKey.value)
+    } finally {
+      loadingMore.value = false
+    }
   }
 }
 
@@ -396,11 +407,10 @@ const deleteSessionsByContextIds = (contextIds: string[]) => {
 }
 
 const handleCurrentContextRemoved = (removedContextIds: string[]) => {
-  if (
-    checkedHistoryId.value &&
-    removedContextIds.includes(checkedHistoryId.value)
-  ) {
-    addNewChat()
+  const currentId = props.currContextId
+  if (currentId && removedContextIds.includes(currentId)) {
+    checkedHistoryId.value = ''
+    props.newChat()
   }
 }
 
@@ -460,23 +470,27 @@ const clearAllHistoryChat = () => {
       type: 'warning'
     }
   ).then(async () => {
-    searchLoading.value = true
     try {
-      await loadAllHistory()
+      searchLoading.value = true
+      try {
+        await loadAllHistory()
+      } finally {
+        searchLoading.value = false
+      }
+      const deletableItems = historyList.value.filter(
+        (item) => !isHistoryItemBusy(item)
+      )
+      const deletableContextIds = deletableItems.map((item) => item.contextId)
+      if (!deletableContextIds.length) {
+        return
+      }
+      await clearAllHistoryContext(props.agentId)
+      deleteSessionsByContextIds(deletableContextIds)
+      await getHistoryListData()
+      handleCurrentContextRemoved(deletableContextIds)
     } finally {
-      searchLoading.value = false
+      exitBatchMode()
     }
-    const deletableItems = historyList.value.filter(
-      (item) => !isHistoryItemBusy(item)
-    )
-    const deletableContextIds = deletableItems.map((item) => item.contextId)
-    if (!deletableContextIds.length) {
-      return
-    }
-    await clearAllHistoryContext(props.agentId)
-    deleteSessionsByContextIds(deletableContextIds)
-    await getHistoryListData()
-    handleCurrentContextRemoved(deletableContextIds)
   })
 }
 

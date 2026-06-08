@@ -46,6 +46,11 @@
 		box-shadow: var(--n-shadow-elevation-1) !important;
 		backdrop-filter: blur(var(--n-glass-blur-1)) saturate(var(--n-glass-saturate));
 		-webkit-backdrop-filter: blur(var(--n-glass-blur-1)) saturate(var(--n-glass-saturate));
+
+		&:focus,
+		&:focus-visible {
+			outline: none;
+		}
 	}
 
 	.el-button--default:not(.is-disabled) {

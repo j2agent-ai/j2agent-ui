@@ -114,14 +114,14 @@ import {
 	ensureAgentNamesLoaded,
 	hasAgentDisplayName,
 	refreshAgentNames
-} from '../agentNameRegistry'
-import { chatActivityStore } from '../chatActivityStore'
-import type { ChatActivityEntry } from '../chatActivityStore'
-import { chatSessionRegistry } from '../chatSessionRegistry'
+} from '../ts/agent/name-registry'
+import { chatActivityStore } from '../ts/activity/store'
+import type { ChatActivityEntry } from '../ts/activity/store'
+import { chatSessionRegistry } from '../ts/session/registry'
 import { goTo } from '@/routes'
 import { hasRoleAccess, ROLE_USER } from '@/utils/role'
-import { openChatSession } from '../openChatSession'
-import { resolveActiveEntryDisplay } from '../resolveActiveEntryDisplay'
+import { openChatSession } from '../ts/session/open'
+import { resolveActiveEntryDisplay } from '../ts/activity/display'
 
 const STORAGE_KEY = 'chat-activity-fab-pos'
 const FAB_SIZE = 52

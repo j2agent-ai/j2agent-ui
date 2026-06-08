@@ -1,3 +1,7 @@
+/**
+ * 智能体名称注册表。
+ * 全局单例加载 agent 列表，供顶栏、活动面板、历史标题等展示智能体名称。
+ */
 import { ref } from 'vue'
 import { getAgentList } from '@/api/ai.api'
 import type { AgentInfoDto } from '@/types/ai.types'
@@ -30,7 +34,7 @@ const fetchAgentNames = async () => {
 	applyAgents(extractAgentsPayload(res))
 }
 
-/** 单例加载，避免并发重复请求。 */
+/** 单例加载智能体名称，避免并发重复请求 */
 export const ensureAgentNamesLoaded = () => {
 	if (!loadPromise) {
 		loadPromise = fetchAgentNames().catch(() => {
@@ -40,7 +44,7 @@ export const ensureAgentNamesLoaded = () => {
 	return loadPromise
 }
 
-/** 强制刷新（面板打开或失败后重试）。 */
+/** 强制刷新（面板打开或失败后重试） */
 export const refreshAgentNames = async () => {
 	loadPromise = null
 	try {
@@ -50,6 +54,7 @@ export const refreshAgentNames = async () => {
 	}
 }
 
+/** 获取智能体展示名称，未加载时回退 agentId */
 export const getAgentDisplayName = (agentId: string) =>
 	agentNameMap.value.get(agentId) ?? agentId
 

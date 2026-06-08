@@ -1,3 +1,7 @@
+/**
+ * Agent UI 事件分发器。
+ * 消费 WebSocket 信封，维护轮次状态机、assistant 气泡锚点、时间线轨迹与建议追问。
+ */
 import type { Ref } from 'vue'
 import { computed, ref } from 'vue'
 import type {
@@ -12,10 +16,10 @@ import type {
 import {
 	ALL_AGENT_STATES,
 	isBusyAgentState,
-	isTerminalAgentState
-} from './agentStateI18n'
-import { resolveAttachmentsDisplayUrls } from '../chatAttachmentUrl'
-import { resolveRendererKey } from './agentRendererRegistry'
+	isTerminalAgentState,
+	resolveRendererKey
+} from './agent-ui'
+import { resolveAttachmentsDisplayUrls } from '../media/attachment'
 
 type DispatcherOptions = {
 	messageContext: Ref<MessageDto[]>
