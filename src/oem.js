@@ -21,7 +21,7 @@ export const primaryColorRgb = (() => {
 })();
 
 // Logo
-export const faviconUrl = '/favicon.ico';
+export const faviconUrl = 'favicon.ico';
 export const topBarLogoUrl = '';
 export const chatLogoUrl = ''; // 留空则使用 emoji
 export const chatLogoEmoji = '🤖';
