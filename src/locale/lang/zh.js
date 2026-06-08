@@ -326,6 +326,7 @@ export default {
 	'login.fail': '用户名或密码错误',
 	'login.submit': '登录',
 	'login.check.captcha': '进行人机身份验证',
+	'login.captchaRequired': '请先完成人机身份验证',
 	'login.verifying': '验证中',
 	'login.powFail': '验证未通过，请重试',
 	'captcha.tip': '请拖动滑块对齐图像以登录',
