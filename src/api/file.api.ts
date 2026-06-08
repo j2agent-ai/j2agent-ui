@@ -7,6 +7,7 @@ import type {
 	ObjectStorageSyncDiffList,
 	ObjectStorageSyncTask
 } from '@/types/file.types'
+import { resolveObjectFileUploadInit } from '@/utils/ossDisplayUrl'
 
 const baseUrl = `/v1${globalUrlPrefix}rest/${programTag}/files`
 
@@ -156,7 +157,7 @@ export async function uploadObjectFileDirect(
 	onProgress?: (percent: number) => void
 ): Promise<ObjectFileItem> {
 	const initResponse = await initObjectFileDirectUpload(prefix, file)
-	const init = initResponse.data
+	const init = resolveObjectFileUploadInit(initResponse.data)
 	let ossUploaded = false
 	try {
 		await uploadDirectToStorageWithHeartbeat(file, init, onProgress)
