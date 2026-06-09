@@ -380,10 +380,14 @@ const defaultFence = md.renderer.rules.fence?.bind(md.renderer.rules)
 const MD_CODE_COPY_ICON =
   '<svg class="md-code-copy-icon" viewBox="0 0 1024 1024" width="11" height="11" aria-hidden="true"><path fill="currentColor" d="M768 832H256c-35.3 0-64-28.7-64-64V256c0-35.3 28.7-64 64-64h512c35.3 0 64 28.7 64 64v512c0 35.3-28.7 64-64 64zM704 192H320c-17.7 0-32 14.3-32 32v448c0 17.7 14.3 32 32 32h384c17.7 0 32-14.3 32-32V224c0-17.7-14.3-32-32-32zM448 320h128v64H448v-64z"/></svg>'
 
-/** 普通围栏代码块：外包一层容器，底部安全区放置复制按钮 */
-const wrapFenceCodeBlock = (preHtml: string) =>
-  [
+/** 普通围栏代码块：顶部语言头 + 底部安全区复制按钮 */
+const wrapFenceCodeBlock = (preHtml: string, lang: string) => {
+  const label = escapeHtml(lang || 'text')
+  return [
     '<div class="md-code-block">',
+    '<div class="md-code-block-head">',
+    `<span class="md-code-lang">${label}</span>`,
+    '</div>',
     preHtml,
     '<div class="md-code-block-foot">',
     '<button type="button" class="md-code-copy" aria-label="复制代码" title="复制">',
@@ -392,6 +396,7 @@ const wrapFenceCodeBlock = (preHtml: string) =>
     '</div>',
     '</div>'
   ].join('')
+}
 
 md.renderer.rules.fence = (tokens, idx, options, env, self) => {
   const token = tokens[idx]
@@ -414,10 +419,13 @@ md.renderer.rules.fence = (tokens, idx, options, env, self) => {
   }
 
   if (defaultFence) {
-    return wrapFenceCodeBlock(defaultFence(tokens, idx, options, env, self))
+    return wrapFenceCodeBlock(
+      defaultFence(tokens, idx, options, env, self),
+      lang
+    )
   }
 
-  return wrapFenceCodeBlock(self.renderToken(tokens, idx, options))
+  return wrapFenceCodeBlock(self.renderToken(tokens, idx, options), lang)
 }
 
 /** 从 `.md-code-block` 读取可复制文本 */
