@@ -29,7 +29,7 @@
 </template>
 <script setup lang="ts">
 import ChatView from './components/ChatView.vue'
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { debounce } from '@ai-system/lib'
 import topBar from '@/pages/components/topBar.vue'
@@ -75,13 +75,7 @@ const handleChatManage = () => {
 	if (!view) {
 		return
 	}
-	const next = !view.showChatManage
-	view.showChatManage = next
-	if (next) {
-		nextTick(() => {
-			view.chatManageRef?.getHistoryListData()
-		})
-	}
+	view.showChatManage = !view.showChatManage
 }
 
 const resize = () => {
@@ -126,14 +120,6 @@ onMounted(() => {
 	void ensureAgentNamesLoaded()
 	resize()
 	handleMobileSafariHeight()
-	if (!isMobile.value) {
-		nextTick(() => {
-			chatViewRef.value.getHistoryListData()
-		})
-	} else {
-		// 移动端初始化时设置高度
-		handleMobileSafariHeight()
-	}
 
 	window.addEventListener(
 		'resize',
