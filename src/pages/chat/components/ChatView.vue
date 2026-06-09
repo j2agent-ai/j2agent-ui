@@ -377,7 +377,7 @@ import {
   resolveAttachmentsDisplayUrls
 } from '../ts/media/attachment'
 import { processChatImageFile } from '../ts/media/image'
-import { MARKDOWN_RENDERER_REVISION, renderMarkdown, renderMarkdownBlocks } from '@/utils/markdownRenderer'
+import { getMarkdownCodeBlockText, MARKDOWN_RENDERER_REVISION, renderMarkdown, renderMarkdownBlocks } from '@/utils/markdownRenderer'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
 
 const showChatManage = ref(false)
@@ -1227,6 +1227,17 @@ const handleMessageMediaClick = (event: MouseEvent) => {
   }
   const messageContent = target.closest('.message-md, .message-content')
   if (!messageContent) {
+    return
+  }
+
+  const copyBtn = target.closest('.md-code-copy')
+  if (copyBtn) {
+    event.preventDefault()
+    event.stopPropagation()
+    const block = copyBtn.closest('.md-code-block')
+    if (block) {
+      void copyMessage(getMarkdownCodeBlockText(block))
+    }
     return
   }
 
