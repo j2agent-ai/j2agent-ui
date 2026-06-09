@@ -1462,6 +1462,7 @@ onMounted(async () => {
   await chatSessionRegistry.ensureActiveSessionForAgent(props.agentId)
   getHotQuestions()
   nextTick(() => {
+    chatManageRef.value?.getHistoryListData()
     bindUserScrollIntent()
     scheduleChatBottomInsetUpdate()
     if (typeof ResizeObserver !== 'undefined' && bottomDockRef.value) {
