@@ -166,6 +166,8 @@ export type AgentInfoDto = {
 	name: string
 	description?: string
 	showHotQuestions?: boolean
+	sort?: number
+	logo?: string
 }
 
 /** 智能体列表响应 */
