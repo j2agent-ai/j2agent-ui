@@ -32,5 +32,5 @@ package-lock.json
 *.tgz
 *.xz
 
-# macOS
-.DS_Store
+# auto generated files
+/lib/common/styles/_oem-vars.scss
