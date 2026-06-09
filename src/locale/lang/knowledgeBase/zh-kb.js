@@ -12,6 +12,8 @@ export default {
 	'kb.knowledge.rebuild': '重建知识库',
 	'kb.knowledge.rebuild.confirm.title': '重建知识库确认',
 	'kb.knowledge.rebuild.confirm': '将扫描知识库根目录下的 Markdown，按变更增量同步到 Milvus（不会清空已有 collection）。是否继续？',
+	'kb.knowledge.rebuild.auto.tip':
+		'说明：在「设置 → Embedding 接口」切换或修改当前嵌入模型后，系统会自动终止同步并完全重建；此处手动「完全重建」用于修复异常状态。',
 	'kb.knowledge.rebuild.full.switch': '完全重建',
 	'kb.knowledge.rebuild.full.confirm.label': '确认文本',
 	'kb.knowledge.rebuild.full.confirm.placeholder': '请输入“完全重建”',

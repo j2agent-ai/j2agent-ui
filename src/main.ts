@@ -20,7 +20,7 @@ async function APP() {
 	const app = new App({
 		routeType: 'hash',
 		routes,
-		// 留空：hash 路由 base 回退到当前 location.pathname（如 /ai-center/），
+		// 留空：hash 路由 base 回退到当前 location.pathname
 		// 避免传 '/' 时被拼成 '/#' 导致刷新跳回域名根
 		routeBase: '',
 		langLoaders: [langLoaders],

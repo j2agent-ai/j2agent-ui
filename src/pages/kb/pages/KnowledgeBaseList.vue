@@ -176,6 +176,7 @@
 		>
 			<div class="rebuild-dialog-content">
 				<p class="rebuild-intro">{{ t('kb.knowledge.rebuild.confirm') }}</p>
+				<p class="rebuild-tip">{{ t('kb.knowledge.rebuild.auto.tip') }}</p>
 				<el-form class="rebuild-form" label-width="120px">
 					<el-form-item :label="t('kb.knowledge.rebuild.full.switch')">
 						<el-switch v-model="fullRebuildEnabled" />

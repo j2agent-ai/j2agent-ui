@@ -12,6 +12,8 @@ export default {
 	'kb.knowledge.rebuild': 'Sync Knowledge Base',
 	'kb.knowledge.rebuild.confirm.title': 'Sync Knowledge Base',
 	'kb.knowledge.rebuild.confirm': 'Scan Markdown under the knowledge repo root and incrementally sync changes to Milvus (existing collections are not dropped). Continue?',
+	'kb.knowledge.rebuild.auto.tip':
+		'Note: switching or editing the active embedding model in Settings automatically stops sync and full-rebuilds the knowledge base. Use manual full rebuild here to recover from abnormal states.',
 	'kb.knowledge.rebuild.full.switch': 'Full rebuild',
 	'kb.knowledge.rebuild.full.confirm.label': 'Confirm text',
 	'kb.knowledge.rebuild.full.confirm.placeholder': 'Please input "完全重建"',
