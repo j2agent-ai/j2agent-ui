@@ -116,6 +116,21 @@
 			/>
 		</el-form-item>
 
+		<el-form-item v-if="isEmbedding">
+			<template #label>
+				<FormFieldLabel
+					:label="t('providerConfig.field.embeddingBatchSize')"
+					:tip="t('providerConfig.field.embeddingBatchSize.tip')"
+				/>
+			</template>
+			<el-input-number
+				v-model="formState.config.embeddingBatchSize"
+				:min="1"
+				:max="128"
+				autocomplete="off"
+			/>
+		</el-form-item>
+
 		<el-form-item v-if="needsKeepAlive">
 			<template #label>
 				<FormFieldLabel
@@ -262,6 +277,7 @@ const emit = defineEmits<{
 }>()
 
 const isLlm = computed(() => props.apiType === 'llm')
+const isEmbedding = computed(() => props.apiType === 'embedding')
 const showMakeCurrent = computed(() => props.mode === 'create')
 
 const providerOptions = computed(() => {
@@ -297,7 +313,8 @@ const defaultEmbeddingConfig = () => ({
 	baseUrl: '',
 	apiKey: '',
 	embeddingsPath: '',
-	keepAliveSeconds: 3600
+	keepAliveSeconds: 3600,
+	embeddingBatchSize: 10
 })
 
 const buildInitialConfig = () => (isLlm.value ? defaultLlmConfig() : defaultEmbeddingConfig())
@@ -367,6 +384,9 @@ watch(
 		}
 		if (src.providerType === 'anthropic' && (merged.maxTokens == null || merged.maxTokens === undefined)) {
 			merged.maxTokens = ANTHROPIC_FORM_DEFAULT_MAX_TOKENS
+		}
+		if (!isLlm.value && (merged.embeddingBatchSize == null || merged.embeddingBatchSize === undefined)) {
+			merged.embeddingBatchSize = 10
 		}
 		normalizeThinkingInForm(merged, src.providerType)
 		formState.config = merged

@@ -104,7 +104,16 @@ const props = defineProps<{
 	apiType: ProviderApiType
 	defaultHint?: string
 	rebuildOnEmbeddingActivate?: boolean
+	rebuildOnEmbeddingChange?: boolean
 }>()
+
+const emit = defineEmits<{
+	(e: 'embedding-changed'): void
+}>()
+
+const shouldConfirmEmbeddingRebuild = computed(
+	() => props.rebuildOnEmbeddingChange ?? props.rebuildOnEmbeddingActivate ?? false
+)
 
 const rows = ref<ProviderConfigDto[]>([])
 const loading = ref(false)
@@ -160,7 +169,7 @@ const openEdit = (row: ProviderConfigDto) => {
 	dialogVisible.value = true
 }
 
-// 切换 Embedding 时提示用户知识库需要重建
+// 切换或修改当前 Embedding 时提示将自动完全重建
 const confirmEmbeddingRebuild = async () => {
 	await ElMessageBox.confirm(
 		t('settings.embedding.rebuild.confirm'),
@@ -173,14 +182,60 @@ const confirmEmbeddingRebuild = async () => {
 	)
 }
 
+const embeddingRuntimeFields = ['modelName', 'baseUrl', 'embeddingsPath', 'apiKey'] as const
+
+const hasEmbeddingRuntimeFieldChange = (
+	oldRow: ProviderConfigDto,
+	newConfig: Record<string, unknown>,
+	newProviderType: string
+) => {
+	if (oldRow.providerType !== newProviderType) {
+		return true
+	}
+	const oldConfig = oldRow.config ?? {}
+	return embeddingRuntimeFields.some((key) => {
+		const newVal = newConfig[key]
+		if (key === 'apiKey' && (newVal == null || newVal === '')) {
+			return false
+		}
+		return String(oldConfig[key] ?? '') !== String(newVal ?? '')
+	})
+}
+
+const shouldConfirmEmbeddingChangeOnSubmit = (value: {
+	enabled: boolean
+	makeCurrent: boolean
+	providerType: string
+	config: Record<string, unknown>
+}) => {
+	if (props.apiType !== 'embedding' || !shouldConfirmEmbeddingRebuild.value) {
+		return false
+	}
+	if (dialogMode.value === 'create') {
+		return value.enabled && value.makeCurrent
+	}
+	if (dialogMode.value === 'edit' && editing.value?.isCurrent) {
+		return hasEmbeddingRuntimeFieldChange(editing.value, value.config, value.providerType)
+	}
+	return false
+}
+
+const notifyEmbeddingRebuildQueued = () => {
+	if (props.apiType === 'embedding' && shouldConfirmEmbeddingRebuild.value) {
+		ElMessage.success(t('settings.embedding.rebuild.queued'))
+	}
+}
+
 const onActivate = async (row: ProviderConfigDto) => {
 	try {
-		if (props.rebuildOnEmbeddingActivate) {
+		if (shouldConfirmEmbeddingRebuild.value) {
 			await confirmEmbeddingRebuild()
 		}
 		await activateProviderConfig(row.id)
 		ElMessage.success(t('providerConfig.activate.success'))
+		notifyEmbeddingRebuildQueued()
 		await fetchList()
+		emit('embedding-changed')
 	} catch (e) {
 		if (e !== 'cancel') {
 			ElMessage.error(t('providerConfig.activate.failed'))
@@ -267,6 +322,10 @@ const onSubmit = async () => {
 	const cleanedConfig = normalizeProviderConfig(value.config, value.providerType)
 	saving.value = true
 	try {
+		if (shouldConfirmEmbeddingChangeOnSubmit(value)) {
+			await confirmEmbeddingRebuild()
+		}
+		let embeddingChanged = false
 		if (dialogMode.value === 'create') {
 			await createProviderConfig({
 				apiType: props.apiType,
@@ -277,6 +336,8 @@ const onSubmit = async () => {
 				enabled: value.enabled,
 				makeCurrent: value.makeCurrent
 			})
+			embeddingChanged =
+				props.apiType === 'embedding' && value.enabled && value.makeCurrent
 			ElMessage.success(t('providerConfig.create.success'))
 		} else if (editing.value) {
 			await updateProviderConfig(editing.value.id, {
@@ -286,10 +347,18 @@ const onSubmit = async () => {
 				description: value.description,
 				enabled: value.enabled
 			})
+			embeddingChanged =
+				props.apiType === 'embedding'
+				&& editing.value.isCurrent
+				&& hasEmbeddingRuntimeFieldChange(editing.value, cleanedConfig, value.providerType)
 			ElMessage.success(t('providerConfig.update.success'))
 		}
 		dialogVisible.value = false
 		await fetchList()
+		if (embeddingChanged) {
+			notifyEmbeddingRebuildQueued()
+			emit('embedding-changed')
+		}
 	} catch (e) {
 		ElMessage.error(t('providerConfig.save.failed'))
 	} finally {

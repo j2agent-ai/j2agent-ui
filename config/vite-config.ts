@@ -84,7 +84,6 @@ export function viteConfig(
 			: env.VITE_BASE?.trim() || './'
 
 	let config = {
-		// 生产默认 ./：页面在 /ai-center/ 下时，chunks 解析为 /ai-center/chunks/*，而非域名根 /chunks/*
 		base: viteBase,
 		cacheDir: './node_modules/.vite',
 		optimizeDeps: {
