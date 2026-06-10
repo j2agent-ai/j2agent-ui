@@ -1,6 +1,7 @@
 <template>
-	<div class="login-container">
-		<el-form
+	<AuthPageLayout>
+		<div class="login-container">
+			<el-form
 			ref="registerForm"
 			:model="formData"
 			:rules="rules"
@@ -108,7 +109,8 @@
 		>
 			<SlipCaptcha ref="slideCaptchaRef" @valid-pass="slideCaptchaSuccess" />
 		</ElDialog>
-	</div>
+		</div>
+	</AuthPageLayout>
 </template>
 
 <script setup lang="ts">
@@ -126,6 +128,7 @@ import {
 import type { FormInstance } from 'element-plus'
 import { registerByEmail, sendRegisterCode } from '@/api/register.api'
 import SlipCaptcha from '@/pages/login/components/SlipCaptcha.vue'
+import AuthPageLayout from '@/pages/login/AuthPageLayout.vue'
 import { loadRegisterEnabled } from '@/composables/useRegisterEnabled'
 import { withDraggableMessageBoxOptions } from '@ai-system/common/elementPlusDialog'
 import { extractApiErrorMessage, useLoginCaptcha } from '@/composables/useLoginCaptcha'
@@ -293,7 +296,7 @@ async function handleRegister() {
 	display: flex;
 	justify-content: center;
 	align-items: center;
-	height: 100vh;
+	width: 100%;
 
 	.login-form {
 		width: 380px;

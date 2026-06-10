@@ -29,7 +29,7 @@
             <img v-if="chatLogoUrl" :src="chatLogoUrl" alt="" />
             <span v-else class="ai-logo-emoji">{{ effectiveChatLogo }}</span>
           </div>
-          <h2 class="title">{{ $t('ai.hi.assistant') }}</h2>
+          <h2 class="title">{{ assistantGreeting }}</h2>
           <div v-if="showHotQuestions" class="hot-questions">
             <div class="fx hot-questions-title">
               <strong class="fx">
@@ -380,7 +380,7 @@ import {
 import { processChatImageFile } from '../ts/media/image'
 import { getMarkdownCodeBlockText, MARKDOWN_RENDERER_REVISION, renderMarkdown, renderMarkdownBlocks } from '@/utils/markdownRenderer'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
-import { getAgentLogo } from '../ts/agent/name-registry'
+import { getAgentDisplayName, getAgentLogo, agentNameMap } from '../ts/agent/name-registry'
 
 const showChatManage = ref(false)
 const chatManageRef = ref(null)
@@ -655,6 +655,11 @@ const messageAvatarSize = computed(() => (props.isMobile ? 36 : 50))
 const effectiveChatLogo = computed(
   () => getAgentLogo(props.agentId) || chatLogoEmoji
 )
+
+const assistantGreeting = computed(() => {
+  agentNameMap.value
+  return t('ai.hi.assistant', { name: getAgentDisplayName(props.agentId) })
+})
 
 const chatInputRef = ref<InstanceType<typeof ElInput> | null>(null)
 const inputFocused = ref(false)
@@ -1646,6 +1651,7 @@ defineExpose({
     --chat-hot-questions-width: 80%;
 
     .chat-view {
+      --chat-scrollbar-right-offset: calc(-1 * var(--chat-content-h-pad) + 2px);
       padding: var(--n-padding-basic) var(--chat-content-h-pad) 0;
       padding-bottom: 0;
 
@@ -1802,6 +1808,12 @@ defineExpose({
 
   .chat-view {
     --chat-bottom-inset: 200px;
+    --chat-scrollbar-right-offset: calc(-2 * var(--n-padding-basic) + 2px);
+    --chat-scrollbar-thumb: color-mix(
+      in srgb,
+      var(--n-color-neutral-6) 78%,
+      var(--n-color-neutral-4)
+    );
     position: relative;
     display: flex;
     flex-direction: column;
@@ -1816,10 +1828,20 @@ defineExpose({
       flex: 1;
       height: 100%;
       min-height: 0;
-      overflow: hidden;
+      overflow: visible;
 
       :deep(.el-scrollbar__view) {
         padding-bottom: calc(var(--chat-bottom-inset, 200px) + 12px);
+      }
+
+      :deep(.el-scrollbar__bar.is-vertical) {
+        right: var(--chat-scrollbar-right-offset);
+        width: 4px;
+
+        .el-scrollbar__thumb {
+          background-color: var(--chat-scrollbar-thumb);
+          opacity: 1;
+        }
       }
     }
 
@@ -1849,7 +1871,7 @@ defineExpose({
   img {
     width: 100%;
     height: 100%;
-    object-fit: contain; // 保持图片比例
+    object-fit: contain;
   }
 }
 
@@ -2509,12 +2531,15 @@ defineExpose({
   }
 
   .ai-chat-logo {
-    background-color: #3b3b3b;
+    background-color: var(--n-color-neutral-w, #fff);
+    border: 1px solid var(--n-color-border-soft, rgba(0, 0, 0, 0.08));
 
     img {
       width: 100%;
       height: 100%;
-      object-fit: contain; // 保持图片比例
+      object-fit: contain;
+      padding: 4px;
+      box-sizing: border-box;
     }
   }
 }
@@ -2550,6 +2575,7 @@ defineExpose({
 /* 与 layout.ts：总宽 < 3×聊天记录栏(340px) 时窄屏，媒体查询上界 1019px */
 @media only screen and (max-width: 1019px) {
   .chat-container:not(.is-mobile) .chat-view {
+    --chat-scrollbar-right-offset: calc(-1 * var(--chat-content-h-pad, 16px) + 2px);
     padding-left: var(--chat-content-h-pad, 16px);
     padding-right: var(--chat-content-h-pad, 16px);
   }

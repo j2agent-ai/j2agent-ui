@@ -1,6 +1,7 @@
 <template>
-	<div class="login-container">
-		<el-form
+	<AuthPageLayout>
+		<div class="login-container">
+			<el-form
 			ref="forgotForm"
 			:model="formData"
 			:rules="rules"
@@ -117,7 +118,8 @@
 		>
 			<SlipCaptcha ref="slideCaptchaRef" @valid-pass="slideCaptchaSuccess" />
 		</ElDialog>
-	</div>
+		</div>
+	</AuthPageLayout>
 </template>
 
 <script setup lang="ts">
@@ -135,6 +137,7 @@ import {
 import type { FormInstance } from 'element-plus'
 import { resetPasswordByEmail, sendResetPasswordCode } from '@/api/reset-password.api'
 import SlipCaptcha from '@/pages/login/components/SlipCaptcha.vue'
+import AuthPageLayout from '@/pages/login/AuthPageLayout.vue'
 import { withDraggableMessageBoxOptions } from '@ai-system/common/elementPlusDialog'
 import { extractApiErrorMessage, useLoginCaptcha } from '@/composables/useLoginCaptcha'
 import { t } from '@ai-system/lib'
@@ -302,7 +305,7 @@ async function handleSubmit() {
 	display: flex;
 	justify-content: center;
 	align-items: center;
-	height: 100vh;
+	width: 100%;
 
 	.login-form {
 		width: 380px;
