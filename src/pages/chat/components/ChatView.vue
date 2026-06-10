@@ -1651,6 +1651,7 @@ defineExpose({
     --chat-hot-questions-width: 80%;
 
     .chat-view {
+      --chat-scrollbar-right-offset: calc(-1 * var(--chat-content-h-pad) + 2px);
       padding: var(--n-padding-basic) var(--chat-content-h-pad) 0;
       padding-bottom: 0;
 
@@ -1807,6 +1808,12 @@ defineExpose({
 
   .chat-view {
     --chat-bottom-inset: 200px;
+    --chat-scrollbar-right-offset: calc(-2 * var(--n-padding-basic) + 2px);
+    --chat-scrollbar-thumb: color-mix(
+      in srgb,
+      var(--n-color-neutral-6) 78%,
+      var(--n-color-neutral-4)
+    );
     position: relative;
     display: flex;
     flex-direction: column;
@@ -1821,10 +1828,20 @@ defineExpose({
       flex: 1;
       height: 100%;
       min-height: 0;
-      overflow: hidden;
+      overflow: visible;
 
       :deep(.el-scrollbar__view) {
         padding-bottom: calc(var(--chat-bottom-inset, 200px) + 12px);
+      }
+
+      :deep(.el-scrollbar__bar.is-vertical) {
+        right: var(--chat-scrollbar-right-offset);
+        width: 4px;
+
+        .el-scrollbar__thumb {
+          background-color: var(--chat-scrollbar-thumb);
+          opacity: 1;
+        }
       }
     }
 
@@ -2558,6 +2575,7 @@ defineExpose({
 /* 与 layout.ts：总宽 < 3×聊天记录栏(340px) 时窄屏，媒体查询上界 1019px */
 @media only screen and (max-width: 1019px) {
   .chat-container:not(.is-mobile) .chat-view {
+    --chat-scrollbar-right-offset: calc(-1 * var(--chat-content-h-pad, 16px) + 2px);
     padding-left: var(--chat-content-h-pad, 16px);
     padding-right: var(--chat-content-h-pad, 16px);
   }
