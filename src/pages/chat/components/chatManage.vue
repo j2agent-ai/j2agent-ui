@@ -788,7 +788,7 @@ defineExpose({
       padding: 10px var(--chat-list-pad-x) var(--chat-list-pad-bottom);
       box-sizing: border-box;
       border-top: 1px solid color-mix(in srgb, var(--n-color-text-primary) 8%, transparent);
-      background: color-mix(in srgb, var(--n-color-bg-glass) 88%, transparent);
+      background: transparent;
     }
 
     .list-content {
