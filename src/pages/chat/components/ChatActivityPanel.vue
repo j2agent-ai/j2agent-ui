@@ -124,16 +124,15 @@ import { openChatSession } from '../ts/session/open'
 import { resolveActiveEntryDisplay } from '../ts/activity/display'
 
 const STORAGE_KEY = 'chat-activity-fab-pos'
-const FAB_SIZE = 52
-const EDGE_MARGIN = 24
-const TOPBAR_GAP = 8
-const BELOW_TOPBAR_GAP = 16
+const FAB_SIZE = 44
+const EDGE_MARGIN = 12
 const PANEL_MAX_WIDTH = 320
 const PANEL_MAX_HEIGHT = 360
 const PANEL_VIEWPORT_PAD = 48
 const DRAG_THRESHOLD = 5
 
 type PopupQuadrant = 'bl' | 'br' | 'tl' | 'tr'
+type AnchorSide = 'left' | 'right'
 const AUTH_ROUTE_PATHS = new Set([
 	'/login',
 	'/logout',
@@ -164,17 +163,53 @@ const getTopbarBottom = () => {
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : 50
 }
 
-const getMinBallTop = () => getTopbarBottom() + TOPBAR_GAP
+/** 上边界：topbar 底缘 + 与左/右/下相同的 EDGE_MARGIN */
+const getMinBallTop = () => getTopbarBottom() + EDGE_MARGIN
 
-const createDefaultPos = () => ({
-	left: Math.max(0, window.innerWidth - EDGE_MARGIN - FAB_SIZE),
-	top: getMinBallTop() + BELOW_TOPBAR_GAP
-})
+/** 四边相等安全边距（上缘自 topbar 底部起算）；视口过窄/过矮时保证 min ≤ max */
+const getBallBounds = () => {
+	const vw = window.innerWidth
+	const vh = window.innerHeight
+	const minLeft = EDGE_MARGIN
+	const maxLeft = Math.max(minLeft, vw - FAB_SIZE - EDGE_MARGIN)
+	const minTop = getMinBallTop()
+	const maxTop = Math.max(minTop, vh - FAB_SIZE - EDGE_MARGIN)
+	return { minLeft, maxLeft, minTop, maxTop }
+}
+
+const createDefaultPos = () => {
+	const bounds = getBallBounds()
+	return {
+		left: bounds.maxLeft,
+		top: bounds.minTop
+	}
+}
 
 const defaultPos = createDefaultPos()
 const posLeft = ref(defaultPos.left)
 const posTop = ref(defaultPos.top)
 const clickOutsideEnabled = ref(false)
+
+/** 水平锚边：球心相对屏幕竖中线就近选定；垂直永远使用 top */
+const anchorSide = ref<AnchorSide>('right')
+/** 球外缘到锚定左/右缘的距离，与 posLeft 通过恒等式互转 */
+const anchorOffsetX = ref(EDGE_MARGIN)
+/** resize 后驱动依赖视口尺寸的 computed 重算 */
+const viewportTick = ref(0)
+
+/**
+ * 静止时机重锚：按当前球心就近选水平边，并由 posLeft 反算锚边偏移。
+ * 换算为恒等式（right = vw - left - FAB_SIZE），切换瞬间像素位置完全一致。
+ */
+function syncAnchorFromPosition() {
+	const vw = window.innerWidth
+	const ballCenterX = posLeft.value + FAB_SIZE / 2
+	anchorSide.value = ballCenterX >= vw / 2 ? 'right' : 'left'
+	anchorOffsetX.value =
+		anchorSide.value === 'right'
+			? vw - posLeft.value - FAB_SIZE
+			: posLeft.value
+}
 
 const activeCount = computed(() => chatActivityStore.activeEntries.value.length)
 
@@ -223,31 +258,42 @@ const layoutQuadrant = ref<PopupQuadrant>(resolvePopupQuadrant())
 
 const isQuadrantLocked = computed(() => panelOpen.value || shellAnimating.value)
 
-const popupQuadrant = computed(() =>
-	isQuadrantLocked.value ? layoutQuadrant.value : resolvePopupQuadrant()
-)
+const popupQuadrant = computed(() => {
+	void viewportTick.value
+	return isQuadrantLocked.value ? layoutQuadrant.value : resolvePopupQuadrant()
+})
 
 const getClampedBallPos = () => {
-	const minTop = getMinBallTop()
-	const vw = window.innerWidth
-	const vh = window.innerHeight
+	const bounds = getBallBounds()
 	return {
-		left: Math.min(Math.max(0, posLeft.value), vw - FAB_SIZE),
-		top: Math.min(Math.max(minTop, posTop.value), vh - FAB_SIZE)
+		left: Math.min(Math.max(bounds.minLeft, posLeft.value), bounds.maxLeft),
+		top: Math.min(Math.max(bounds.minTop, posTop.value), bounds.maxTop)
 	}
 }
 
-/** 根节点始终锚定球的左上角，坐标单一来源，避免 right/bottom 与存储值错位 */
+/**
+ * 根节点锚点始终为球左上角点。拖动中固定用 left/top 渲染（避免频繁换属性对）；
+ * 静止时按锚边输出 left 或 right + 固定 top，使球在浏览器布局阶段原生跟随左/右缘。
+ * 根节点宽度为 0，右锚时 right = anchorOffsetX + FAB_SIZE 与 left 表示像素等价。
+ */
 const rootStyle = computed(() => {
+	void viewportTick.value
 	const ball = getClampedBallPos()
+	if (isDragging.value || anchorSide.value === 'left') {
+		return {
+			left: `${isDragging.value ? ball.left : anchorOffsetX.value}px`,
+			top: `${ball.top}px`
+		}
+	}
 	return {
-		left: `${ball.left}px`,
+		right: `${anchorOffsetX.value + FAB_SIZE}px`,
 		top: `${ball.top}px`
 	}
 })
 
 /** 壳层尺寸与象限偏移；宽高用明确像素值以保证收起动画可过渡 */
 const shellStyle = computed(() => {
+	void viewportTick.value
 	const { width: panelW, height: panelH } = getPanelDimensions()
 	const size = panelOpen.value
 		? { width: `${panelW}px`, height: `${panelH}px` }
@@ -340,19 +386,52 @@ function loadPosFromSession() {
 			return
 		}
 		const parsed = JSON.parse(raw) as {
+			side?: string
+			corner?: string
+			x?: number
+			y?: number
 			left?: number
 			top?: number
 			bottom?: number
 		}
-		if (typeof parsed.left !== 'number') {
+		const vw = window.innerWidth
+		let left: number | null = null
+		let top: number | null = null
+		if (
+			(parsed.side === 'left' || parsed.side === 'right') &&
+			typeof parsed.x === 'number' &&
+			typeof parsed.y === 'number'
+		) {
+			// 新格式 { side, x, y }：x 为锚边偏移，y 为 top
+			left = parsed.side === 'right' ? vw - parsed.x - FAB_SIZE : parsed.x
+			top = parsed.y
+		} else if (
+			typeof parsed.corner === 'string' &&
+			typeof parsed.x === 'number' &&
+			typeof parsed.y === 'number'
+		) {
+			// 兼容曾写入的 { corner, x, y }：corner 含 r 即右锚，y 仍为 top
+			left = parsed.corner.includes('r') ? vw - parsed.x - FAB_SIZE : parsed.x
+			top = parsed.y
+		} else if (typeof parsed.left === 'number') {
+			// 兼容旧 { left, top } 与更早的 { left, bottom }
+			left = parsed.left
+			if (typeof parsed.top === 'number') {
+				top = parsed.top
+			} else if (typeof parsed.bottom === 'number') {
+				top = window.innerHeight - parsed.bottom - FAB_SIZE
+			}
+		}
+		if (
+			left === null ||
+			top === null ||
+			!Number.isFinite(left) ||
+			!Number.isFinite(top)
+		) {
 			return
 		}
-		posLeft.value = parsed.left
-		if (typeof parsed.top === 'number') {
-			posTop.value = parsed.top
-		} else if (typeof parsed.bottom === 'number') {
-			posTop.value = window.innerHeight - parsed.bottom - FAB_SIZE
-		}
+		posLeft.value = left
+		posTop.value = top
 		clampPosition()
 	} catch {
 		/* ignore malformed storage */
@@ -363,7 +442,11 @@ function savePosToSession() {
 	try {
 		sessionStorage.setItem(
 			STORAGE_KEY,
-			JSON.stringify({ left: posLeft.value, top: posTop.value })
+			JSON.stringify({
+				side: anchorSide.value,
+				x: anchorOffsetX.value,
+				y: posTop.value
+			})
 		)
 	} catch {
 		/* quota / private mode */
@@ -371,12 +454,9 @@ function savePosToSession() {
 }
 
 function clampPosition() {
-	const minTop = getMinBallTop()
-	const vw = window.innerWidth
-	const vh = window.innerHeight
-
-	posLeft.value = Math.min(Math.max(0, posLeft.value), vw - FAB_SIZE)
-	posTop.value = Math.min(Math.max(minTop, posTop.value), vh - FAB_SIZE)
+	const bounds = getBallBounds()
+	posLeft.value = Math.min(Math.max(bounds.minLeft, posLeft.value), bounds.maxLeft)
+	posTop.value = Math.min(Math.max(bounds.minTop, posTop.value), bounds.maxTop)
 }
 
 const onShellTransitionEnd = (event: TransitionEvent) => {
@@ -508,6 +588,7 @@ function endDrag(pointerId: number) {
 	unlockPageInteraction()
 	detachDragListeners()
 	captureEl?.releasePointerCapture?.(pointerId)
+	syncAnchorFromPosition()
 	savePosToSession()
 	if (wasClick) {
 		if (source === 'fab') {
@@ -574,13 +655,26 @@ function onHeaderPointerDown(event: PointerEvent) {
 }
 
 function onWindowResize() {
+	if (isDragging.value) {
+		clampPosition()
+		return
+	}
+	// CSS 锚边已让球原生跟随左/右缘；此处由 side + 偏移反推绝对坐标、钳制并回写
+	const vw = window.innerWidth
+	posLeft.value =
+		anchorSide.value === 'right'
+			? vw - anchorOffsetX.value - FAB_SIZE
+			: anchorOffsetX.value
 	clampPosition()
+	syncAnchorFromPosition()
+	viewportTick.value++
 	savePosToSession()
 }
 
 watch(isQuadrantLocked, (locked) => {
 	if (!locked) {
 		layoutQuadrant.value = resolvePopupQuadrant()
+		syncAnchorFromPosition()
 	}
 })
 
@@ -601,6 +695,7 @@ watch(activeCount, () => {
 onMounted(() => {
 	loadPosFromSession()
 	clampPosition()
+	syncAnchorFromPosition()
 	void ensureAgentNamesLoaded()
 	window.addEventListener('resize', onWindowResize)
 })
@@ -650,8 +745,8 @@ $shell-duration: 0.36s;
 	position: absolute;
 	left: 0;
 	top: 0;
-	width: 52px;
-	height: 52px;
+	width: 44px;
+	height: 44px;
 	border-radius: 50%;
 	overflow: hidden;
 	pointer-events: auto;
@@ -745,8 +840,8 @@ $shell-duration: 0.36s;
 
 .activity-fab-inner {
 	position: relative;
-	width: 38px;
-	height: 38px;
+	width: 32px;
+	height: 32px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -784,8 +879,8 @@ $fab-core-gradient: conic-gradient(
 
 .activity-fab-core {
 	position: relative;
-	width: 30px;
-	height: 30px;
+	width: 25px;
+	height: 25px;
 	border-radius: 50%;
 	background: transparent;
 	box-shadow: none;
@@ -802,18 +897,18 @@ $fab-core-gradient: conic-gradient(
 
 	/* 外缘：同色系轻微虚化，无独立渐变色 */
 	&::before {
-		width: 28px;
-		height: 28px;
-		margin: -14px 0 0 -14px;
+		width: 24px;
+		height: 24px;
+		margin: -12px 0 0 -12px;
 		filter: blur(3.5px);
 		opacity: 0.88;
 	}
 
 	/* 内核：浓实色心 */
 	&::after {
-		width: 22px;
-		height: 22px;
-		margin: -11px 0 0 -11px;
+		width: 18px;
+		height: 18px;
+		margin: -9px 0 0 -9px;
 		filter: blur(0.6px);
 		opacity: 1;
 	}
@@ -835,15 +930,15 @@ $fab-core-gradient: conic-gradient(
 	z-index: 3;
 	pointer-events: none;
 	transform: translate(40%, -40%);
-	min-width: 18px;
-	height: 18px;
-	padding: 0 5px;
-	border-radius: 9px;
+	min-width: 16px;
+	height: 16px;
+	padding: 0 4px;
+	border-radius: 8px;
 	background: var(--el-color-primary);
 	color: #fff;
-	font-size: 11px;
+	font-size: 10px;
 	font-weight: 600;
-	line-height: 18px;
+	line-height: 16px;
 	text-align: center;
 	box-sizing: border-box;
 	box-shadow: 0 2px 8px rgba(64, 158, 255, 0.35);
