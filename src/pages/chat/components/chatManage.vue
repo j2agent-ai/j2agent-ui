@@ -34,9 +34,11 @@
             <div
               v-if="batchMode"
               class="list-action clear-all"
-              @click="clearAllHistoryChat()"
+              :class="{ 'is-disabled': selectedCount === 0 }"
+              @click="selectedCount > 0 && confirmBatchDelete()"
             >
-              <i class="iconfont icon-trash-alt"></i>{{ $t('ai.delete.all.chat') }}
+              <i class="iconfont icon-trash-alt"></i>{{ t('ai.batch.delete.action') }}
+              <template v-if="selectedCount > 0"> ({{ selectedCount }})</template>
             </div>
             <div
               v-if="!batchMode"
@@ -61,9 +63,11 @@
             class="list-item fx"
             :class="{
               active: checkedHistoryId === item.contextId,
+              'is-selected': batchMode && isHistoryItemSelected(item),
               'is-streaming': isHistoryItemBusy(item),
               'is-batch-mode': batchMode
             }"
+            @click="handleListItemClick(item)"
           >
             <el-checkbox
               v-if="batchMode"
@@ -76,7 +80,6 @@
             <div
               class="cont fx"
               style="height: 100%;"
-              @click="goHistoryChat(item.contextId)"
             >
               <span
                 v-if="isHistoryItemBusy(item)"
@@ -121,11 +124,9 @@
           <el-button
             type="danger"
             size="small"
-            :disabled="selectedCount === 0"
-            @click="confirmBatchDelete()"
+            @click="clearAllHistoryChat()"
           >
-            {{ t('ai.batch.delete.action') }}
-            <template v-if="selectedCount > 0"> ({{ selectedCount }})</template>
+            {{ t('ai.delete.all.chat') }}
           </el-button>
         </div>
       </div>
@@ -260,6 +261,17 @@ const goHistoryChat = (constextId: string) => {
   checkedHistoryId.value = constextId
   props.historyChat(constextId)
   searchKey.value = ''
+}
+
+const handleListItemClick = (item: HistoryContextItem) => {
+  if (batchMode.value) {
+    if (isHistoryItemBusy(item)) {
+      return
+    }
+    setHistoryItemSelected(item, !isHistoryItemSelected(item))
+    return
+  }
+  goHistoryChat(item.contextId)
 }
 
 const fetchHistoryPage = async (offset: number) => {
@@ -759,6 +771,12 @@ defineExpose({
           color: var(--el-color-danger);
           opacity: 0.82;
         }
+
+        &.is-disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+          pointer-events: none;
+        }
       }
     }
 
@@ -813,6 +831,26 @@ defineExpose({
           color: var(--el-color-primary);
           box-shadow: 0 0 10px color-mix(in srgb, var(--el-color-primary) 30%, transparent),
           0 0 24px color-mix(in srgb, var(--el-color-primary) 14%, transparent);
+        }
+
+        &.is-selected {
+          color: var(--el-color-primary);
+          background: color-mix(in srgb, var(--el-color-primary) 10%, transparent);
+        }
+
+        &.is-batch-mode.is-streaming {
+          opacity: 0.55;
+          cursor: not-allowed;
+          color: var(--n-color-text-placeholder);
+
+          &:hover {
+            color: var(--n-color-text-placeholder);
+          }
+
+          &.is-selected {
+            color: var(--n-color-text-placeholder);
+            background: transparent;
+          }
         }
 
         &.is-batch-mode .cont {
