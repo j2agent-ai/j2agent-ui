@@ -119,13 +119,17 @@ export const startTurn = (
 		const err = error as { responseCode?: number }
 		if (err.responseCode === 401) {
 			location.hash = '/login'
-		} else if (err.responseCode !== 0) {
-			console.error(error)
-			ElMessage.error(t('ai.assistant.service.unavailable'))
-			session.isNewLlmResponse.value = true
-			session.dispatcher.recordTerminalState('FAILED')
-			clearActivity(session)
+			return
 		}
+		console.error(error)
+		if (err.responseCode !== 0) {
+			ElMessage.error(t('ai.assistant.service.unavailable'))
+		}
+		session.isNewLlmResponse.value = true
+		if (!session.dispatcher.isTerminalState.value) {
+			session.dispatcher.recordTerminalState('FAILED')
+		}
+		clearActivity(session)
 	}
 
 	ws.onclose = () => {

@@ -365,6 +365,7 @@ import {
   getQaTemplate
 } from '@/api/ai.api'
 import { chatActivityStore } from '../ts/activity/store'
+import { isContextStreaming } from '../ts/activity/live'
 import { chatSessionRegistry } from '../ts/session/registry'
 import { startTurn, stopTurn } from '../ts/stream/service'
 import { useActiveChatSessionBindings } from '../ts/session/bindings'
@@ -641,8 +642,11 @@ const props = defineProps({
 
 /** 当前活跃会话是否在全局活动中心标记为进行中（驱动主区光晕动画）。 */
 const isActiveContextStreaming = computed(() => {
-  chatActivityStore.activeKeySet.value
-  return chatActivityStore.isActive(props.agentId, contextId.value || '')
+  const cid = contextId.value || ''
+  if (!cid) {
+    return false
+  }
+  return isContextStreaming(props.agentId, cid)
 })
 
 /** 窄屏缩小消息行头像，与气泡字号更协调 */

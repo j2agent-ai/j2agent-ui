@@ -158,7 +158,7 @@ import type { HistoryContextItem } from '@/types/ai.types'
 import { debounce, t } from '@ai-system/lib'
 import { isChatNarrowLayout } from '../ts/layout'
 import { resolveHistoryItemTitle } from '../ts/history/title'
-import { chatActivityStore } from '../ts/activity/store'
+import { isContextStreaming } from '../ts/activity/live'
 import { chatSessionRegistry } from '../ts/session/registry'
 import { buildSessionKey } from '../ts/session/types'
 
@@ -234,7 +234,7 @@ watch(
 )
 
 const isHistoryItemBusy = (item: HistoryContextItem) =>
-  chatActivityStore.activeKeySet.value.has(historyRowKey(item))
+  isContextStreaming(item.agentId ?? props.agentId, item.contextId)
 
 const handleShowSearch = () => {
   showSearchInput.value = true
