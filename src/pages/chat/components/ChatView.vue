@@ -29,7 +29,7 @@
             <img v-if="chatLogoUrl" :src="chatLogoUrl" alt="" />
             <span v-else class="ai-logo-emoji">{{ effectiveChatLogo }}</span>
           </div>
-          <h2 class="title">{{ $t('ai.hi.assistant') }}</h2>
+          <h2 class="title">{{ assistantGreeting }}</h2>
           <div v-if="showHotQuestions" class="hot-questions">
             <div class="fx hot-questions-title">
               <strong class="fx">
@@ -380,7 +380,7 @@ import {
 import { processChatImageFile } from '../ts/media/image'
 import { getMarkdownCodeBlockText, MARKDOWN_RENDERER_REVISION, renderMarkdown, renderMarkdownBlocks } from '@/utils/markdownRenderer'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
-import { getAgentLogo } from '../ts/agent/name-registry'
+import { getAgentDisplayName, getAgentLogo, agentNameMap } from '../ts/agent/name-registry'
 
 const showChatManage = ref(false)
 const chatManageRef = ref(null)
@@ -655,6 +655,11 @@ const messageAvatarSize = computed(() => (props.isMobile ? 36 : 50))
 const effectiveChatLogo = computed(
   () => getAgentLogo(props.agentId) || chatLogoEmoji
 )
+
+const assistantGreeting = computed(() => {
+  agentNameMap.value
+  return t('ai.hi.assistant', { name: getAgentDisplayName(props.agentId) })
+})
 
 const chatInputRef = ref<InstanceType<typeof ElInput> | null>(null)
 const inputFocused = ref(false)
@@ -1849,7 +1854,7 @@ defineExpose({
   img {
     width: 100%;
     height: 100%;
-    object-fit: contain; // 保持图片比例
+    object-fit: contain;
   }
 }
 
@@ -2509,12 +2514,15 @@ defineExpose({
   }
 
   .ai-chat-logo {
-    background-color: #3b3b3b;
+    background-color: var(--n-color-neutral-w, #fff);
+    border: 1px solid var(--n-color-border-soft, rgba(0, 0, 0, 0.08));
 
     img {
       width: 100%;
       height: 100%;
-      object-fit: contain; // 保持图片比例
+      object-fit: contain;
+      padding: 4px;
+      box-sizing: border-box;
     }
   }
 }

@@ -1,4 +1,4 @@
-import { aiIntroduceZh, webTitleZh } from '@/oem.js'
+import { aiIntroducePrefixZh, webTitleZh } from '@/oem.js'
 
 export default {
 	'ai.title': webTitleZh,
@@ -54,7 +54,7 @@ export default {
 	'ai.delete.warning': '删除后对话记录无法恢复和找回，请谨慎操作',
 	'ai.delete.chat.confirm': '确认删除这1条对话记录吗？',
 	'ai.delete.all.chat.confirm': '确认删除所有可删除的对话记录吗？运行中的对话将保留。',
-	'ai.hi.assistant': aiIntroduceZh,
+	'ai.hi.assistant': `${aiIntroducePrefixZh}「{name}」`,
 	'ai.already.latest.chat': '已是最新对话',
 	'ai.source': '引用来源：',
 	'ai.api.key.invalid': 'AI服务API密钥无效',

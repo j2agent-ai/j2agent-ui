@@ -5,9 +5,9 @@ export const globalUrlPrefix = '/';
 // 网页title
 export const webTitleZh = 'J2Agent 平台';
 export const webTitleEn = 'J2Agent Platform'
-// AI聊天页自我介绍
-export const aiIntroduceZh = '你好，我是 J2Agent AI'
-export const aiIntroduceEn = 'Hello, I am J2Agent AI'
+// AI聊天页自我介绍（{name} 为当前智能体名称）
+export const aiIntroducePrefixZh = '你好，我是'
+export const aiIntroducePrefixEn = 'Hello, I am'
 // 顶栏名称
 export const topBarTittle = 'J2Agent AI';
 
@@ -21,7 +21,10 @@ export const primaryColorRgb = (() => {
 })();
 
 // Logo
-export const faviconUrl = 'favicon.ico';
-export const topBarLogoUrl = '';
-export const chatLogoUrl = ''; // 留空则使用 emoji
+export const faviconUrl = 'favicon.svg';
+/** 完整 wordmark：左侧 J2A 圆角标签 + 右侧 gent AI */
+export const topBarUseWordmarkLogo = true;
+export const topBarLogoUrl = 'logo-b.svg';
+export const topBarLogoUrlOnDark = 'logo-w.svg';
+export const chatLogoUrl = 'logo-b.svg'; // 留空则使用 emoji
 export const chatLogoEmoji = '🤖';

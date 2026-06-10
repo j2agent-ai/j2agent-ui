@@ -1,4 +1,4 @@
-import { aiIntroduceEn, webTitleEn } from '@/oem.js'
+import { aiIntroducePrefixEn, webTitleEn } from '@/oem.js'
 
 export default {
 	'ai.title': webTitleEn,
@@ -55,7 +55,7 @@ export default {
 	'ai.delete.warning': 'After deletion, the conversation records cannot be restored or retrieved. Please operate with caution.',
 	'ai.delete.chat.confirm': 'Are you sure to delete this 1 conversation record?',
 	'ai.delete.all.chat.confirm': 'Delete all deletable conversations? Running conversations will be kept.',
-	'ai.hi.assistant': aiIntroduceEn,
+	'ai.hi.assistant': `${aiIntroducePrefixEn} '{name}'`,
 	'ai.already.latest.chat': 'It is the latest conversation',
 	'ai.source': 'Source:',
 	'ai.api.key.invalid': 'AI Service API Key Invalid',
