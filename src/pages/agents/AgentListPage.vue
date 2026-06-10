@@ -15,7 +15,7 @@
 					class="agent-card"
 					@click="openChat(item.agentId)"
 				>
-					<div class="card-icon">🤖</div>
+					<div class="card-icon">{{ item.logo || '🤖' }}</div>
 					<h3>{{ item.name }}</h3>
 					<p class="meta">
 						<span class="label">ID : </span>

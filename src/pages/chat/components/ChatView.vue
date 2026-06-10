@@ -27,7 +27,7 @@
         <div class="message-init">
           <div class="ai-logo">
             <img v-if="chatLogoUrl" :src="chatLogoUrl" alt="" />
-            <span v-else class="ai-logo-emoji">{{ chatLogoEmoji }}</span>
+            <span v-else class="ai-logo-emoji">{{ effectiveChatLogo }}</span>
           </div>
           <h2 class="title">{{ $t('ai.hi.assistant') }}</h2>
           <div v-if="showHotQuestions" class="hot-questions">
@@ -71,7 +71,7 @@
               <div class="avatar-wrap">
                 <el-avatar :size="messageAvatarSize" class="ai-chat-logo">
                   <img v-if="chatLogoUrl" :src="chatLogoUrl" alt="" />
-                  <span v-else class="avatar-emoji">{{ chatLogoEmoji }}</span>
+                  <span v-else class="avatar-emoji">{{ effectiveChatLogo }}</span>
                 </el-avatar>
               </div>
               <div
@@ -379,6 +379,7 @@ import {
 import { processChatImageFile } from '../ts/media/image'
 import { getMarkdownCodeBlockText, MARKDOWN_RENDERER_REVISION, renderMarkdown, renderMarkdownBlocks } from '@/utils/markdownRenderer'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
+import { getAgentLogo } from '../ts/agent/name-registry'
 
 const showChatManage = ref(false)
 const chatManageRef = ref(null)
@@ -646,6 +647,10 @@ const isActiveContextStreaming = computed(() => {
 
 /** 窄屏缩小消息行头像，与气泡字号更协调 */
 const messageAvatarSize = computed(() => (props.isMobile ? 36 : 50))
+
+const effectiveChatLogo = computed(
+  () => getAgentLogo(props.agentId) || chatLogoEmoji
+)
 
 const chatInputRef = ref<InstanceType<typeof ElInput> | null>(null)
 const inputFocused = ref(false)

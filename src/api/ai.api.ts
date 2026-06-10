@@ -1,5 +1,6 @@
 import {
 	AgentInfoList,
+	AgentInstallResult,
 	AgentPluginStatus,
 	AgentReloadResult,
 	ChatContextDto,
@@ -47,6 +48,31 @@ export const getAgentPlugins = () => {
  */
 export const reloadAgentPlugins = () => {
 	return http.post<AgentReloadResult>(`/v1${globalUrlPrefix}rest/${programTag}/agents/reload`)
+}
+
+/**
+ * 上传并安装 Agent 插件 tar.gz 包
+ */
+export const installAgentPackage = (file: File, replace = false) => {
+	const formData = new FormData()
+	formData.append('file', file)
+	return http.post<AgentInstallResult>(
+		`/v1${globalUrlPrefix}rest/${programTag}/plugins/agents/install`,
+		formData,
+		{
+			params: { replace },
+			validateStatus: (status) => (status >= 200 && status < 300) || status === 409
+		}
+	)
+}
+
+/**
+ * 删除已安装的 Agent 插件包
+ */
+export const deleteAgentPackage = (agentDir: string) => {
+	return http.delete<AgentReloadResult>(
+		`/v1${globalUrlPrefix}rest/${programTag}/plugins/agents/${encodeURIComponent(agentDir)}`
+	)
 }
 
 /**

@@ -60,3 +60,12 @@ export const getAgentDisplayName = (agentId: string) =>
 
 export const hasAgentDisplayName = (agentId: string) =>
 	agentNameMap.value.has(agentId)
+
+const DEFAULT_AGENT_LOGO = '🤖'
+
+/** 获取智能体 emoji logo，未加载或未配置时回退默认 */
+export const getAgentLogo = (agentId: string) => {
+	const agent = registeredAgents.value.find((a) => a.agentId === agentId)
+	const logo = agent?.logo?.trim()
+	return logo || DEFAULT_AGENT_LOGO
+}

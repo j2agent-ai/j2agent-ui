@@ -166,6 +166,8 @@ export type AgentInfoDto = {
 	name: string
 	description?: string
 	showHotQuestions?: boolean
+	sort?: number
+	logo?: string
 }
 
 /** 智能体列表响应 */
@@ -174,9 +176,17 @@ export type AgentInfoList = {
 }
 
 /** 智能体插件状态 */
+export type AgentPluginPackage = {
+	agentDir?: string
+	jarName?: string
+	agentIds?: string[]
+	loaded?: boolean
+}
+
 export type AgentPluginStatus = {
 	jarFiles?: string[]
 	loadedAgentIds?: string[]
+	packages?: AgentPluginPackage[]
 }
 
 /** 智能体插件 JAR 重载结果 */
@@ -185,6 +195,14 @@ export type AgentReloadResult = {
 	message?: string
 	jarFiles?: string[]
 	loadedAgentIds?: string[]
+}
+
+/** 智能体插件安装结果 */
+export type AgentInstallResult = AgentReloadResult & {
+	conflict?: boolean
+	conflictingAgentIds?: string[]
+	existingAgentDir?: string
+	incomingAgentIds?: string[]
 }
 
 export type HistoryContextList = {
