@@ -48,7 +48,7 @@ const MARKDOWN_REVISION_ATTR = 'data-md-revision'
  * 图表后处理逻辑变更时递增，用于让历史气泡在 SPA 内重新渲染（非 Mermaid 缓存）。
  * 与 ChatView 中 v-html 的 :key 保持一致。
  */
-export const MARKDOWN_RENDERER_REVISION = '14'
+export const MARKDOWN_RENDERER_REVISION = '15'
 /** 与 markdown.scss 中 --md-diagram-max-height 回退值保持一致 */
 const MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK = 360
 /** body 垂直内边距合计（padding-top + padding-bottom，各 14px） */
@@ -998,6 +998,67 @@ const normalizeMindmapIndentation = (source: string) => {
   return out.join('\n')
 }
 
+/**
+ * 将同一行内并列的多个 flowchart 节点定义拆成多行。
+ * LLM 常输出 `NE["网元"]  CHASSIS["机框"]`，解析器在首节点后期望换行却遇到下一个节点 ID。
+ */
+const splitMultipleFlowchartNodeDefsOnLine = (line: string) => {
+  const indent = line.match(/^[\t ]*/)?.[0] ?? ''
+  const nodePatterns = [
+    /([A-Za-z_][\w-]*\[[^\]]*\])([ \t]+)(?=[A-Za-z_][\w-]*)/g,
+    /([A-Za-z_][\w-]*\([^)]*\))([ \t]+)(?=[A-Za-z_][\w-]*)/g,
+    /([A-Za-z_][\w-]*\{[^}]*\})([ \t]+)(?=[A-Za-z_][\w-]*)/g
+  ]
+
+  let cur = line
+  let prev = ''
+  while (prev !== cur) {
+    prev = cur
+    for (const pattern of nodePatterns) {
+      cur = cur.replace(pattern, '$1\n')
+    }
+  }
+
+  return cur
+    .split('\n')
+    .map((part, index) => (index === 0 ? part : indent + part.trimStart()))
+    .join('\n')
+}
+
+const shouldNormalizeFlowchartNodeLine = (trimmed: string) => {
+  if (!trimmed || trimmed.startsWith('%%')) {
+    return false
+  }
+  if (
+    /^(?:style|classDef|class|linkStyle|click|subgraph|end|graph|flowchart)\b/i.test(
+      trimmed
+    )
+  ) {
+    return false
+  }
+  const nodeLike =
+    /[A-Za-z_][\w-]*(?:\[[^\]]*\]|\([^)]*\)|\{[^}]*\})/g
+  const matches = trimmed.match(nodeLike)
+  return (matches?.length ?? 0) >= 2
+}
+
+/** 仅对 graph / flowchart 图：把一行多个节点定义拆成多行 */
+const normalizeFlowchartMultilineNodeDefs = (source: string) => {
+  if (!/^\s*(?:graph|flowchart)\s/im.test(source)) {
+    return source
+  }
+  return source
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim()
+      if (!shouldNormalizeFlowchartNodeLine(trimmed)) {
+        return line
+      }
+      return splitMultipleFlowchartNodeDefsOnLine(line)
+    })
+    .join('\n')
+}
+
 /** 仅对 graph / flowchart 图：把一行多条边拆成多行 */
 const normalizeFlowchartMultilineEdges = (source: string) => {
   if (!/^\s*(?:graph|flowchart)\s/im.test(source)) {
@@ -1032,6 +1093,7 @@ const normalizeMermaidSource = (source: string) => {
     .replace(/：/g, ':')
     .replace(/\u00a0/g, ' ')
   text = normalizeMindmapIndentation(text)
+  text = normalizeFlowchartMultilineNodeDefs(text)
   text = normalizeFlowchartMultilineEdges(text)
   text = quotePieSliceLines(text)
   return normalizeXychartOrientation(text)
