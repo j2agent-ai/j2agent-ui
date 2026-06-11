@@ -48,7 +48,7 @@ const MARKDOWN_REVISION_ATTR = 'data-md-revision'
  * 图表后处理逻辑变更时递增，用于让历史气泡在 SPA 内重新渲染（非 Mermaid 缓存）。
  * 与 ChatView 中 v-html 的 :key 保持一致。
  */
-export const MARKDOWN_RENDERER_REVISION = '15'
+export const MARKDOWN_RENDERER_REVISION = '16'
 /** 与 markdown.scss 中 --md-diagram-max-height 回退值保持一致 */
 const MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK = 360
 /** body 垂直内边距合计（padding-top + padding-bottom，各 14px） */
@@ -605,6 +605,10 @@ const countBracketListItems = (listContent: string) => {
   return count
 }
 
+/** xychart 声明首行（仅该行可携带 horizontal 关键字）。 */
+const getXychartDeclarationLine = (source: string) =>
+  source.match(/^\s*xychart(?:-beta)?[^\n]*/im)?.[0] ?? ''
+
 /** 解析 xychart 的 x-axis 类目数量。 */
 const countXychartCategories = (source: string) => {
   const match = source.match(/^\s*x-axis\b[^\[]*\[([\s\S]*?)\]/im)
@@ -614,6 +618,19 @@ const countXychartCategories = (source: string) => {
   return countBracketListItems(match[1])
 }
 
+/** 解析 xychart 的 bar 数据点数量。 */
+const countXychartBarValues = (source: string) => {
+  const match = source.match(/^\s*bar\b[^\[]*\[([\s\S]*?)\]/im)
+  if (!match) {
+    return 0
+  }
+  return countBracketListItems(match[1])
+}
+
+/** 类目计数取 x-axis 与 bar 的较大值，避免「标题 TOP15、x-axis 仅 10 项」漏触发横向。 */
+const getXychartCategoryCount = (source: string) =>
+  Math.max(countXychartCategories(source), countXychartBarValues(source))
+
 /**
  * 多类目竖向 xychart 自动改为 horizontal，避免 X 轴标签重叠。
  */
@@ -621,10 +638,10 @@ const normalizeXychartOrientation = (source: string) => {
   if (!/^\s*xychart(?:-beta)?\b/im.test(source)) {
     return source
   }
-  if (/\bhorizontal\b/i.test(source)) {
+  if (/\bhorizontal\b/i.test(getXychartDeclarationLine(source))) {
     return source
   }
-  if (countXychartCategories(source) < XYCHART_HORIZONTAL_MIN_CATEGORIES) {
+  if (getXychartCategoryCount(source) < XYCHART_HORIZONTAL_MIN_CATEGORIES) {
     return source
   }
   return source.replace(
@@ -637,7 +654,8 @@ const isXychartSource = (source: string) =>
   /^\s*xychart(?:-beta)?\b/im.test(source)
 
 const isXychartHorizontal = (source: string) =>
-  isXychartSource(source) && /\bhorizontal\b/i.test(source)
+  isXychartSource(source) &&
+  /\bhorizontal\b/i.test(getXychartDeclarationLine(source))
 
 let textMeasureCanvas: HTMLCanvasElement | undefined
 
@@ -909,7 +927,7 @@ const applyXychartDiagramPresentation = (
   if (!isXychartHorizontal(source)) {
     return
   }
-  const categoryCount = countXychartCategories(source)
+  const categoryCount = getXychartCategoryCount(source)
   if (categoryCount >= XYCHART_HORIZONTAL_MIN_CATEGORIES) {
     const minBodyHeight = Math.min(
       categoryCount * XYCHART_HORIZONTAL_ROW_MIN_HEIGHT +
@@ -1759,4 +1777,14 @@ export const resetMarkdownRendererForTest = () => {
   plantUmlVendorLoad = undefined
   vegaEmbedFn = undefined
   invalidateDiagramMaxHeightCache()
+}
+
+/** 单测用：xychart 横向修正与类目计数 */
+export const markdownRendererXychartInternals = {
+  getXychartDeclarationLine,
+  countXychartCategories,
+  countXychartBarValues,
+  getXychartCategoryCount,
+  normalizeXychartOrientation,
+  isXychartHorizontal
 }
