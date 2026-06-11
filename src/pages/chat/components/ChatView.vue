@@ -1662,7 +1662,7 @@ defineExpose({
     }
 
     .ai-logo {
-      width: 72px;
+      width: 160px;
     }
 
     .ai-logo-emoji {
