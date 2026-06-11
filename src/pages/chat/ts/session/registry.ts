@@ -161,6 +161,19 @@ class ChatSessionRegistry {
 		return this.createNewSession(agentId)
 	}
 
+	/**
+	 * 进入某智能体聊天页：若已通过 activateSession 预激活同 agent 则保留（活动面板/历史）；
+	 * 否则新建空白会话（从智能体列表进入时不恢复该 agent 的上次内存会话）。
+	 */
+	async enterAgent(agentId: string): Promise<ChatSessionRuntime> {
+		const current = this.getActiveSession()
+		if (current?.agentId === agentId) {
+			current.lastAccessedAt = Date.now()
+			return current
+		}
+		return this.createNewSession(agentId)
+	}
+
 	private stopSessionStream(session: ChatSessionRuntime) {
 		detachWebSocket(session.ws)
 		session.ws = undefined

@@ -103,15 +103,16 @@
 													? ''
 													: null
 											"
-                      v-html="
-												renderMarkdown(
-													seg.text +
-														(isActiveAssistantTurn(index) && !seg.complete
-															? '...'
-															: '')
-												)
-											"
-                    />
+                    >
+                      <div
+                        v-if="isActiveAssistantTurn(index) && !seg.complete"
+                        :ref="bindActiveTailSegmentRef"
+                      />
+                      <div
+                        v-else
+                        v-html="renderMarkdown(seg.text)"
+                      />
+                    </div>
                   </div>
                   <div
                     v-show="message.srcFile && message.srcFile.length > 0"
@@ -367,12 +368,19 @@
       :initial-index="diagramPreviewIndex"
       @close="closeDiagramPreview"
     />
+    <HtmlPreviewOverlay
+      :visible="htmlPreviewVisible"
+      :sources="htmlPreviewSources"
+      :initial-index="htmlPreviewIndex"
+      @close="closeHtmlPreview"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ArrowDown, ChatLineSquare, DocumentCopy, Loading, Picture, Position, Refresh } from '@element-plus/icons-vue'
 import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   ElAvatar,
   ElButton,
@@ -388,6 +396,7 @@ import ChatManage from './chatManage.vue'
 import AgentTurnTimeline from './AgentTurnTimeline.vue'
 import AgentThinkingBlock from './AgentThinkingBlock.vue'
 import DiagramPreviewOverlay from './DiagramPreviewOverlay.vue'
+import HtmlPreviewOverlay from './HtmlPreviewOverlay.vue'
 import {
   ChatAttachmentDto,
   ChatRequestDto,
@@ -415,7 +424,15 @@ import {
 } from '../ts/media/attachment'
 import { processChatImageFile } from '../ts/media/image'
 import { cloneSvgForPreview } from '@/utils/diagramPreview'
-import { getMarkdownCodeBlockText, MARKDOWN_RENDERER_REVISION, renderMarkdown, renderMarkdownBlocks } from '@/utils/markdownRenderer'
+import {
+  getMarkdownCodeBlockText,
+  getMarkdownHtmlBlockSource,
+  MARKDOWN_RENDERER_REVISION,
+  preloadDiagramRuntimes,
+  renderMarkdown,
+  renderMarkdownBlocks,
+  updateStreamTailSegmentInPlace
+} from '@/utils/markdownRenderer'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
 import { getAgentDisplayName, getAgentLogo, agentNameMap } from '../ts/agent/name-registry'
 
@@ -642,6 +659,12 @@ const diagramPreviewVisible = ref(false)
 const diagramPreviewSvgs = ref<SVGElement[]>([])
 /** 图表预览初始下标 */
 const diagramPreviewIndex = ref(0)
+/** HTML 全屏预览是否可见 */
+const htmlPreviewVisible = ref(false)
+/** HTML 预览源码列表（同条消息内多块可切换） */
+const htmlPreviewSources = ref<string[]>([])
+/** HTML 预览初始下标 */
+const htmlPreviewIndex = ref(0)
 
 /** 非终态 busy 时当前轮 assistant 在可见列表中的下标。 */
 const activeAssistantVisibleIndex = computed(() => {
@@ -763,7 +786,7 @@ const onChatInputBlur = () => {
 const sendMessage = async (msg?: string) => {
   let session = requireActiveSession()
   if (!session) {
-    session = await chatSessionRegistry.ensureActiveSessionForAgent(props.agentId)
+    session = await chatSessionRegistry.enterAgent(props.agentId)
   }
   if (isBusyByState.value || sendingMessage.value || isProcessingImages.value) {
     ElMessage.info(isProcessingImages.value ? t('ai.image.processing') : t('ai.assistant.waiting'))
@@ -1005,13 +1028,62 @@ const splitStreamingSegments = (content: string): StreamSegment[] => {
   return segments
 }
 
-const activateMarkdownBlocks = () => {
+/** 当前流式 assistant 尾段原文（围栏未闭合部分），非流式时为 null */
+const activeAssistantTailText = computed(() => {
+  if (!isBusyByState.value) {
+    return null
+  }
+  const idx = activeAssistantVisibleIndex.value
+  if (idx < 0) {
+    return null
+  }
+  const message = visibleMessageContext.value[idx]
+  if (!message?.content || message.role !== 'assistant') {
+    return null
+  }
+  const segments = splitStreamingSegments(message.content)
+  const tail = segments[segments.length - 1]
+  if (tail.complete) {
+    return null
+  }
+  return tail.text
+})
+
+/** 当前流式尾段就地更新容器（不用 v-html，避免 pending 占位被销毁） */
+const activeTailSegmentEl = ref<HTMLElement | null>(null)
+
+const bindActiveTailSegmentRef = (el: unknown) => {
+  activeTailSegmentEl.value = el instanceof HTMLElement ? el : null
+}
+
+const MARKDOWN_BLOCKS_DEBOUNCE_MS = 100
+let markdownBlocksDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 流式输出时仅扫描当前轮 assistant 消息子树，避免全列表 querySelector */
+const getMarkdownBlocksScope = (): Element | null => {
+  const listRoot = messageListRef.value
+  if (!listRoot || !isBusyByState.value) {
+    return listRoot
+  }
+  const idx = activeAssistantVisibleIndex.value
+  if (idx < 0) {
+    return listRoot
+  }
+  const row = listRoot.querySelectorAll('.message-row').item(idx)
+  if (!(row instanceof Element)) {
+    return listRoot
+  }
+  return row.querySelector('.message-bubble-wrap') ?? row
+}
+
+const runMarkdownBlocks = () => {
   nextTick(() => {
-    const root = messageListRef.value
-    if (!root) {
+    const listRoot = messageListRef.value
+    if (!listRoot) {
       return
     }
-    renderMarkdownBlocks(root, { deferDiagrams: isBusyByState.value })
+    const scopeRoot = getMarkdownBlocksScope() ?? listRoot
+    renderMarkdownBlocks(scopeRoot, { deferDiagrams: isBusyByState.value })
       .then(() => {
         if (shouldAutoScroll()) {
           scrollToBottom()
@@ -1021,6 +1093,36 @@ const activateMarkdownBlocks = () => {
         console.error('Markdown图表渲染失败:', error)
       })
   })
+}
+
+const activateMarkdownBlocks = () => {
+  if (markdownBlocksDebounceTimer !== null) {
+    clearTimeout(markdownBlocksDebounceTimer)
+  }
+  markdownBlocksDebounceTimer = setTimeout(() => {
+    markdownBlocksDebounceTimer = null
+    runMarkdownBlocks()
+  }, MARKDOWN_BLOCKS_DEBOUNCE_MS)
+}
+
+/** 流式结束或会话切换时立即渲染，不等待 debounce */
+const flushActivateMarkdownBlocks = () => {
+  if (markdownBlocksDebounceTimer !== null) {
+    clearTimeout(markdownBlocksDebounceTimer)
+    markdownBlocksDebounceTimer = null
+  }
+  runMarkdownBlocks()
+}
+
+const schedulePreloadDiagramRuntimes = () => {
+  const preload = () => {
+    preloadDiagramRuntimes()
+  }
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(preload, { timeout: 2000 })
+  } else {
+    setTimeout(preload, 0)
+  }
 }
 
 const checkScroll = () => {
@@ -1183,6 +1285,7 @@ const openMessageImagePreview = (
     return
   }
   closeDiagramPreview()
+  closeHtmlPreview()
   imagePreviewUrlList.value = urlList
   imagePreviewIndex.value = index
   imagePreviewVisible.value = true
@@ -1196,6 +1299,7 @@ const openMessageDiagramPreview = (
   targetSvg: SVGElement
 ) => {
   closeImagePreview()
+  closeHtmlPreview()
   const svgs = messageContent.querySelectorAll(
     '.md-diagram:not(.md-diagram-error) .md-diagram-body svg'
   )
@@ -1219,6 +1323,39 @@ const openMessageDiagramPreview = (
 }
 
 /**
+ * 点击消息气泡内 HTML 预览缩略图，收集同气泡全部 HTML 块并打开全屏预览。
+ */
+const openMessageHtmlPreview = (
+  messageContent: Element,
+  targetWrap: HTMLElement
+) => {
+  closeImagePreview()
+  closeDiagramPreview()
+  const blocks = messageContent.querySelectorAll(
+    '.md-html-block[data-md-rendered="true"]'
+  )
+  const sources: string[] = []
+  let index = 0
+  blocks.forEach((block) => {
+    const wrap = block.querySelector('.md-html-preview-wrap')
+    const source = getMarkdownHtmlBlockSource(block)
+    if (!source.trim()) {
+      return
+    }
+    if (wrap === targetWrap) {
+      index = sources.length
+    }
+    sources.push(source)
+  })
+  if (!sources.length) {
+    return
+  }
+  htmlPreviewSources.value = sources
+  htmlPreviewIndex.value = index
+  htmlPreviewVisible.value = true
+}
+
+/**
  * 点击消息气泡内图片或图表，打开全屏预览（与 ElImageViewer 一致）。
  */
 const handleMessageMediaClick = (event: MouseEvent) => {
@@ -1239,6 +1376,16 @@ const handleMessageMediaClick = (event: MouseEvent) => {
     if (block) {
       void copyMessage(getMarkdownCodeBlockText(block))
     }
+    return
+  }
+
+  const htmlPreviewWrap = target.closest(
+    '.md-html-preview-wrap:not(.md-block-pending)'
+  )
+  if (htmlPreviewWrap instanceof HTMLElement) {
+    event.preventDefault()
+    event.stopPropagation()
+    openMessageHtmlPreview(messageContent, htmlPreviewWrap)
     return
   }
 
@@ -1269,6 +1416,12 @@ const closeDiagramPreview = () => {
   diagramPreviewSvgs.value = []
 }
 
+/** 关闭 HTML 全屏预览 */
+const closeHtmlPreview = () => {
+  htmlPreviewVisible.value = false
+  htmlPreviewSources.value = []
+}
+
 const copyMessage = async (content?: string) => {
   if (!content) {
     return
@@ -1291,6 +1444,34 @@ const copyMessage = async (content?: string) => {
   }
 }
 
+const route = useRoute()
+const router = useRouter()
+
+const stripNewChatQuery = () => {
+  if (route.query['new-chat'] !== '1') {
+    return
+  }
+  const query = { ...route.query }
+  delete query['new-chat']
+  router.replace({ path: route.path, query })
+}
+
+/** 进入智能体：智能体列表带 new-chat=1 时强制新建；否则预激活会话保留，未预激活则新建 */
+const bootstrapAgentSession = async (forceNew = false) => {
+  if (forceNew || route.query['new-chat'] === '1') {
+    await chatSessionRegistry.createNewSession(props.agentId)
+    stripNewChatQuery()
+  } else {
+    await chatSessionRegistry.enterAgent(props.agentId)
+  }
+  isAtBottom.value = true
+  getHotQuestions()
+  nextTick(() => {
+    scrollToBottom()
+    flushActivateMarkdownBlocks()
+  })
+}
+
 const newChat = async () => {
   await chatSessionRegistry.createNewSession(props.agentId)
   isAtBottom.value = true
@@ -1298,16 +1479,14 @@ const newChat = async () => {
   scrollToBottom()
 }
 
-/** 切换智能体时恢复该智能体最近活跃的内存会话，无则新建 */
+/** 切换智能体时进入新对话（活动面板/历史已 activate 的同 agent 会话除外） */
 watch(
   () => props.agentId,
-  async () => {
-    await chatSessionRegistry.ensureActiveSessionForAgent(props.agentId)
-    getHotQuestions()
-    nextTick(() => {
-      scrollToBottom()
-      activateMarkdownBlocks()
-    })
+  async (_newAgentId, oldAgentId) => {
+    if (oldAgentId === undefined) {
+      return
+    }
+    await bootstrapAgentSession(route.query['new-chat'] === '1')
   }
 )
 
@@ -1347,6 +1526,19 @@ watch(scrollbarRef, () => {
   })
 })
 
+/** 流式尾段就地增量更新，保留 pending 图表占位节点以维持流光动画 */
+watch(
+  [activeAssistantTailText, activeTailSegmentEl],
+  ([text, el]) => {
+    if (!text || !el) {
+      return
+    }
+    updateStreamTailSegmentInPlace(el, text, true)
+    activateMarkdownBlocks()
+  },
+  { flush: 'post' }
+)
+
 watch(
   () => activeSession.value?.messageContext.value,
   () => {
@@ -1356,8 +1548,12 @@ watch(
 )
 
 /** 流式结束但 content 不再变化时，补渲染推迟的 mermaid/plantuml/vegalite/html 块 */
-watch(isBusyByState, () => {
-  activateMarkdownBlocks()
+watch(isBusyByState, (busy, wasBusy) => {
+  if (!busy && wasBusy) {
+    flushActivateMarkdownBlocks()
+  } else {
+    activateMarkdownBlocks()
+  }
 })
 
 /** 后台会话流式更新时，活跃会话 pendingScroll 由 ChatView 消费 */
@@ -1382,7 +1578,7 @@ watch(
   () => {
     nextTick(() => {
       scrollToBottom()
-      activateMarkdownBlocks()
+      flushActivateMarkdownBlocks()
       bindUserScrollIntent()
     })
   }
@@ -1402,7 +1598,7 @@ const historyChat = async (historyId: string) => {
     }
   }
   scrollToBottom()
-  activateMarkdownBlocks()
+  flushActivateMarkdownBlocks()
 }
 
 // 中止当前活跃会话正在进行的对话
@@ -1465,8 +1661,8 @@ watch(
 )
 
 onMounted(async () => {
-  await chatSessionRegistry.ensureActiveSessionForAgent(props.agentId)
-  getHotQuestions()
+  schedulePreloadDiagramRuntimes()
+  await bootstrapAgentSession(route.query['new-chat'] === '1')
   nextTick(() => {
     chatManageRef.value?.getHistoryListData()
     bindUserScrollIntent()
@@ -1491,6 +1687,11 @@ onActivated(() => {
 })
 
 onUnmounted(() => {
+  activeTailSegmentEl.value = null
+  if (markdownBlocksDebounceTimer !== null) {
+    clearTimeout(markdownBlocksDebounceTimer)
+    markdownBlocksDebounceTimer = null
+  }
   unbindUserScrollIntent()
   if (userScrollIdleTimer !== null) {
     clearTimeout(userScrollIdleTimer)
@@ -1506,6 +1707,7 @@ onUnmounted(() => {
   }
   closeDiagramPreview()
   closeImagePreview()
+  closeHtmlPreview()
 })
 
 watch(
@@ -2287,8 +2489,7 @@ defineExpose({
         grid-column: 2;
         grid-row: 1;
         justify-self: end;
-        width: max-content;
-        max-width: min(380px, 100%);
+        max-width: 100%;
         min-width: 0;
       }
 

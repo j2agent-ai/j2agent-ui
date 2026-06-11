@@ -1,7 +1,32 @@
 .message-md {
   --md-diagram-max-height: min(360px, 42vh);
+  /* 气泡内 HTML 预览缩略图：完整内容等比适配并撑满该高度 */
+  --md-html-preview-max-height: min(300px, 40vh);
   --md-diagram-body-padding-vertical: 28px;
+  --md-pending-shimmer-duration: 1.35s;
+  --md-pending-shimmer-primary: var(--el-color-primary);
+  --md-pending-shimmer-highlight: color-mix(
+    in srgb,
+    var(--md-pending-shimmer-primary) 28%,
+    white
+  );
+  --md-pending-shimmer-mid: color-mix(
+    in srgb,
+    var(--md-pending-shimmer-primary) 14%,
+    transparent
+  );
+  /* 以聊天气泡正文 14px 为基准的字阶（em 相对本容器 font-size） */
+  --md-text-size: var(--n-font-size-2);
+  --md-text-line-height: 1.6;
+  --md-heading-h1: 1.43em;
+  --md-heading-h2: 1.29em;
+  --md-heading-h3: 1.14em;
+  --md-heading-h4: 1.07em;
+  --md-heading-h5: 1em;
+  --md-heading-h6: 1em;
   color: var(--n-color-text-primary);
+  font-size: var(--md-text-size);
+  line-height: var(--md-text-line-height);
 
   p,
   li,
@@ -18,39 +43,93 @@
     color: inherit;
   }
 
+  p {
+    margin: 0 0 0.65em;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  strong {
+    font-weight: var(--n-font-weight-bold);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    margin: 1em 0 0.4em;
+    font-weight: var(--n-font-weight-bold);
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+
   h1 {
-    font-size: var(--n-font-size-6);
-    margin-bottom: calc(var(--n-font-size-6) / 2);
+    font-size: var(--md-heading-h1);
+    line-height: 1.3;
+    margin-top: 1.15em;
   }
 
   h2 {
-    font-size: var(--n-font-size-5);
-    margin-bottom: calc(var(--n-font-size-5) / 2);
+    font-size: var(--md-heading-h2);
+    line-height: 1.32;
+    margin-top: 1.05em;
   }
 
   h3 {
-    font-size: var(--n-font-size-4);
-    margin-bottom: calc(var(--n-font-size-4) / 2);
+    font-size: var(--md-heading-h3);
+    line-height: 1.38;
   }
 
   h4 {
-    font-size: var(--n-font-size-3);
-    margin-bottom: calc(var(--n-font-size-3) / 2);
+    font-size: var(--md-heading-h4);
+    line-height: 1.42;
   }
 
   h5 {
-    font-size: var(--n-font-size-2);
-    margin-bottom: calc(var(--n-font-size-2) / 2);
+    font-size: var(--md-heading-h5);
+    line-height: 1.45;
   }
 
   h6 {
-    font-size: var(--n-font-size-1);
-    margin-bottom: calc(var(--n-font-size-1) / 2);
+    font-size: var(--md-heading-h6);
+    line-height: 1.45;
+    letter-spacing: 0;
+    color: color-mix(in srgb, currentColor 88%, transparent);
+  }
+
+  blockquote {
+    margin: 0.65em 0;
+    padding: 0.35em 0 0.35em 0.85em;
+    border-left: 3px solid color-mix(in srgb, var(--md-pending-shimmer-primary) 55%, transparent);
+    color: color-mix(in srgb, currentColor 82%, transparent);
+  }
+
+  blockquote > :last-child {
+    margin-bottom: 0;
+  }
+
+  hr {
+    margin: 0.85em 0;
+    border: none;
+    border-top: 1px solid var(--n-glass-border-2, color-mix(in srgb, currentColor 14%, transparent));
+  }
+
+  ol,
+  ul {
+    margin: 0 0 0.65em;
   }
 
   ol {
     list-style: none;
-    padding-left: calc(3 * var(--n-font-size-2));
+    padding-left: calc(2.25 * var(--md-text-size));
   }
 
   ol li {
@@ -58,7 +137,11 @@
   }
 
   ul {
-    padding-left: calc(3 * var(--n-font-size-2));
+    padding-left: calc(2.25 * var(--md-text-size));
+  }
+
+  li + li {
+    margin-top: 0.2em;
   }
 
   ul li {
@@ -312,14 +395,23 @@
     border-bottom: none;
   }
 
-  .md-diagram,
-  .md-html-block {
+  .md-diagram {
     width: 100%;
     max-width: 100%;
     max-height: var(--md-diagram-max-height);
     height: auto;
     margin: 10px 0;
     overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  .md-html-block {
+    width: 100%;
+    max-width: 100%;
+    max-height: var(--md-html-preview-max-height);
+    height: auto;
+    margin: 10px 0;
+    overflow: visible;
     box-sizing: border-box;
   }
 
@@ -430,47 +522,141 @@
     margin: 0;
     box-sizing: border-box;
     overflow: hidden;
+    border: 1px solid var(--n-color-preview-border);
+    border-radius: 10px;
+    background: var(--n-color-preview-bg);
+    transition:
+      border-color 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  .md-html-preview-scaler {
+    position: relative;
+    overflow: visible;
+    margin: 0 auto;
+    flex-shrink: 0;
+  }
+
+  .md-html-preview-wrap:not(.md-block-pending) {
+    height: var(--md-html-preview-max-height);
+    min-height: var(--md-html-preview-max-height);
+    max-height: var(--md-html-preview-max-height);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: zoom-in;
+
+    &::after {
+      content: '点击放大';
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
+      z-index: 2;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #fff;
+      background: rgba(15, 23, 42, 0.55);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 140ms ease;
+      user-select: none;
+    }
+
+    &:hover {
+      border-color: color-mix(in srgb, var(--n-color-preview-border) 70%, var(--n-color-link));
+      box-shadow: var(--n-shadow-elevation-1);
+
+      &::after {
+        opacity: 1;
+      }
+    }
   }
 
   .md-html-preview {
     display: block;
-    width: 100%;
-    min-height: 160px;
-    border: 1px solid var(--n-color-preview-border);
-    border-radius: 6px;
-    background: var(--n-color-preview-bg);
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    min-height: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
     color: var(--n-color-preview-text);
-    transform-origin: top center;
-    overflow: hidden;
+    overflow: visible;
+    pointer-events: none;
+    vertical-align: top;
   }
 
   .md-block-generating {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     margin: 0;
     font-size: var(--n-font-size-1, 13px);
     line-height: 1.5;
     color: var(--n-color-text-muted);
     pointer-events: none;
     user-select: none;
+    position: relative;
+    z-index: 2;
   }
 
-  /* 生成中：保留白底区域，正中仅一行文字（无胶囊气泡） */
+  .md-block-generating-dots span {
+    animation: md-block-generating-dot 1.2s ease-in-out infinite;
+  }
+
+  .md-block-generating-dots span:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .md-block-generating-dots span:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  /* 生成中：shimmer 背景 + 中央 loading 提示 */
   .md-html-preview-wrap.md-block-pending {
-    min-height: 160px;
+    min-height: 200px;
+    overflow: hidden;
+    animation: md-pending-border-glow 2.2s ease-in-out infinite;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: -10%;
+      bottom: -10%;
+      left: 0;
+      width: 55%;
+      background: linear-gradient(
+        90deg,
+        transparent 0%,
+        var(--md-pending-shimmer-mid) 28%,
+        var(--md-pending-shimmer-highlight) 50%,
+        var(--md-pending-shimmer-mid) 72%,
+        transparent 100%
+      );
+      transform: translateX(-130%) skewX(-14deg);
+      will-change: transform;
+      opacity: 0.72;
+      animation: md-html-shimmer var(--md-pending-shimmer-duration) linear infinite;
+      pointer-events: none;
+      z-index: 1;
+    }
 
     .md-html-preview {
       display: block;
-      min-height: 160px;
+      min-height: 200px;
       visibility: hidden;
     }
 
     .md-block-generating {
-      display: block;
       position: absolute;
       left: 0;
       right: 0;
       top: 50%;
       transform: translateY(-50%);
-      text-align: center;
     }
   }
 
@@ -478,24 +664,100 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 160px;
+    min-height: 200px;
     padding: 14px 16px;
     background: var(--n-color-preview-bg);
     border: 1px solid var(--n-color-preview-border);
-    border-radius: 6px;
+    border-radius: 10px;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     box-shadow: none;
     text-align: center;
+    position: relative;
+    overflow: hidden;
+    animation: md-pending-border-glow 2.2s ease-in-out infinite;
 
-    &:hover {
-      border-color: var(--n-color-preview-border);
-      box-shadow: none;
+    &::before {
+      content: '';
+      position: absolute;
+      top: -10%;
+      bottom: -10%;
+      left: 0;
+      width: 55%;
+      background: linear-gradient(
+        90deg,
+        transparent 0%,
+        var(--md-pending-shimmer-mid) 28%,
+        var(--md-pending-shimmer-highlight) 50%,
+        var(--md-pending-shimmer-mid) 72%,
+        transparent 100%
+      );
+      transform: translateX(-130%) skewX(-14deg);
+      will-change: transform;
+      opacity: 0.72;
+      animation: md-html-shimmer var(--md-pending-shimmer-duration) linear infinite;
+      pointer-events: none;
+      z-index: 1;
     }
 
-    .md-block-generating {
-      display: inline;
-      text-align: center;
+    &:hover {
+      box-shadow: none;
+    }
+  }
+
+  @keyframes md-block-generating-dot {
+    0%,
+    80%,
+    100% {
+      opacity: 0.25;
+      transform: translateY(0);
+    }
+
+    40% {
+      opacity: 1;
+      transform: translateY(-2px);
+    }
+  }
+
+  @keyframes md-html-shimmer {
+    0% {
+      transform: translateX(-130%) skewX(-14deg);
+    }
+
+    100% {
+      transform: translateX(240%) skewX(-14deg);
+    }
+  }
+
+  @keyframes md-pending-border-glow {
+    0%,
+    100% {
+      border-color: var(--n-color-preview-border);
+      box-shadow: inset 0 0 0 0
+        color-mix(in srgb, var(--md-pending-shimmer-primary) 0%, transparent);
+    }
+
+    50% {
+      border-color: color-mix(
+        in srgb,
+        var(--md-pending-shimmer-primary) 28%,
+        var(--n-color-preview-border)
+      );
+      box-shadow: inset 0 0 14px 0
+        color-mix(in srgb, var(--md-pending-shimmer-primary) 8%, transparent);
+    }
+  }
+
+  @keyframes md-html-preview-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0
+        color-mix(in srgb, var(--md-pending-shimmer-primary) 0%, transparent);
+    }
+
+    50% {
+      box-shadow: 0 0 0 3px
+        color-mix(in srgb, var(--md-pending-shimmer-primary) 14%, transparent);
     }
   }
 
