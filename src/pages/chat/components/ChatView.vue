@@ -1865,7 +1865,7 @@ defineExpose({
 }
 
 .ai-logo {
-  width: 100px; // 固定宽度
+  width: 200px; // 固定宽度
   margin: 0 auto;
 
   img {
@@ -2599,7 +2599,7 @@ defineExpose({
     --chat-init-top-gap: 64px;
 
     .ai-logo {
-      width: 60px;
+      width: 160px;
     }
 
     .ai-logo-emoji {

@@ -22,8 +22,7 @@ export const primaryColorRgb = (() => {
 
 // Logo
 export const faviconUrl = 'favicon.svg';
-/** 完整 wordmark：左侧 J2A 圆角标签 + 右侧 gent AI */
-export const topBarUseWordmarkLogo = true;
+export const topBarShowText = false;
 export const topBarLogoUrl = 'logo-b.svg';
 export const topBarLogoUrlOnDark = 'logo-w.svg';
 export const chatLogoUrl = 'logo-b.svg'; // 留空则使用 emoji

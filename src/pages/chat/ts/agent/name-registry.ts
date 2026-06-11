@@ -5,6 +5,9 @@
 import { ref } from 'vue'
 import { getAgentList } from '@/api/ai.api'
 import type { AgentInfoDto } from '@/types/ai.types'
+import { hasRoleAccess, ROLE_USER } from '@/utils/role'
+
+const canLoadAgentNames = () => hasRoleAccess(ROLE_USER)
 
 export const agentNameMap = ref(new Map<string, string>())
 export const registeredAgents = ref<AgentInfoDto[]>([])
@@ -36,6 +39,9 @@ const fetchAgentNames = async () => {
 
 /** 单例加载智能体名称，避免并发重复请求 */
 export const ensureAgentNamesLoaded = () => {
+	if (!canLoadAgentNames()) {
+		return Promise.resolve()
+	}
 	if (!loadPromise) {
 		loadPromise = fetchAgentNames().catch(() => {
 			loadPromise = null
@@ -46,6 +52,9 @@ export const ensureAgentNamesLoaded = () => {
 
 /** 强制刷新（面板打开或失败后重试） */
 export const refreshAgentNames = async () => {
+	if (!canLoadAgentNames()) {
+		return
+	}
 	loadPromise = null
 	try {
 		await fetchAgentNames()

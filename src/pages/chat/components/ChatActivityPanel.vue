@@ -111,7 +111,6 @@ import { useRoute } from 'vue-router'
 import { t } from '@ai-system/lib'
 import {
 	agentNameMap,
-	ensureAgentNamesLoaded,
 	hasAgentDisplayName,
 	refreshAgentNames
 } from '../ts/agent/name-registry'
@@ -371,6 +370,9 @@ const entryDisplays = computed(() => {
 })
 
 const refreshMissingAgentNames = () => {
+	if (!isVisible.value) {
+		return
+	}
 	const needsRefresh = sortedEntries.value.some(
 		(entry) => !hasAgentDisplayName(entry.agentId)
 	)
@@ -696,7 +698,6 @@ onMounted(() => {
 	loadPosFromSession()
 	clampPosition()
 	syncAnchorFromPosition()
-	void ensureAgentNamesLoaded()
 	window.addEventListener('resize', onWindowResize)
 })
 
