@@ -3,7 +3,7 @@
 		<h3 class="tittle" @click="goTo('/')">
 			<img class="top-bar-logo" :src="resolvedTopBarLogoUrl" :alt="topBarTittle" />
 			<span v-if="showTitleText" class="title-text">
-				<template v-if="!topBarUseWordmarkLogo">{{ topBarTittle }}</template>
+				<template v-if="topBarShowText">{{ topBarTittle }}</template>
 				<template v-if="titleSuffix">
 					<span class="title-suffix__sep" aria-hidden="true">·</span>
 					<el-tooltip
@@ -90,7 +90,7 @@
 import { ElTooltip } from 'element-plus'
 import { computed, ref } from 'vue'
 import MenuCard from '@/pages/components/menuCard.vue'
-import { topBarLogoUrl, topBarLogoUrlOnDark, topBarTittle, topBarUseWordmarkLogo } from '@/oem'
+import { topBarLogoUrl, topBarLogoUrlOnDark, topBarTittle, topBarShowText } from '@/oem'
 import { goTo } from '@/routes'
 import defaultAvatar from '@/assets/avatar.png'
 import { getSessionInfo } from '@/utils/role'
@@ -106,7 +106,7 @@ const props = withDefaults(
 )
 
 const showTitleText = computed(
-	() => !topBarUseWordmarkLogo || !!props.titleSuffix
+	() => topBarShowText || !!props.titleSuffix
 )
 
 /** 顶栏为深色玻璃背景，优先使用浅色 wordmark */
@@ -199,9 +199,10 @@ const hideUserMenu = () => {
 			flex: 0 1 auto;
 			overflow: hidden;
 			font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
-			font-size: 16px;
+			font-size: 20px;
 			font-weight: 500;
 			line-height: 32px;
+      margin-left: 12px;
 			color: var(--n-topbar-text-muted);
 		}
 
@@ -356,7 +357,7 @@ const hideUserMenu = () => {
 			.title-text,
 			.title-suffix__name,
 			.title-text :deep(.el-tooltip__trigger) {
-				font-size: 15px;
+				font-size: 16px;
 			}
 		}
 
