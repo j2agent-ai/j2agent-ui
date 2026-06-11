@@ -1,7 +1,18 @@
 .message-md {
   --md-diagram-max-height: min(360px, 42vh);
   --md-diagram-body-padding-vertical: 28px;
+  /* 以聊天气泡正文 14px 为基准的字阶（em 相对本容器 font-size） */
+  --md-text-size: var(--n-font-size-2);
+  --md-text-line-height: 1.6;
+  --md-heading-h1: 1.43em;
+  --md-heading-h2: 1.29em;
+  --md-heading-h3: 1.14em;
+  --md-heading-h4: 1.07em;
+  --md-heading-h5: 1em;
+  --md-heading-h6: 1em;
   color: var(--n-color-text-primary);
+  font-size: var(--md-text-size);
+  line-height: var(--md-text-line-height);
 
   p,
   li,
@@ -18,39 +29,93 @@
     color: inherit;
   }
 
+  p {
+    margin: 0 0 0.65em;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  strong {
+    font-weight: var(--n-font-weight-bold);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    margin: 1em 0 0.4em;
+    font-weight: var(--n-font-weight-bold);
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+
   h1 {
-    font-size: var(--n-font-size-6);
-    margin-bottom: calc(var(--n-font-size-6) / 2);
+    font-size: var(--md-heading-h1);
+    line-height: 1.3;
+    margin-top: 1.15em;
   }
 
   h2 {
-    font-size: var(--n-font-size-5);
-    margin-bottom: calc(var(--n-font-size-5) / 2);
+    font-size: var(--md-heading-h2);
+    line-height: 1.32;
+    margin-top: 1.05em;
   }
 
   h3 {
-    font-size: var(--n-font-size-4);
-    margin-bottom: calc(var(--n-font-size-4) / 2);
+    font-size: var(--md-heading-h3);
+    line-height: 1.38;
   }
 
   h4 {
-    font-size: var(--n-font-size-3);
-    margin-bottom: calc(var(--n-font-size-3) / 2);
+    font-size: var(--md-heading-h4);
+    line-height: 1.42;
   }
 
   h5 {
-    font-size: var(--n-font-size-2);
-    margin-bottom: calc(var(--n-font-size-2) / 2);
+    font-size: var(--md-heading-h5);
+    line-height: 1.45;
   }
 
   h6 {
-    font-size: var(--n-font-size-1);
-    margin-bottom: calc(var(--n-font-size-1) / 2);
+    font-size: var(--md-heading-h6);
+    line-height: 1.45;
+    letter-spacing: 0;
+    color: color-mix(in srgb, currentColor 88%, transparent);
+  }
+
+  blockquote {
+    margin: 0.65em 0;
+    padding: 0.35em 0 0.35em 0.85em;
+    border-left: 3px solid color-mix(in srgb, var(--n-color-link) 35%, transparent);
+    color: color-mix(in srgb, currentColor 82%, transparent);
+  }
+
+  blockquote > :last-child {
+    margin-bottom: 0;
+  }
+
+  hr {
+    margin: 0.85em 0;
+    border: none;
+    border-top: 1px solid var(--n-glass-border-2, color-mix(in srgb, currentColor 14%, transparent));
+  }
+
+  ol,
+  ul {
+    margin: 0 0 0.65em;
   }
 
   ol {
     list-style: none;
-    padding-left: calc(3 * var(--n-font-size-2));
+    padding-left: calc(2.25 * var(--md-text-size));
   }
 
   ol li {
@@ -58,7 +123,11 @@
   }
 
   ul {
-    padding-left: calc(3 * var(--n-font-size-2));
+    padding-left: calc(2.25 * var(--md-text-size));
+  }
+
+  li + li {
+    margin-top: 0.2em;
   }
 
   ul li {

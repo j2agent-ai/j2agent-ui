@@ -473,6 +473,13 @@ md.renderer.rules.td_open = function() {
 
 export const renderMarkdown = (markdown?: string) => md.render(markdown || '')
 
+/** 聊天页 idle 预加载 mermaid/vega/plantuml，降低首图冷启动延迟 */
+export const preloadDiagramRuntimes = () => {
+  void getMermaidApi()
+  void getVegaEmbed().catch(() => {})
+  void getPlantUmlRenderer().catch(() => {})
+}
+
 /** 异步渲染 Markdown 图表块时的选项 */
 export type RenderMarkdownBlocksOptions = {
   /**
@@ -480,6 +487,43 @@ export type RenderMarkdownBlocksOptions = {
    * mermaid/plantuml/vegalite/html 块；已闭合的块照常立即渲染。用于 LLM 流式输出避免逐 token 重渲染抽搐。
    */
   deferDiagrams?: boolean
+  /** 并发渲染图表块上限，默认 2 */
+  concurrency?: number
+}
+
+const DEFAULT_DIAGRAM_RENDER_CONCURRENCY = 2
+
+/** 待渲染块：未渲染或 revision 落后于当前渲染器版本 */
+const buildPendingBlocksSelector = () =>
+  `[${MARKDOWN_RENDER_ATTR}]:not([${MARKDOWN_RENDERED_ATTR}="true"]), ` +
+  `[${MARKDOWN_RENDER_ATTR}][${MARKDOWN_RENDERED_ATTR}="true"]:not([${MARKDOWN_REVISION_ATTR}="${MARKDOWN_RENDERER_REVISION}"])`
+
+const mapWithConcurrency = async <T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>
+) => {
+  if (items.length === 0) {
+    return
+  }
+  const concurrency = Math.max(1, limit)
+  const executing = new Set<Promise<void>>()
+  for (const item of items) {
+    const task = fn(item).finally(() => {
+      executing.delete(task)
+    })
+    executing.add(task)
+    if (executing.size >= concurrency) {
+      await Promise.race(executing)
+    }
+  }
+  await Promise.all(executing)
+}
+
+const refitDiagramBodies = (bodies: HTMLElement[]) => {
+  bodies.forEach((body) => {
+    scheduleFitDiagramSvgReflow(body)
+  })
 }
 
 const getSourceFromBlock = (block: Element) =>
@@ -1157,7 +1201,6 @@ const renderMermaidBlock = async (block: Element) => {
   const source = normalizeMermaidSource(rawSource)
   applyXychartDiagramPresentation(block, body, source)
   const mermaid = await getMermaidApi()
-  await mermaid.parse(source)
   const id = `md-mermaid-${Date.now()}-${++mermaidSeq}`
   const { svg, bindFunctions } = await mermaid.render(id, source)
   if (isMermaidErrorSvg(svg)) {
@@ -1547,19 +1590,28 @@ const resetStaleDiagramBlock = (block: Element) => {
   block.removeAttribute(MARKDOWN_REVISION_ATTR)
 }
 
+const getDiagramBodyForRefit = (block: Element): HTMLElement | undefined => {
+  const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
+  if (type === 'html') {
+    return undefined
+  }
+  const body = block.querySelector<HTMLElement>('.md-diagram-body')
+  return body ?? undefined
+}
+
 const renderBlock = async (
   block: Element,
   options?: RenderMarkdownBlocksOptions
-) => {
+): Promise<HTMLElement | undefined> => {
   if (block.getAttribute(MARKDOWN_RENDERING_ATTR) === 'true') {
-    return
+    return undefined
   }
 
   const revision = block.getAttribute(MARKDOWN_REVISION_ATTR)
   const alreadyRendered = block.getAttribute(MARKDOWN_RENDERED_ATTR) === 'true'
   if (alreadyRendered) {
     if (revision === MARKDOWN_RENDERER_REVISION) {
-      return
+      return undefined
     }
     resetStaleDiagramBlock(block)
   }
@@ -1577,7 +1629,7 @@ const renderBlock = async (
     options?.deferDiagrams &&
     (block as Element).closest?.('[data-md-stream-tail]')
   ) {
-    return
+    return undefined
   }
 
   block.setAttribute(MARKDOWN_RENDERING_ATTR, 'true')
@@ -1593,8 +1645,10 @@ const renderBlock = async (
     }
     block.setAttribute(MARKDOWN_RENDERED_ATTR, 'true')
     block.setAttribute(MARKDOWN_REVISION_ATTR, MARKDOWN_RENDERER_REVISION)
+    return getDiagramBodyForRefit(block)
   } catch (error) {
     setBlockError(block, error)
+    return undefined
   } finally {
     block.removeAttribute(MARKDOWN_RENDERING_ATTR)
   }
@@ -1676,10 +1730,18 @@ export const renderMarkdownBlocks = async (
   options?: RenderMarkdownBlocksOptions
 ) => {
   const blocks = Array.from(
-    root.querySelectorAll<Element>(`[${MARKDOWN_RENDER_ATTR}]`)
+    root.querySelectorAll<Element>(buildPendingBlocksSelector())
   )
-  await Promise.all(blocks.map((block) => renderBlock(block, options)))
-  refitDiagramBlocksInRoot(root)
+  const bodiesToRefit: HTMLElement[] = []
+  const concurrency =
+    options?.concurrency ?? DEFAULT_DIAGRAM_RENDER_CONCURRENCY
+  await mapWithConcurrency(blocks, concurrency, async (block) => {
+    const body = await renderBlock(block, options)
+    if (body) {
+      bodiesToRefit.push(body)
+    }
+  })
+  refitDiagramBodies(bodiesToRefit)
   normalizeMarkdownImageParagraphs(root)
 }
 

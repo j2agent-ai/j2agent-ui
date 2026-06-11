@@ -416,7 +416,13 @@ import {
 } from '../ts/media/attachment'
 import { processChatImageFile } from '../ts/media/image'
 import { cloneSvgForPreview } from '@/utils/diagramPreview'
-import { getMarkdownCodeBlockText, MARKDOWN_RENDERER_REVISION, renderMarkdown, renderMarkdownBlocks } from '@/utils/markdownRenderer'
+import {
+  getMarkdownCodeBlockText,
+  MARKDOWN_RENDERER_REVISION,
+  preloadDiagramRuntimes,
+  renderMarkdown,
+  renderMarkdownBlocks
+} from '@/utils/markdownRenderer'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
 import { getAgentDisplayName, getAgentLogo, agentNameMap } from '../ts/agent/name-registry'
 
@@ -1006,13 +1012,34 @@ const splitStreamingSegments = (content: string): StreamSegment[] => {
   return segments
 }
 
-const activateMarkdownBlocks = () => {
+const MARKDOWN_BLOCKS_DEBOUNCE_MS = 100
+let markdownBlocksDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 流式输出时仅扫描当前轮 assistant 消息子树，避免全列表 querySelector */
+const getMarkdownBlocksScope = (): Element | null => {
+  const listRoot = messageListRef.value
+  if (!listRoot || !isBusyByState.value) {
+    return listRoot
+  }
+  const idx = activeAssistantVisibleIndex.value
+  if (idx < 0) {
+    return listRoot
+  }
+  const row = listRoot.querySelectorAll('.message-row').item(idx)
+  if (!(row instanceof Element)) {
+    return listRoot
+  }
+  return row.querySelector('.message-bubble-wrap') ?? row
+}
+
+const runMarkdownBlocks = () => {
   nextTick(() => {
-    const root = messageListRef.value
-    if (!root) {
+    const listRoot = messageListRef.value
+    if (!listRoot) {
       return
     }
-    renderMarkdownBlocks(root, { deferDiagrams: isBusyByState.value })
+    const scopeRoot = getMarkdownBlocksScope() ?? listRoot
+    renderMarkdownBlocks(scopeRoot, { deferDiagrams: isBusyByState.value })
       .then(() => {
         if (shouldAutoScroll()) {
           scrollToBottom()
@@ -1022,6 +1049,36 @@ const activateMarkdownBlocks = () => {
         console.error('Markdown图表渲染失败:', error)
       })
   })
+}
+
+const activateMarkdownBlocks = () => {
+  if (markdownBlocksDebounceTimer !== null) {
+    clearTimeout(markdownBlocksDebounceTimer)
+  }
+  markdownBlocksDebounceTimer = setTimeout(() => {
+    markdownBlocksDebounceTimer = null
+    runMarkdownBlocks()
+  }, MARKDOWN_BLOCKS_DEBOUNCE_MS)
+}
+
+/** 流式结束或会话切换时立即渲染，不等待 debounce */
+const flushActivateMarkdownBlocks = () => {
+  if (markdownBlocksDebounceTimer !== null) {
+    clearTimeout(markdownBlocksDebounceTimer)
+    markdownBlocksDebounceTimer = null
+  }
+  runMarkdownBlocks()
+}
+
+const schedulePreloadDiagramRuntimes = () => {
+  const preload = () => {
+    preloadDiagramRuntimes()
+  }
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(preload, { timeout: 2000 })
+  } else {
+    setTimeout(preload, 0)
+  }
 }
 
 const checkScroll = () => {
@@ -1316,7 +1373,7 @@ const bootstrapAgentSession = async (forceNew = false) => {
   getHotQuestions()
   nextTick(() => {
     scrollToBottom()
-    activateMarkdownBlocks()
+    flushActivateMarkdownBlocks()
   })
 }
 
@@ -1383,8 +1440,12 @@ watch(
 )
 
 /** 流式结束但 content 不再变化时，补渲染推迟的 mermaid/plantuml/vegalite/html 块 */
-watch(isBusyByState, () => {
-  activateMarkdownBlocks()
+watch(isBusyByState, (busy, wasBusy) => {
+  if (!busy && wasBusy) {
+    flushActivateMarkdownBlocks()
+  } else {
+    activateMarkdownBlocks()
+  }
 })
 
 /** 后台会话流式更新时，活跃会话 pendingScroll 由 ChatView 消费 */
@@ -1409,7 +1470,7 @@ watch(
   () => {
     nextTick(() => {
       scrollToBottom()
-      activateMarkdownBlocks()
+      flushActivateMarkdownBlocks()
       bindUserScrollIntent()
     })
   }
@@ -1429,7 +1490,7 @@ const historyChat = async (historyId: string) => {
     }
   }
   scrollToBottom()
-  activateMarkdownBlocks()
+  flushActivateMarkdownBlocks()
 }
 
 // 中止当前活跃会话正在进行的对话
@@ -1492,6 +1553,7 @@ watch(
 )
 
 onMounted(async () => {
+  schedulePreloadDiagramRuntimes()
   await bootstrapAgentSession(route.query['new-chat'] === '1')
   nextTick(() => {
     chatManageRef.value?.getHistoryListData()
@@ -1517,6 +1579,10 @@ onActivated(() => {
 })
 
 onUnmounted(() => {
+  if (markdownBlocksDebounceTimer !== null) {
+    clearTimeout(markdownBlocksDebounceTimer)
+    markdownBlocksDebounceTimer = null
+  }
   unbindUserScrollIntent()
   if (userScrollIdleTimer !== null) {
     clearTimeout(userScrollIdleTimer)
