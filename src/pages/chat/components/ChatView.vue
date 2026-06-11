@@ -103,15 +103,16 @@
 													? ''
 													: null
 											"
-                      v-html="
-												renderMarkdown(
-													seg.text +
-														(isActiveAssistantTurn(index) && !seg.complete
-															? '...'
-															: '')
-												)
-											"
-                    />
+                    >
+                      <div
+                        v-if="isActiveAssistantTurn(index) && !seg.complete"
+                        :ref="bindActiveTailSegmentRef"
+                      />
+                      <div
+                        v-else
+                        v-html="renderMarkdown(seg.text)"
+                      />
+                    </div>
                   </div>
                   <div
                     v-show="message.srcFile && message.srcFile.length > 0"
@@ -367,6 +368,12 @@
       :initial-index="diagramPreviewIndex"
       @close="closeDiagramPreview"
     />
+    <HtmlPreviewOverlay
+      :visible="htmlPreviewVisible"
+      :sources="htmlPreviewSources"
+      :initial-index="htmlPreviewIndex"
+      @close="closeHtmlPreview"
+    />
   </div>
 </template>
 
@@ -389,6 +396,7 @@ import ChatManage from './chatManage.vue'
 import AgentTurnTimeline from './AgentTurnTimeline.vue'
 import AgentThinkingBlock from './AgentThinkingBlock.vue'
 import DiagramPreviewOverlay from './DiagramPreviewOverlay.vue'
+import HtmlPreviewOverlay from './HtmlPreviewOverlay.vue'
 import {
   ChatAttachmentDto,
   ChatRequestDto,
@@ -418,10 +426,12 @@ import { processChatImageFile } from '../ts/media/image'
 import { cloneSvgForPreview } from '@/utils/diagramPreview'
 import {
   getMarkdownCodeBlockText,
+  getMarkdownHtmlBlockSource,
   MARKDOWN_RENDERER_REVISION,
   preloadDiagramRuntimes,
   renderMarkdown,
-  renderMarkdownBlocks
+  renderMarkdownBlocks,
+  updateStreamTailSegmentInPlace
 } from '@/utils/markdownRenderer'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
 import { getAgentDisplayName, getAgentLogo, agentNameMap } from '../ts/agent/name-registry'
@@ -649,6 +659,12 @@ const diagramPreviewVisible = ref(false)
 const diagramPreviewSvgs = ref<SVGElement[]>([])
 /** 图表预览初始下标 */
 const diagramPreviewIndex = ref(0)
+/** HTML 全屏预览是否可见 */
+const htmlPreviewVisible = ref(false)
+/** HTML 预览源码列表（同条消息内多块可切换） */
+const htmlPreviewSources = ref<string[]>([])
+/** HTML 预览初始下标 */
+const htmlPreviewIndex = ref(0)
 
 /** 非终态 busy 时当前轮 assistant 在可见列表中的下标。 */
 const activeAssistantVisibleIndex = computed(() => {
@@ -1012,6 +1028,34 @@ const splitStreamingSegments = (content: string): StreamSegment[] => {
   return segments
 }
 
+/** 当前流式 assistant 尾段原文（围栏未闭合部分），非流式时为 null */
+const activeAssistantTailText = computed(() => {
+  if (!isBusyByState.value) {
+    return null
+  }
+  const idx = activeAssistantVisibleIndex.value
+  if (idx < 0) {
+    return null
+  }
+  const message = visibleMessageContext.value[idx]
+  if (!message?.content || message.role !== 'assistant') {
+    return null
+  }
+  const segments = splitStreamingSegments(message.content)
+  const tail = segments[segments.length - 1]
+  if (tail.complete) {
+    return null
+  }
+  return tail.text
+})
+
+/** 当前流式尾段就地更新容器（不用 v-html，避免 pending 占位被销毁） */
+const activeTailSegmentEl = ref<HTMLElement | null>(null)
+
+const bindActiveTailSegmentRef = (el: unknown) => {
+  activeTailSegmentEl.value = el instanceof HTMLElement ? el : null
+}
+
 const MARKDOWN_BLOCKS_DEBOUNCE_MS = 100
 let markdownBlocksDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -1241,6 +1285,7 @@ const openMessageImagePreview = (
     return
   }
   closeDiagramPreview()
+  closeHtmlPreview()
   imagePreviewUrlList.value = urlList
   imagePreviewIndex.value = index
   imagePreviewVisible.value = true
@@ -1254,6 +1299,7 @@ const openMessageDiagramPreview = (
   targetSvg: SVGElement
 ) => {
   closeImagePreview()
+  closeHtmlPreview()
   const svgs = messageContent.querySelectorAll(
     '.md-diagram:not(.md-diagram-error) .md-diagram-body svg'
   )
@@ -1277,6 +1323,39 @@ const openMessageDiagramPreview = (
 }
 
 /**
+ * 点击消息气泡内 HTML 预览缩略图，收集同气泡全部 HTML 块并打开全屏预览。
+ */
+const openMessageHtmlPreview = (
+  messageContent: Element,
+  targetWrap: HTMLElement
+) => {
+  closeImagePreview()
+  closeDiagramPreview()
+  const blocks = messageContent.querySelectorAll(
+    '.md-html-block[data-md-rendered="true"]'
+  )
+  const sources: string[] = []
+  let index = 0
+  blocks.forEach((block) => {
+    const wrap = block.querySelector('.md-html-preview-wrap')
+    const source = getMarkdownHtmlBlockSource(block)
+    if (!source.trim()) {
+      return
+    }
+    if (wrap === targetWrap) {
+      index = sources.length
+    }
+    sources.push(source)
+  })
+  if (!sources.length) {
+    return
+  }
+  htmlPreviewSources.value = sources
+  htmlPreviewIndex.value = index
+  htmlPreviewVisible.value = true
+}
+
+/**
  * 点击消息气泡内图片或图表，打开全屏预览（与 ElImageViewer 一致）。
  */
 const handleMessageMediaClick = (event: MouseEvent) => {
@@ -1297,6 +1376,16 @@ const handleMessageMediaClick = (event: MouseEvent) => {
     if (block) {
       void copyMessage(getMarkdownCodeBlockText(block))
     }
+    return
+  }
+
+  const htmlPreviewWrap = target.closest(
+    '.md-html-preview-wrap:not(.md-block-pending)'
+  )
+  if (htmlPreviewWrap instanceof HTMLElement) {
+    event.preventDefault()
+    event.stopPropagation()
+    openMessageHtmlPreview(messageContent, htmlPreviewWrap)
     return
   }
 
@@ -1325,6 +1414,12 @@ const closeImagePreview = () => {
 const closeDiagramPreview = () => {
   diagramPreviewVisible.value = false
   diagramPreviewSvgs.value = []
+}
+
+/** 关闭 HTML 全屏预览 */
+const closeHtmlPreview = () => {
+  htmlPreviewVisible.value = false
+  htmlPreviewSources.value = []
 }
 
 const copyMessage = async (content?: string) => {
@@ -1430,6 +1525,19 @@ watch(scrollbarRef, () => {
     bindUserScrollIntent()
   })
 })
+
+/** 流式尾段就地增量更新，保留 pending 图表占位节点以维持流光动画 */
+watch(
+  [activeAssistantTailText, activeTailSegmentEl],
+  ([text, el]) => {
+    if (!text || !el) {
+      return
+    }
+    updateStreamTailSegmentInPlace(el, text, true)
+    activateMarkdownBlocks()
+  },
+  { flush: 'post' }
+)
 
 watch(
   () => activeSession.value?.messageContext.value,
@@ -1579,6 +1687,7 @@ onActivated(() => {
 })
 
 onUnmounted(() => {
+  activeTailSegmentEl.value = null
   if (markdownBlocksDebounceTimer !== null) {
     clearTimeout(markdownBlocksDebounceTimer)
     markdownBlocksDebounceTimer = null
@@ -1598,6 +1707,7 @@ onUnmounted(() => {
   }
   closeDiagramPreview()
   closeImagePreview()
+  closeHtmlPreview()
 })
 
 watch(
@@ -2379,8 +2489,7 @@ defineExpose({
         grid-column: 2;
         grid-row: 1;
         justify-self: end;
-        width: max-content;
-        max-width: min(380px, 100%);
+        max-width: 100%;
         min-width: 0;
       }
 

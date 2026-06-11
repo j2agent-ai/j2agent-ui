@@ -48,9 +48,13 @@ const MARKDOWN_REVISION_ATTR = 'data-md-revision'
  * 图表后处理逻辑变更时递增，用于让历史气泡在 SPA 内重新渲染（非 Mermaid 缓存）。
  * 与 ChatView 中 v-html 的 :key 保持一致。
  */
-export const MARKDOWN_RENDERER_REVISION = '16'
+export const MARKDOWN_RENDERER_REVISION = '22'
 /** 与 markdown.scss 中 --md-diagram-max-height 回退值保持一致 */
 const MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK = 360
+/** 与 markdown.scss 中 --md-html-preview-max-height 回退值保持一致 */
+const MARKDOWN_HTML_PREVIEW_MAX_HEIGHT_FALLBACK = 300
+/** 缩略图测量高度余量，避免 margin/box-shadow/缩放取整裁切底部 */
+const HTML_PREVIEW_THUMB_MEASURE_PADDING = 20
 /** body 垂直内边距合计（padding-top + padding-bottom，各 14px） */
 const MARKDOWN_DIAGRAM_BODY_PADDING_VERTICAL = 28
 /** body 水平内边距合计（padding-left + padding-right，各 16px） */
@@ -71,27 +75,46 @@ const diagramFitRafIds = new WeakMap<HTMLElement, number>()
 let diagramWindowResizeBound = false
 let diagramWindowResizeRaf = 0
 let diagramMaxHeightCache = 0
+let htmlPreviewMaxHeightCache = 0
+
+/** 读取 CSS 变量高度的解析结果（px） */
+const readMarkdownCssHeight = (cssVar: string, fallback: number) => {
+  if (typeof document === 'undefined') {
+    return fallback
+  }
+  const root =
+    (document.querySelector('.message-md') as HTMLElement | null) ||
+    document.documentElement
+  const probe = document.createElement('div')
+  probe.style.cssText = `position:absolute;visibility:hidden;pointer-events:none;height:${cssVar}`
+  root.appendChild(probe)
+  const height = Math.round(probe.getBoundingClientRect().height)
+  root.removeChild(probe)
+  return height > 0 ? height : fallback
+}
 
 /** 读取 CSS 变量 --md-diagram-max-height 的解析结果（px） */
 const getMarkdownDiagramMaxHeight = () => {
   if (diagramMaxHeightCache > 0) {
     return diagramMaxHeightCache
   }
-  if (typeof document === 'undefined') {
-    return MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK
-  }
-  const root =
-    (document.querySelector('.message-md') as HTMLElement | null) ||
-    document.documentElement
-  const probe = document.createElement('div')
-  probe.style.cssText =
-    'position:absolute;visibility:hidden;pointer-events:none;height:var(--md-diagram-max-height)'
-  root.appendChild(probe)
-  const height = Math.round(probe.getBoundingClientRect().height)
-  root.removeChild(probe)
-  diagramMaxHeightCache =
-    height > 0 ? height : MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK
+  diagramMaxHeightCache = readMarkdownCssHeight(
+    'var(--md-diagram-max-height)',
+    MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK
+  )
   return diagramMaxHeightCache
+}
+
+/** 读取 CSS 变量 --md-html-preview-max-height 的解析结果（px） */
+const getMarkdownHtmlPreviewMaxHeight = () => {
+  if (htmlPreviewMaxHeightCache > 0) {
+    return htmlPreviewMaxHeightCache
+  }
+  htmlPreviewMaxHeightCache = readMarkdownCssHeight(
+    'var(--md-html-preview-max-height)',
+    MARKDOWN_HTML_PREVIEW_MAX_HEIGHT_FALLBACK
+  )
+  return htmlPreviewMaxHeightCache
 }
 
 /** 图表内容区最大高度（扣除 body 垂直内边距） */
@@ -101,6 +124,7 @@ const getDiagramContentMaxHeight = () =>
 /** 窗口尺寸变化后需重新解析 vh 上限 */
 const invalidateDiagramMaxHeightCache = () => {
   diagramMaxHeightCache = 0
+  htmlPreviewMaxHeightCache = 0
 }
 
 /** 断开图表容器的尺寸监听 */
@@ -340,9 +364,16 @@ const escapeHtml = (value: string) => md.utils.escapeHtml(value)
 const normalizeFenceLanguage = (info?: string) =>
   (info || '').trim().split(/\s+/)[0]?.toLowerCase() || ''
 
-/** 异步块占位：简单文字「生成中…」 */
+/** 异步块占位：spinner + 生成中 + 跳动省略号 */
 const renderGeneratingHintHtml = () =>
-  '<span class="md-block-generating" role="status" aria-live="polite">生成中…</span>'
+  [
+    '<span class="md-block-generating" role="status" aria-live="polite">',
+    '<span class="md-block-generating-text">生成中</span>',
+    '<span class="md-block-generating-dots" aria-hidden="true">',
+    '<span>.</span><span>.</span><span>.</span>',
+    '</span>',
+    '</span>'
+  ].join('')
 
 /** innerHTML / replaceChildren 不会清掉容器上的 pending 类，渲染成功后须显式移除 */
 const clearDiagramBodyPending = (body: HTMLElement) => {
@@ -367,8 +398,8 @@ const renderHtmlPreviewPlaceholder = (source: string) => {
   return [
     `<div class="md-html-block" ${MARKDOWN_RENDER_ATTR}="html">`,
     `<pre class="md-diagram-source" hidden>${escapedSource}</pre>`,
-    '<div class="md-html-preview-wrap md-block-pending">',
-    '<iframe class="md-html-preview" sandbox="allow-same-origin allow-forms allow-popups" scrolling="no" title="HTML 预览"></iframe>',
+    '<div class="md-html-preview-wrap md-block-pending" role="region" aria-label="HTML 预览">',
+    '<iframe class="md-html-preview" sandbox="allow-same-origin allow-scripts allow-forms allow-popups" scrolling="no" title="HTML 预览"></iframe>',
     renderGeneratingHintHtml(),
     '</div>',
     '</div>'
@@ -473,6 +504,151 @@ md.renderer.rules.td_open = function() {
 
 export const renderMarkdown = (markdown?: string) => md.render(markdown || '')
 
+/** 流式尾段中可由 renderMarkdownBlocks 异步渲染的围栏语言 */
+const ASYNC_DIAGRAM_FENCE_LANGS = new Set([
+  'mermaid',
+  'puml',
+  'plantuml',
+  'vegalite',
+  'vega-lite',
+  'html'
+])
+
+/**
+ * 尾段是否仍含未闭合的异步图表/HTML 围栏（markdown-it 将未闭合围栏延伸至 EOF）。
+ */
+export const hasOpenAsyncDiagramFence = (text: string): boolean => {
+  if (!text?.trim()) {
+    return false
+  }
+  let inFence = false
+  let openLen = 0
+  let openChar = ''
+  let lang = ''
+  const lineRe = /^([ \t]*)(`{3,}|~{3,})(.*)$/gm
+  let match: RegExpExecArray | null
+  while ((match = lineRe.exec(text)) !== null) {
+    const marker = match[2]
+    const info = match[3].trim()
+    const char = marker[0]
+    const len = marker.length
+    if (!inFence) {
+      inFence = true
+      openChar = char
+      openLen = len
+      lang = info.split(/\s+/)[0]?.toLowerCase() || ''
+      continue
+    }
+    if (char === openChar && len >= openLen && !info) {
+      inFence = false
+      lang = ''
+    }
+  }
+  return inFence && ASYNC_DIAGRAM_FENCE_LANGS.has(lang)
+}
+
+const isPendingAsyncMarkdownBlock = (block: Element): boolean => {
+  const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
+  if (!type || !ASYNC_DIAGRAM_FENCE_LANGS.has(type)) {
+    return false
+  }
+  return block.querySelector('.md-block-pending') !== null
+}
+
+const findPendingAsyncMarkdownBlock = (root: ParentNode): Element | null => {
+  for (const block of root.querySelectorAll(`[${MARKDOWN_RENDER_ATTR}]`)) {
+    if (isPendingAsyncMarkdownBlock(block)) {
+      return block
+    }
+  }
+  return null
+}
+
+const childNodesBefore = (parent: Element, anchor: Element): ChildNode[] => {
+  const nodes: ChildNode[] = []
+  for (const node of parent.childNodes) {
+    if (node === anchor) {
+      break
+    }
+    nodes.push(node)
+  }
+  return nodes
+}
+
+const serializeChildNodes = (nodes: ChildNode[]): string =>
+  nodes
+    .map((node) =>
+      node instanceof Element ? node.outerHTML : node.textContent ?? ''
+    )
+    .join('')
+
+const syncBlockSource = (target: Element, source: Element) => {
+  const nextSource =
+    source.querySelector('.md-diagram-source')?.textContent ?? ''
+  const targetSource = target.querySelector('.md-diagram-source')
+  if (targetSource) {
+    targetSource.textContent = nextSource
+  }
+}
+
+const syncChildNodesBefore = (
+  root: HTMLElement,
+  oldAnchor: Element,
+  template: HTMLElement,
+  newAnchor: Element
+) => {
+  const oldBefore = childNodesBefore(root, oldAnchor)
+  const newBefore = childNodesBefore(template, newAnchor)
+  if (serializeChildNodes(oldBefore) === serializeChildNodes(newBefore)) {
+    return
+  }
+  oldBefore.forEach((node) => node.remove())
+  const fragment = document.createDocumentFragment()
+  newBefore.forEach((node) => fragment.appendChild(node.cloneNode(true)))
+  root.insertBefore(fragment, oldAnchor)
+}
+
+const removeChildNodesAfter = (root: HTMLElement, anchor: Element) => {
+  let next = anchor.nextSibling
+  while (next) {
+    const toRemove = next
+    next = next.nextSibling
+    toRemove.remove()
+  }
+}
+
+const replaceRootChildren = (root: HTMLElement, template: HTMLElement) => {
+  root.replaceChildren(
+    ...Array.from(template.childNodes).map((node) => node.cloneNode(true))
+  )
+}
+
+/**
+ * 流式尾段就地更新：pending 图表/HTML 占位节点保留在文档中，仅同步前缀与 hidden source，
+ * 避免 v-html 整段替换导致流光动画重启。
+ */
+export const updateStreamTailSegmentInPlace = (
+  root: HTMLElement,
+  markdown: string,
+  appendEllipsis = false
+): void => {
+  const text = markdown + (appendEllipsis ? '...' : '')
+  const template = document.createElement('div')
+  template.innerHTML = renderMarkdown(text)
+
+  const oldPending = findPendingAsyncMarkdownBlock(root)
+  const newPending = findPendingAsyncMarkdownBlock(template)
+
+  if (oldPending && newPending && hasOpenAsyncDiagramFence(markdown)) {
+    syncChildNodesBefore(root, oldPending, template, newPending)
+    syncBlockSource(oldPending, newPending)
+    removeChildNodesAfter(root, oldPending)
+    return
+  }
+
+  replaceRootChildren(root, template)
+}
+
 /** 聊天页 idle 预加载 mermaid/vega/plantuml，降低首图冷启动延迟 */
 export const preloadDiagramRuntimes = () => {
   void getMermaidApi()
@@ -528,6 +704,14 @@ const refitDiagramBodies = (bodies: HTMLElement[]) => {
 
 const getSourceFromBlock = (block: Element) =>
   block.querySelector<HTMLElement>('.md-diagram-source')?.textContent || ''
+
+/** 读取 HTML 预览块源码（隐藏 pre） */
+export const getMarkdownHtmlBlockSource = (block: Element) =>
+  getSourceFromBlock(block)
+
+/** 构建 HTML 预览 iframe 的 srcdoc */
+export const buildMarkdownHtmlPreviewSrcdoc = (source: string) =>
+  buildHtmlPreviewDocument(source)
 
 /**
  * 为 pie 图中未加引号的扇区标签补引号（含括号、空格时 lexer 会失败）。
@@ -1461,95 +1645,289 @@ const buildHtmlPreviewDocument = (html: string) => `<!doctype html>
 	<style>
 		html, body {
 			margin: 0;
-			padding: 8px;
+			padding: 0;
+			min-height: 0;
+			height: auto;
 			box-sizing: border-box;
-			overflow: hidden;
+			overflow: visible;
 			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 			color: #1f2933;
 			background: #fff;
 		}
+		body {
+			display: block;
+		}
+		body > :first-child {
+			margin-top: 0 !important;
+			padding-top: 0 !important;
+			min-height: 0 !important;
+			align-items: flex-start !important;
+			justify-content: flex-start !important;
+		}
 		* {
 			box-sizing: border-box;
-			max-width: 100%;
 		}
 		img, svg, canvas, video {
 			max-width: 100%;
 			height: auto;
+		}
+		table {
+			max-width: 100%;
 		}
 	</style>
 </head>
 <body>${html}</body>
 </html>`
 
+/**
+ * 测量 HTML 预览文档真实内容占位。
+ * 结合 bbox 与 scrollHeight（iframe 仅设宽度、不设虚高时 scrollHeight 可信），并加底部余量防裁切。
+ */
+const measureHtmlPreviewContentSize = (doc: Document, layoutWidth: number) => {
+  const body = doc.body
+  const html = doc.documentElement
+  if (!body) {
+    return { width: layoutWidth, height: 1 }
+  }
+
+  const bodyRect = body.getBoundingClientRect()
+  let maxBottom = 0
+  let maxRight = 0
+
+  const consider = (el: HTMLElement) => {
+    const rect = el.getBoundingClientRect()
+    if (rect.width < 1 && rect.height < 1) {
+      return
+    }
+    maxBottom = Math.max(maxBottom, rect.bottom - bodyRect.top)
+    maxRight = Math.max(maxRight, rect.right - bodyRect.left)
+  }
+
+  for (const child of body.children) {
+    if (child instanceof HTMLElement) {
+      consider(child)
+    }
+  }
+  body.querySelectorAll<HTMLElement>('*').forEach(consider)
+
+  const bboxHeight = Math.max(1, Math.ceil(maxBottom))
+  const bboxWidth = Math.max(1, Math.ceil(maxRight))
+  const scrollHeight = Math.ceil(
+    Math.max(body.scrollHeight, html.scrollHeight, html.offsetHeight)
+  )
+  const scrollWidth = Math.ceil(
+    Math.max(body.scrollWidth, html.scrollWidth, layoutWidth)
+  )
+
+  // scrollHeight 异常偏大（历史 5000px 虚高）时忽略，仅信任 bbox
+  const height =
+    scrollHeight > bboxHeight && scrollHeight <= bboxHeight * 2.5
+      ? scrollHeight
+      : bboxHeight
+  const width =
+    scrollWidth > bboxWidth && scrollWidth <= layoutWidth * 2.5
+      ? scrollWidth
+      : Math.max(bboxWidth, layoutWidth)
+
+  return {
+    width: Math.max(layoutWidth, width),
+    height: height + HTML_PREVIEW_THUMB_MEASURE_PADDING
+  }
+}
+
+const resolveHtmlPreviewContainerWidth = (wrap: HTMLElement) => {
+  const fromWrap = wrap.clientWidth
+  if (fromWrap > 0) {
+    return fromWrap
+  }
+  const fromParent = wrap.parentElement?.clientWidth ?? 0
+  if (fromParent > 0) {
+    return fromParent
+  }
+  const fromMessage = wrap.closest('.message-md, .message-content') as HTMLElement | null
+  if (fromMessage && fromMessage.clientWidth > 0) {
+    return fromMessage.clientWidth
+  }
+  return 360
+}
+
+const ensureHtmlPreviewScaler = (
+  wrap: HTMLElement,
+  iframe: HTMLIFrameElement
+): HTMLElement => {
+  let scaler = wrap.querySelector<HTMLElement>(':scope > .md-html-preview-scaler')
+  if (!scaler) {
+    scaler = document.createElement('div')
+    scaler.className = 'md-html-preview-scaler'
+    wrap.insertBefore(scaler, iframe)
+    scaler.appendChild(iframe)
+  }
+  return scaler
+}
+
 const htmlPreviewFitObservers = new WeakMap<HTMLElement, ResizeObserver>()
 
 /**
- * 将 HTML 预览 iframe 按比例缩小到最大宽高内。
+ * 将 HTML 预览 iframe 缩略为无滚动的等比缩略图（点击后在全屏层交互）。
  */
-const resizeHtmlPreview = (iframe: HTMLIFrameElement) => {
+const applyHtmlPreviewThumbScale = (
+  iframe: HTMLIFrameElement,
+  scale: number,
+  contentWidth: number,
+  contentHeight: number,
+  scaledW: number,
+  scaledH: number
+) => {
+  const scaler = ensureHtmlPreviewScaler(
+    iframe.closest('.md-html-preview-wrap') as HTMLElement,
+    iframe
+  )
+
+  iframe.style.width = `${contentWidth}px`
+  iframe.style.height = `${contentHeight}px`
+  iframe.style.display = 'block'
+  iframe.style.margin = '0'
+  iframe.style.overflow = 'visible'
+  iframe.style.pointerEvents = 'none'
+  iframe.style.border = 'none'
+  iframe.setAttribute('scrolling', 'no')
+
+  const iframeStyle = iframe.style as CSSStyleDeclaration & { zoom?: string }
+  if (scale !== 1 && 'zoom' in iframeStyle) {
+    iframeStyle.zoom = String(scale)
+    iframe.style.transform = 'none'
+    iframe.style.transformOrigin = ''
+  } else {
+    iframeStyle.zoom = ''
+    iframe.style.transform = scale !== 1 ? `scale(${scale})` : 'none'
+    iframe.style.transformOrigin = '0 0'
+  }
+
+  const scalerPad = scale < 1 ? 2 : 4
+  scaler.style.width = `${scaledW + scalerPad}px`
+  scaler.style.height = `${scaledH + scalerPad}px`
+  scaler.style.margin = '0 auto'
+  scaler.style.flexShrink = '0'
+  scaler.style.overflow = 'visible'
+}
+
+const resizeHtmlPreview = (iframe: HTMLIFrameElement): boolean => {
   try {
     const doc = iframe.contentDocument
     if (!doc?.body) {
-      return
+      return false
     }
-    const wrap = iframe.parentElement as HTMLElement | null
-    const pad = 16
-    const diagramMaxHeight = getMarkdownDiagramMaxHeight()
-    const maxHeight = diagramMaxHeight - pad
-    const maxWidth = Math.max(
-      (wrap?.clientWidth || iframe.clientWidth) - pad,
-      120
-    )
-    const contentHeight = Math.max(
-      160,
-      doc.documentElement.scrollHeight,
-      doc.body.scrollHeight
-    )
-    const contentWidth = Math.max(
-      doc.documentElement.scrollWidth,
-      doc.body.scrollWidth,
-      1
-    )
-
-    iframe.style.transform = ''
-    const scaleH = contentHeight > maxHeight ? maxHeight / contentHeight : 1
-    const scaleW = contentWidth > maxWidth ? maxWidth / contentWidth : 1
-    const scale = Math.min(scaleH, scaleW, 1)
-    const displayH = Math.ceil(contentHeight * scale)
-
-    iframe.style.width = '100%'
-    iframe.style.transformOrigin = 'top center'
-    iframe.style.display = 'block'
-    iframe.style.margin = '0 auto'
-    iframe.style.overflow = 'hidden'
-    iframe.setAttribute('scrolling', 'no')
-
-    if (scale >= 1) {
-      iframe.style.transform = ''
-      iframe.style.height = `${Math.min(
-        contentHeight + pad,
-        diagramMaxHeight
-      )}px`
-      if (wrap) {
-        wrap.style.height = `${Math.min(
-          contentHeight + pad,
-          diagramMaxHeight
-        )}px`
-        wrap.style.overflow = 'hidden'
-        wrap.style.maxHeight = `${diagramMaxHeight}px`
-      }
-      return
+    const wrap = iframe.closest('.md-html-preview-wrap') as HTMLElement | null
+    if (!wrap) {
+      return false
     }
 
-    iframe.style.height = `${contentHeight}px`
-    iframe.style.transform = `scale(${scale})`
-    if (wrap) {
-      wrap.style.height = `${displayH + pad}px`
-      wrap.style.overflow = 'hidden'
-      wrap.style.maxHeight = `${diagramMaxHeight}px`
-    }
+    const thumbMaxHeight = getMarkdownHtmlPreviewMaxHeight()
+    const containerWidth = Math.max(resolveHtmlPreviewContainerWidth(wrap) - 2, 160)
+
+    // 仅在目标宽度下排版；勿拉高 iframe，否则 scrollHeight 污染测量
+    iframe.style.width = `${containerWidth}px`
+    iframe.style.height = 'auto'
+    iframe.style.minHeight = '0'
+    iframe.style.transform = 'none'
+    ;(iframe.style as CSSStyleDeclaration & { zoom?: string }).zoom = ''
+    void doc.body.offsetHeight
+
+    const { width: contentWidth, height: contentHeight } =
+      measureHtmlPreviewContentSize(doc, containerWidth)
+
+    // 优先撑满缩略图高度，必要时放大；宽度超出时再收紧
+    const scaleH = thumbMaxHeight / contentHeight
+    const scaleW = containerWidth / contentWidth
+    const scale = Math.min(scaleH, scaleW)
+    const scaledW = Math.max(1, Math.ceil(contentWidth * scale))
+    const scaledH = Math.max(1, Math.ceil(contentHeight * scale))
+
+    applyHtmlPreviewThumbScale(
+      iframe,
+      scale,
+      contentWidth,
+      contentHeight,
+      scaledW,
+      scaledH
+    )
+
+    wrap.style.width = '100%'
+    wrap.style.height = `${thumbMaxHeight}px`
+    wrap.style.minHeight = `${thumbMaxHeight}px`
+    wrap.style.maxHeight = `${thumbMaxHeight}px`
+    wrap.style.display = 'flex'
+    wrap.style.alignItems = 'center'
+    wrap.style.justifyContent = 'center'
+    wrap.style.overflow = 'hidden'
+    wrap.dataset.mdHtmlThumb = 'true'
+    return true
   } catch {
     /* sandboxed previews may be unreadable in stricter browser modes */
+    return false
+  }
+}
+
+const bindHtmlPreviewContentResize = (
+  iframe: HTMLIFrameElement,
+  onResize: () => void
+) => {
+  const doc = iframe.contentDocument
+  if (!doc) {
+    return
+  }
+  doc.querySelectorAll('img').forEach((img) => {
+    if (img.complete) {
+      return
+    }
+    img.addEventListener('load', onResize, { once: true })
+    img.addEventListener('error', onResize, { once: true })
+  })
+}
+
+const scheduleHtmlPreviewFit = (iframe: HTMLIFrameElement) => {
+  const run = () => {
+    resizeHtmlPreview(iframe)
+  }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      run()
+      bindHtmlPreviewContentResize(iframe, run)
+    })
+  })
+}
+
+/** 全屏 HTML 预览：自然尺寸、可滚动、可交互 */
+export const resizeMarkdownHtmlPreviewExpanded = (
+  iframe: HTMLIFrameElement
+): boolean => {
+  try {
+    const doc = iframe.contentDocument
+    if (!doc?.body) {
+      return false
+    }
+    const wrap = iframe.closest('.md-html-preview-wrap') as HTMLElement | null
+    const containerWidth = Math.max(
+      wrap ? resolveHtmlPreviewContainerWidth(wrap) : 360,
+      360
+    )
+    const { width: contentWidth, height: contentHeight } =
+      measureHtmlPreviewContentSize(doc, containerWidth)
+
+    ;(iframe.style as CSSStyleDeclaration & { zoom?: string }).zoom = ''
+    iframe.style.transform = ''
+    iframe.style.transformOrigin = ''
+    iframe.style.width = '100%'
+    iframe.style.minWidth = `${contentWidth}px`
+    iframe.style.height = `${contentHeight}px`
+    iframe.style.display = 'block'
+    iframe.style.margin = '0'
+    iframe.style.overflow = 'visible'
+    iframe.style.pointerEvents = 'auto'
+    iframe.setAttribute('scrolling', 'auto')
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -1565,8 +1943,12 @@ const observeHtmlPreviewResize = (
   if (typeof ResizeObserver === 'undefined') {
     return
   }
-  const observer = new ResizeObserver(() => resizeHtmlPreview(iframe))
+  const wrap = block.querySelector('.md-html-preview-wrap')
+  const observer = new ResizeObserver(() => scheduleHtmlPreviewFit(iframe))
   observer.observe(block)
+  if (wrap instanceof HTMLElement) {
+    observer.observe(wrap)
+  }
   htmlPreviewFitObservers.set(block, observer)
 }
 
@@ -1575,16 +1957,18 @@ const renderHtmlPreviewBlock = (block: Element) => {
   const iframe = block.querySelector<HTMLIFrameElement>(
     'iframe.md-html-preview'
   )
-  if (!iframe) {
+  const wrap = block.querySelector<HTMLElement>('.md-html-preview-wrap')
+  if (!iframe || !wrap) {
     return
   }
-  block
-    .querySelector('.md-html-preview-wrap')
-    ?.classList.remove('md-block-pending')
-  iframe.onload = () => {
-    resizeHtmlPreview(iframe)
+
+  const finishLoading = () => {
+    scheduleHtmlPreviewFit(iframe)
+    wrap.classList.remove('md-block-pending')
     observeHtmlPreviewResize(block as HTMLElement, iframe)
   }
+
+  iframe.onload = finishLoading
   iframe.srcdoc = buildHtmlPreviewDocument(source)
 }
 
