@@ -48,7 +48,7 @@ const MARKDOWN_REVISION_ATTR = 'data-md-revision'
  * 图表后处理逻辑变更时递增，用于让历史气泡在 SPA 内重新渲染（非 Mermaid 缓存）。
  * 与 ChatView 中 v-html 的 :key 保持一致。
  */
-export const MARKDOWN_RENDERER_REVISION = '22'
+export const MARKDOWN_RENDERER_REVISION = '23'
 /** 与 markdown.scss 中 --md-diagram-max-height 回退值保持一致 */
 const MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK = 360
 /** 与 markdown.scss 中 --md-html-preview-max-height 回退值保持一致 */
@@ -1323,6 +1323,31 @@ const normalizeFlowchartMultilineEdges = (source: string) => {
 }
 
 /**
+ * 修正 subgraph 中文标签写法。LLM 常输出 `subgraph入库侧` 或 `subgraph 查询侧`，
+ * 解析器要求 `subgraph id [标签]`（id 为 ASCII，标签可含中文）。
+ */
+const normalizeFlowchartSubgraphLabels = (source: string) => {
+  if (!/^\s*(?:graph|flowchart)\s/im.test(source)) {
+    return source
+  }
+  let counter = 0
+  return source.replace(
+    /^(\s*)subgraph\s*([^\[\n]+?)\s*$/gm,
+    (match, indent: string, rest: string) => {
+      const trimmed = rest.trim()
+      if (!trimmed || /^end\b/i.test(trimmed)) {
+        return match
+      }
+      if (/^[A-Za-z_][\w-]*\s*\[/.test(trimmed)) {
+        return match
+      }
+      counter += 1
+      return `${indent}subgraph _sg${counter} [${trimmed}]`
+    }
+  )
+}
+
+/**
  * 规范化 LLM 生成的 Mermaid 源码，修复弯引号、全角冒号、转义引号等常见导致解析失败的问题。
  */
 const normalizeMermaidSource = (source: string) => {
@@ -1339,6 +1364,7 @@ const normalizeMermaidSource = (source: string) => {
     .replace(/：/g, ':')
     .replace(/\u00a0/g, ' ')
   text = normalizeMindmapIndentation(text)
+  text = normalizeFlowchartSubgraphLabels(text)
   text = normalizeFlowchartMultilineNodeDefs(text)
   text = normalizeFlowchartMultilineEdges(text)
   text = quotePieSliceLines(text)
