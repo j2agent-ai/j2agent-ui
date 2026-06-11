@@ -373,6 +373,7 @@
 <script setup lang="ts">
 import { ArrowDown, ChatLineSquare, DocumentCopy, Loading, Picture, Position, Refresh } from '@element-plus/icons-vue'
 import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   ElAvatar,
   ElButton,
@@ -763,7 +764,7 @@ const onChatInputBlur = () => {
 const sendMessage = async (msg?: string) => {
   let session = requireActiveSession()
   if (!session) {
-    session = await chatSessionRegistry.ensureActiveSessionForAgent(props.agentId)
+    session = await chatSessionRegistry.enterAgent(props.agentId)
   }
   if (isBusyByState.value || sendingMessage.value || isProcessingImages.value) {
     ElMessage.info(isProcessingImages.value ? t('ai.image.processing') : t('ai.assistant.waiting'))
@@ -1291,6 +1292,34 @@ const copyMessage = async (content?: string) => {
   }
 }
 
+const route = useRoute()
+const router = useRouter()
+
+const stripNewChatQuery = () => {
+  if (route.query['new-chat'] !== '1') {
+    return
+  }
+  const query = { ...route.query }
+  delete query['new-chat']
+  router.replace({ path: route.path, query })
+}
+
+/** 进入智能体：智能体列表带 new-chat=1 时强制新建；否则预激活会话保留，未预激活则新建 */
+const bootstrapAgentSession = async (forceNew = false) => {
+  if (forceNew || route.query['new-chat'] === '1') {
+    await chatSessionRegistry.createNewSession(props.agentId)
+    stripNewChatQuery()
+  } else {
+    await chatSessionRegistry.enterAgent(props.agentId)
+  }
+  isAtBottom.value = true
+  getHotQuestions()
+  nextTick(() => {
+    scrollToBottom()
+    activateMarkdownBlocks()
+  })
+}
+
 const newChat = async () => {
   await chatSessionRegistry.createNewSession(props.agentId)
   isAtBottom.value = true
@@ -1298,16 +1327,14 @@ const newChat = async () => {
   scrollToBottom()
 }
 
-/** 切换智能体时恢复该智能体最近活跃的内存会话，无则新建 */
+/** 切换智能体时进入新对话（活动面板/历史已 activate 的同 agent 会话除外） */
 watch(
   () => props.agentId,
-  async () => {
-    await chatSessionRegistry.ensureActiveSessionForAgent(props.agentId)
-    getHotQuestions()
-    nextTick(() => {
-      scrollToBottom()
-      activateMarkdownBlocks()
-    })
+  async (_newAgentId, oldAgentId) => {
+    if (oldAgentId === undefined) {
+      return
+    }
+    await bootstrapAgentSession(route.query['new-chat'] === '1')
   }
 )
 
@@ -1465,8 +1492,7 @@ watch(
 )
 
 onMounted(async () => {
-  await chatSessionRegistry.ensureActiveSessionForAgent(props.agentId)
-  getHotQuestions()
+  await bootstrapAgentSession(route.query['new-chat'] === '1')
   nextTick(() => {
     chatManageRef.value?.getHistoryListData()
     bindUserScrollIntent()
