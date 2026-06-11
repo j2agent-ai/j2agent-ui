@@ -14,23 +14,33 @@
 <script lang="ts" setup>
 import { ElConfigProvider } from 'element-plus'
 import { useElementLocale } from '@ai-system/hooks'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { t } from '@ai-system/lib'
 import ChatActivityPanel from '@/pages/chat/components/ChatActivityPanel.vue'
-import {
-	ensureAgentNamesLoaded,
-	useWarnBeforeUnloadOnActiveTasks
-} from '@/pages/chat/ts/index'
+import { useWarnBeforeUnloadOnActiveTasks } from '@/pages/chat/ts/index'
+import { ensureAgentNamesLoaded } from '@/pages/chat/ts/agent/name-registry'
+import { hasRoleAccess, ROLE_USER } from '@/utils/role'
 
 useWarnBeforeUnloadOnActiveTasks()
-onMounted(() => {
-	void ensureAgentNamesLoaded()
-})
 document.getElementsByTagName('title')[0].innerHTML = t('ai.title')
 const { elLocale } = useElementLocale()
 
 const route = useRoute()
+
+const AUTH_ROUTE_PATHS = new Set(['/login', '/logout', '/register', '/forgot-password'])
+
+const tryLoadAgentNames = () => {
+	if (AUTH_ROUTE_PATHS.has(route.path)) {
+		return
+	}
+	if (!hasRoleAccess(ROLE_USER)) {
+		return
+	}
+	void ensureAgentNamesLoaded()
+}
+
+watch(() => route.path, tryLoadAgentNames, { immediate: true })
 
 const isScreen = ref(false)
 watch(
