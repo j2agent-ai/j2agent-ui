@@ -97,7 +97,6 @@
 					type="primary"
 					class="submit-btn"
 					:loading="loading"
-					:disabled="!captchaToken || powLoading || challengeLoading || captchaDialogShow"
 					@click="handleSubmit"
 				>
 					{{ t('user.resetPassword.submit') }}
