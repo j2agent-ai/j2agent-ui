@@ -1,7 +1,11 @@
 <template>
 	<div class="top-bar">
 		<h3 class="tittle" @click="goTo('/')">
-			<img class="top-bar-logo" :src="resolvedTopBarLogoUrl" :alt="topBarTittle" />
+			<img
+				class="top-bar-logo"
+				:src="resolvedTopBarLogoUrl"
+				:alt="topBarTittle"
+			/>
 			<span v-if="showTitleText" class="title-text">
 				<template v-if="topBarShowText">{{ topBarTittle }}</template>
 				<template v-if="titleSuffix">
@@ -17,7 +21,8 @@
 							ref="suffixRef"
 							class="title-suffix__name"
 							@mouseenter="syncSuffixOverflow"
-						>{{ titleSuffix }}</span>
+							>{{ titleSuffix }}</span
+						>
 					</el-tooltip>
 				</template>
 			</span>
@@ -60,7 +65,8 @@
 								ref="userNameRef"
 								class="user-name"
 								@mouseenter="syncUserNameOverflow"
-							>{{ displayUsername }}</span>
+								>{{ displayUsername }}</span
+							>
 						</el-tooltip>
 					</span>
 					<span class="user-avatar">
@@ -90,7 +96,12 @@
 import { ElTooltip } from 'element-plus'
 import { computed, ref } from 'vue'
 import MenuCard from '@/pages/components/menuCard.vue'
-import { topBarLogoUrl, topBarLogoUrlOnDark, topBarTittle, topBarShowText } from '@/oem'
+import {
+	topBarLogoUrl,
+	topBarLogoUrlOnDark,
+	topBarTittle,
+	topBarShowText
+} from '@/oem'
 import { goTo } from '@/routes'
 import defaultAvatar from '@/assets/avatar.png'
 import { getSessionInfo } from '@/utils/role'
@@ -105,9 +116,7 @@ const props = withDefaults(
 	{ titleSuffix: '', guest: false }
 )
 
-const showTitleText = computed(
-	() => topBarShowText || !!props.titleSuffix
-)
+const showTitleText = computed(() => topBarShowText || !!props.titleSuffix)
 
 /** 顶栏为深色玻璃背景，优先使用浅色 wordmark */
 const resolvedTopBarLogoUrl = computed(
@@ -159,7 +168,8 @@ const hideUserMenu = () => {
 	height: var(--n-topbar-height, 50px);
 	background: var(--n-topbar-glass-bg);
 	backdrop-filter: blur(var(--n-topbar-blur)) saturate(var(--n-topbar-saturate));
-	-webkit-backdrop-filter: blur(var(--n-topbar-blur)) saturate(var(--n-topbar-saturate));
+	-webkit-backdrop-filter: blur(var(--n-topbar-blur))
+		saturate(var(--n-topbar-saturate));
 	border: 1px solid var(--n-topbar-border);
 	box-shadow: var(--n-topbar-shadow);
 	color: var(--n-topbar-text);
@@ -202,7 +212,7 @@ const hideUserMenu = () => {
 			font-size: 20px;
 			font-weight: 500;
 			line-height: 32px;
-      margin-left: 12px;
+			margin-left: 12px;
 			color: var(--n-topbar-text-muted);
 		}
 

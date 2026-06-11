@@ -163,17 +163,45 @@
               </div>
             </template>
             <template v-else-if="message.role === 'user'">
-              <div class="message-content">
-                <div v-if="message.attachments?.length" class="message-images">
-                  <img
-                    v-for="(image, imageIndex) in message.attachments"
-                    :key="image.objectKey || image.url || imageIndex"
-                    :src="resolveAttachmentImageSrc(image)"
-                    :alt="image.name"
-                    class="message-image"
-                    @error="handleAttachmentImageError(image)"
-                    @click.stop="openAttachmentPreview(message.attachments!, imageIndex)"
-                  />
+              <div class="message-bubble-wrap">
+                <div
+                  class="message-content"
+                  :class="{
+                    'message-content--with-media': !!message.attachments?.length,
+                    'message-content--image-only':
+                      !!message.attachments?.length && !message.content?.trim()
+                  }"
+                >
+                <div
+                  v-if="message.attachments?.length"
+                  class="message-images"
+                  :class="getAttachmentGalleryClass(message.attachments.length)"
+                >
+                  <template v-if="message.attachments.length === 1">
+                    <img
+                      :key="message.attachments[0].objectKey || message.attachments[0].url || 0"
+                      :src="resolveAttachmentImageSrc(message.attachments[0])"
+                      :alt="message.attachments[0].name"
+                      class="message-image message-image--solo"
+                      @error="handleAttachmentImageError(message.attachments[0])"
+                      @click.stop="openAttachmentPreview(message.attachments, 0)"
+                    />
+                  </template>
+                  <template v-else>
+                    <div
+                      v-for="(image, imageIndex) in message.attachments"
+                      :key="image.objectKey || image.url || imageIndex"
+                      class="message-image-wrap"
+                    >
+                      <img
+                        :src="resolveAttachmentImageSrc(image)"
+                        :alt="image.name"
+                        class="message-image"
+                        @error="handleAttachmentImageError(image)"
+                        @click.stop="openAttachmentPreview(message.attachments!, imageIndex)"
+                      />
+                    </div>
+                  </template>
                 </div>
                 <div
                   v-if="message.content"
@@ -188,6 +216,7 @@
                     :icon="DocumentCopy"
                     @click="copyMessage(message.content)"
                   />
+                </div>
                 </div>
               </div>
               <div class="avatar-wrap">
@@ -332,6 +361,12 @@
       hide-on-click-modal
       @close="closeImagePreview"
     />
+    <DiagramPreviewOverlay
+      :visible="diagramPreviewVisible"
+      :diagrams="diagramPreviewSvgs"
+      :initial-index="diagramPreviewIndex"
+      @close="closeDiagramPreview"
+    />
   </div>
 </template>
 
@@ -352,6 +387,7 @@ import {
 import ChatManage from './chatManage.vue'
 import AgentTurnTimeline from './AgentTurnTimeline.vue'
 import AgentThinkingBlock from './AgentThinkingBlock.vue'
+import DiagramPreviewOverlay from './DiagramPreviewOverlay.vue'
 import {
   ChatAttachmentDto,
   ChatRequestDto,
@@ -378,6 +414,7 @@ import {
   resolveAttachmentsDisplayUrls
 } from '../ts/media/attachment'
 import { processChatImageFile } from '../ts/media/image'
+import { cloneSvgForPreview } from '@/utils/diagramPreview'
 import { getMarkdownCodeBlockText, MARKDOWN_RENDERER_REVISION, renderMarkdown, renderMarkdownBlocks } from '@/utils/markdownRenderer'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
 import { getAgentDisplayName, getAgentLogo, agentNameMap } from '../ts/agent/name-registry'
@@ -593,14 +630,18 @@ const uploadImageFiles = async (files: File[]) => {
   }
 }
 
-/** 聊天图片/图表全屏预览是否可见 */
+/** 聊天图片全屏预览是否可见 */
 const imagePreviewVisible = ref(false)
-/** 当前预览 URL 列表（同条消息内多张图或图表可切换） */
+/** 当前预览 URL 列表（同条消息内多张图可切换） */
 const imagePreviewUrlList = ref<string[]>([])
-/** 预览初始下标 */
+/** 图片预览初始下标 */
 const imagePreviewIndex = ref(0)
-/** 图表预览产生的 blob URL，关闭时需释放 */
-const previewBlobUrls = ref<string[]>([])
+/** 图表全屏预览是否可见 */
+const diagramPreviewVisible = ref(false)
+/** 图表预览 SVG 克隆列表（内联挂载，避免 foreignObject 在 img 中失效） */
+const diagramPreviewSvgs = ref<SVGElement[]>([])
+/** 图表预览初始下标 */
+const diagramPreviewIndex = ref(0)
 
 /** 非终态 busy 时当前轮 assistant 在可见列表中的下标。 */
 const activeAssistantVisibleIndex = computed(() => {
@@ -880,9 +921,18 @@ const handleAttachmentImageError = (attachment: ChatAttachmentDto) => {
 }
 
 const openAttachmentPreview = (attachments: ChatAttachmentDto[], index: number) => {
+  closeDiagramPreview()
   imagePreviewUrlList.value = attachments.map((item) => resolveAttachmentImageSrc(item))
   imagePreviewIndex.value = index
   imagePreviewVisible.value = true
+}
+
+/** 用户附件图库布局：单图大图，多图统一方形缩略图网格 */
+const getAttachmentGalleryClass = (count: number) => {
+  if (count <= 1) {
+    return ['message-images--single']
+  }
+  return ['message-images--multi', `message-images--count-${Math.min(count, 9)}`]
 }
 /**
  * 距真实底部小于该像素即视为「贴底」。该阈值同时决定：
@@ -1109,68 +1159,6 @@ const fallbackCopyText = (text: string) => {
   document.body.removeChild(textarea)
 }
 
-/** 释放图表预览占用的 blob URL */
-const revokePreviewBlobUrls = () => {
-  previewBlobUrls.value.forEach((url) => URL.revokeObjectURL(url))
-  previewBlobUrls.value = []
-}
-
-const SVG_NS = 'http://www.w3.org/2000/svg'
-
-/** 为预览用 SVG 铺一层白色底，避免全屏查看时透明区域发灰/发黑 */
-const appendSvgWhiteBackground = (svg: SVGElement) => {
-  const viewBox = svg.viewBox?.baseVal
-  let x = 0
-  let y = 0
-  let width = 800
-  let height = 600
-  if (viewBox && viewBox.width > 0 && viewBox.height > 0) {
-    x = viewBox.x
-    y = viewBox.y
-    width = viewBox.width
-    height = viewBox.height
-  } else {
-    const attrW = Number.parseFloat(svg.getAttribute('width') || '')
-    const attrH = Number.parseFloat(svg.getAttribute('height') || '')
-    if (!Number.isNaN(attrW) && attrW > 0) {
-      width = attrW
-    }
-    if (!Number.isNaN(attrH) && attrH > 0) {
-      height = attrH
-    }
-  }
-  const rect = document.createElementNS(SVG_NS, 'rect')
-  rect.setAttribute('x', String(x))
-  rect.setAttribute('y', String(y))
-  rect.setAttribute('width', String(width))
-  rect.setAttribute('height', String(height))
-  rect.setAttribute('fill', '#ffffff')
-  svg.insertBefore(rect, svg.firstChild)
-}
-
-/**
- * 将消息内 SVG 图表转为可预览的 blob URL（全屏显示时去掉缩放 transform）。
- */
-const svgElementToPreviewUrl = (svg: SVGElement) => {
-  const clone = svg.cloneNode(true) as SVGElement
-  clone.style.transform = ''
-  clone.style.maxWidth = ''
-  clone.style.maxHeight = ''
-  const viewBox = svg.viewBox?.baseVal
-  if (viewBox?.width > 0 && viewBox?.height > 0) {
-    clone.setAttribute('width', String(viewBox.width))
-    clone.setAttribute('height', String(viewBox.height))
-  } else {
-    clone.removeAttribute('height')
-  }
-  appendSvgWhiteBackground(clone)
-  const serialized = new XMLSerializer().serializeToString(clone)
-  const blob = new Blob([serialized], { type: 'image/svg+xml;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  previewBlobUrls.value.push(url)
-  return url
-}
-
 /**
  * 点击消息气泡内 Markdown 图片时，收集同气泡全部图片并打开全屏预览。
  */
@@ -1194,7 +1182,7 @@ const openMessageImagePreview = (
   if (!urlList.length) {
     return
   }
-  revokePreviewBlobUrls()
+  closeDiagramPreview()
   imagePreviewUrlList.value = urlList
   imagePreviewIndex.value = index
   imagePreviewVisible.value = true
@@ -1207,28 +1195,27 @@ const openMessageDiagramPreview = (
   messageContent: Element,
   targetSvg: SVGElement
 ) => {
-  revokePreviewBlobUrls()
+  closeImagePreview()
   const svgs = messageContent.querySelectorAll(
     '.md-diagram:not(.md-diagram-error) .md-diagram-body svg'
   )
-  const urlList: string[] = []
+  const clones: SVGElement[] = []
   let index = 0
   svgs.forEach((el) => {
     if (!(el instanceof SVGElement)) {
       return
     }
     if (el === targetSvg) {
-      index = urlList.length
+      index = clones.length
     }
-    urlList.push(svgElementToPreviewUrl(el))
+    clones.push(cloneSvgForPreview(el))
   })
-  if (!urlList.length) {
-    revokePreviewBlobUrls()
+  if (!clones.length) {
     return
   }
-  imagePreviewUrlList.value = urlList
-  imagePreviewIndex.value = index
-  imagePreviewVisible.value = true
+  diagramPreviewSvgs.value = clones
+  diagramPreviewIndex.value = index
+  diagramPreviewVisible.value = true
 }
 
 /**
@@ -1271,10 +1258,15 @@ const handleMessageMediaClick = (event: MouseEvent) => {
   openMessageDiagramPreview(messageContent, svg)
 }
 
-/** 关闭聊天图片/图表全屏预览 */
+/** 关闭聊天图片全屏预览 */
 const closeImagePreview = () => {
   imagePreviewVisible.value = false
-  revokePreviewBlobUrls()
+}
+
+/** 关闭图表全屏预览 */
+const closeDiagramPreview = () => {
+  diagramPreviewVisible.value = false
+  diagramPreviewSvgs.value = []
 }
 
 const copyMessage = async (content?: string) => {
@@ -1512,7 +1504,8 @@ onUnmounted(() => {
     cancelAnimationFrame(scrollRafId)
     scrollRafId = null
   }
-  revokePreviewBlobUrls()
+  closeDiagramPreview()
+  closeImagePreview()
 })
 
 watch(
@@ -1662,7 +1655,7 @@ defineExpose({
     }
 
     .ai-logo {
-      width: 72px;
+      width: 160px;
     }
 
     .ai-logo-emoji {
@@ -2000,6 +1993,10 @@ defineExpose({
     var(--chat-message-avatar-size) + 2 * var(--chat-message-avatar-margin)
   );
   --chat-message-gap: 28px;
+  --chat-attachment-gallery-max: 320px;
+  --chat-attachment-thumb-size: 96px;
+  --chat-attachment-gap: 6px;
+  --chat-attachment-radius: 10px;
   padding: 24px 0;
 
   .message-row {
@@ -2027,17 +2024,94 @@ defineExpose({
 
     .message-images {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 180px));
-      gap: 8px;
-      margin-bottom: 10px;
+      gap: var(--chat-attachment-gap);
+      width: fit-content;
+      max-width: var(--chat-attachment-gallery-max);
+
+      &--single {
+        display: block;
+        width: fit-content;
+        max-width: var(--chat-attachment-gallery-max);
+        line-height: 0;
+      }
+
+      &--multi {
+        grid-template-columns: repeat(2, var(--chat-attachment-thumb-size));
+
+        &.message-images--count-3,
+        &.message-images--count-5,
+        &.message-images--count-6,
+        &.message-images--count-7,
+        &.message-images--count-8,
+        &.message-images--count-9 {
+          grid-template-columns: repeat(3, var(--chat-attachment-thumb-size));
+        }
+
+        .message-image-wrap {
+          width: var(--chat-attachment-thumb-size);
+          height: var(--chat-attachment-thumb-size);
+          aspect-ratio: 1;
+        }
+
+        .message-image {
+          width: 100%;
+          height: 100%;
+          max-height: none;
+          object-fit: cover;
+        }
+      }
+    }
+
+    .message-image-wrap {
+      overflow: hidden;
+      border-radius: var(--chat-attachment-radius);
+      background: #fff;
+      border: 1px solid color-mix(in srgb, #cbd5e1 55%, transparent);
+      box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06);
+      line-height: 0;
     }
 
     .message-image {
-      width: 100%;
-      max-height: 220px;
-      object-fit: cover;
-      border-radius: 10px;
+      display: block;
       cursor: zoom-in;
+      vertical-align: top;
+      transition: opacity 0.2s ease;
+
+      &:hover {
+        opacity: 0.92;
+      }
+
+      &--solo {
+        width: auto;
+        height: auto;
+        max-width: var(--chat-attachment-gallery-max);
+        max-height: 320px;
+        object-fit: contain;
+        border-radius: var(--chat-attachment-radius);
+        background: #fff;
+        border: 1px solid color-mix(in srgb, #cbd5e1 55%, transparent);
+        box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06);
+      }
+    }
+
+    .message-images--multi .message-image {
+      width: 100%;
+    }
+
+    .message-content--with-media {
+      align-items: flex-start;
+      box-sizing: border-box;
+
+      .message-images {
+        margin-bottom: 8px;
+        flex-shrink: 0;
+      }
+
+      .message-md {
+        width: 100%;
+        min-width: 0;
+        align-self: stretch;
+      }
     }
 
     .message-md :deep(p),
@@ -2209,12 +2283,18 @@ defineExpose({
         grid-row: 1;
       }
 
-      /* 用户气泡：天蓝水晶染色 */
-      .message-content {
+      .message-bubble-wrap {
         grid-column: 2;
         grid-row: 1;
         justify-self: end;
-        max-width: 100%;
+        width: max-content;
+        max-width: min(380px, 100%);
+        min-width: 0;
+      }
+
+      /* 用户气泡：天蓝水晶染色 */
+      .message-content {
+        width: 100%;
         min-width: 0;
         @include chat-bubble-crystal-glass(
           #d8f0ff,
@@ -2222,6 +2302,21 @@ defineExpose({
           color-mix(in srgb, #3896d9 92%, transparent),
           10px
         );
+
+        &--with-media {
+          height: auto;
+          min-height: 0;
+          padding: 10px 12px;
+          align-items: flex-start;
+        }
+
+        &--image-only {
+          padding: 8px;
+
+          .message-images {
+            margin-bottom: 0;
+          }
+        }
 
         .message-actions {
           display: flex;
@@ -2242,6 +2337,9 @@ defineExpose({
 }
 
 .input-area {
+  --chat-attachment-thumb-size: 96px;
+  --chat-attachment-gap: 6px;
+  --chat-attachment-radius: 10px;
   overflow: visible;
   display: flex;
   padding: 0;
@@ -2269,9 +2367,10 @@ defineExpose({
   }
 
   .pending-images {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, var(--chat-attachment-thumb-size, 96px));
     width: 100%;
-    gap: 10px;
+    gap: var(--chat-attachment-gap, 6px);
     padding: 10px 12px;
     margin-bottom: 8px;
     border-radius: 15px;
@@ -2280,8 +2379,13 @@ defineExpose({
 
   .pending-image {
     position: relative;
-    width: 72px;
-    height: 72px;
+    width: var(--chat-attachment-thumb-size, 96px);
+    height: var(--chat-attachment-thumb-size, 96px);
+    overflow: hidden;
+    border-radius: var(--chat-attachment-radius, 10px);
+    background: #fff;
+    border: 1px solid color-mix(in srgb, #cbd5e1 55%, transparent);
+    box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06);
 
     &.is-processing {
       opacity: 0.85;
@@ -2291,7 +2395,6 @@ defineExpose({
       width: 100%;
       height: 100%;
       object-fit: cover;
-      border-radius: 10px;
     }
 
     .pending-image-placeholder {
