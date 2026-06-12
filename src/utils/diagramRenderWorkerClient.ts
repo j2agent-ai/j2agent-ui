@@ -26,12 +26,13 @@ let inFlightCount = 0
 let taskSeq = 0
 let fallbackRenderer: DiagramRenderFallback | undefined
 let warmupSent = false
+let recyclePending = false
 
 const queue: PendingTask[] = []
 const pendingById = new Map<string, PendingTask>()
 const timeoutById = new Map<string, ReturnType<typeof setTimeout>>()
 
-class DiagramRenderWorkerError extends Error {
+export class DiagramRenderWorkerError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'DiagramRenderWorkerError'
@@ -70,7 +71,7 @@ const scheduleTaskTimeout = (task: PendingTask) => {
       return
     }
     rejectTask(task, new DiagramRenderWorkerError('Diagram worker render timeout'))
-    recycleWorker()
+    requestWorkerRecycle()
     drainQueue()
   }, WORKER_REQUEST_TIMEOUT_MS)
   timeoutById.set(task.id, timer)
@@ -122,9 +123,29 @@ const ensureWorker = (): Worker | undefined => {
   return worker
 }
 
+const canRecycleWorkerNow = () =>
+  inFlightCount === 0 && pendingById.size === 0 && queue.length === 0
+
+const requestWorkerRecycle = () => {
+  if (!canRecycleWorkerNow()) {
+    recyclePending = true
+    return
+  }
+  recyclePending = false
+  recycleWorker()
+}
+
+const tryCompletePendingRecycle = () => {
+  if (!recyclePending || completedRenderCount < WORKER_RECYCLE_AFTER) {
+    return
+  }
+  requestWorkerRecycle()
+}
+
 const handleWorkerError = () => {
   const failedTasks = [...pendingById.values()]
   recycleWorker(true)
+  recyclePending = false
   for (const task of failedTasks) {
     inFlightCount = Math.max(0, inFlightCount - 1)
     void finishTaskWithFallback(task, 'Diagram worker crashed')
@@ -166,7 +187,7 @@ const handleWorkerMessage = (event: MessageEvent) => {
   }
 
   if (completedRenderCount >= WORKER_RECYCLE_AFTER) {
-    recycleWorker()
+    requestWorkerRecycle()
   }
 
   drainQueue()
@@ -273,6 +294,7 @@ const drainQueue = () => {
     }
     dispatchToWorker(task)
   }
+  tryCompletePendingRecycle()
 }
 
 export const registerDiagramRenderFallback = (
@@ -290,6 +312,8 @@ export const warmupDiagramRenderWorker = () => {
   activeWorker.postMessage({ kind: 'warmup' })
 }
 
+export const getActiveDiagramRenderCount = () => inFlightCount + queue.length
+
 export const resetDiagramRenderWorker = () => {
   while (queue.length > 0) {
     const task = queue.shift()
@@ -300,6 +324,7 @@ export const resetDiagramRenderWorker = () => {
   for (const task of [...pendingById.values()]) {
     rejectTask(task, new DiagramRenderWorkerError('Diagram worker reset'))
   }
+  recyclePending = false
   recycleWorker()
   workerDisabled = false
 }

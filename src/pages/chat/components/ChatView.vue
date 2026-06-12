@@ -1856,7 +1856,9 @@ watch(
   },
   (count, prev) => {
     if (count > (prev ?? 0)) {
-      activateMarkdownBlocks()
+      nextTick(() => {
+        flushActivateMarkdownBlocks()
+      })
     }
   }
 )
