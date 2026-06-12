@@ -1,1 +1,0 @@
-import{G as t,l as e,az as n}from"./vue-vendor-CO9PdP4d.js";import{l as s,s as r}from"../index-BwZ4LRAh.js";import"./mermaid-8YHqofIm.js";import"./lodash-vendor-DucNhmqc.js";import"./element-plus-BxU9brAM.js";const f=t({__name:"Logout",setup(u){const o=n();return e(()=>{s().then(()=>{r(null),o.push("/login")})}),(a,p)=>null}});export{f as default};
