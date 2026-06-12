@@ -67,7 +67,8 @@ const VEGA_LITE_MULTI_CATEGORY_THRESHOLD = 8
 const MARKDOWN_HTML_CACHE_MAX_ENTRIES = 200
 const HTML_PREVIEW_MAX_MEASURE_NODES = 200
 const MARKDOWN_FIT_WIDTH_ATTR = 'data-md-fit-width'
-const MARKDOWN_TAIL_HTML_ATTR = 'data-md-tail-html'
+/** 流式尾段 markdown-it 最小更新间隔（ms），与 rAF 合并使用 */
+const STREAM_TAIL_MIN_INTERVAL_MS = 80
 
 const markdownHtmlCache = new Map<string, string>()
 const pendingRefitBodies = new Set<HTMLElement>()
@@ -667,9 +668,16 @@ const replaceRootChildren = (root: HTMLElement, template: HTMLElement) => {
   )
 }
 
+/** 各流式尾段容器最近一次渲染的 markdown 原文，用于渲染前短路去重 */
+const lastStreamTailMarkdown = new WeakMap<HTMLElement, string>()
+
 /**
  * 流式尾段就地更新：pending 图表/HTML 占位节点保留在文档中，仅同步前缀与 hidden source，
  * 避免 v-html 整段替换导致流光动画重启。
+ *
+ * 注意：尾段每帧都在增长、内容几乎不重复，绝不能走 renderMarkdownCached——
+ * 否则 LRU 会被数百份「接近全文的尾段快照」（原文 + HTML 双份大字符串）占满，
+ * 既挤掉稳定消息的缓存，长回答时还会导致内存溢出。
  */
 export const updateStreamTailSegmentInPlace = (
   root: HTMLElement,
@@ -677,10 +685,10 @@ export const updateStreamTailSegmentInPlace = (
   appendEllipsis = false
 ): void => {
   const text = markdown + (appendEllipsis ? '...' : '')
-  const nextHtml = renderMarkdownCached(text)
-  if (root.getAttribute(MARKDOWN_TAIL_HTML_ATTR) === nextHtml) {
+  if (lastStreamTailMarkdown.get(root) === text) {
     return
   }
+  const nextHtml = renderMarkdown(text)
 
   const template = document.createElement('div')
   template.innerHTML = nextHtml
@@ -692,15 +700,17 @@ export const updateStreamTailSegmentInPlace = (
     syncChildNodesBefore(root, oldPending, template, newPending)
     syncBlockSource(oldPending, newPending)
     removeChildNodesAfter(root, oldPending)
-    root.setAttribute(MARKDOWN_TAIL_HTML_ATTR, nextHtml)
+    lastStreamTailMarkdown.set(root, text)
     return
   }
 
   root.innerHTML = nextHtml
-  root.setAttribute(MARKDOWN_TAIL_HTML_ATTR, nextHtml)
+  lastStreamTailMarkdown.set(root, text)
 }
 
 let streamTailUpdateRafId = 0
+let streamTailThrottleTimer = 0
+let streamTailLastRunAt = 0
 let pendingStreamTailUpdate:
   | {
       root: HTMLElement
@@ -709,7 +719,23 @@ let pendingStreamTailUpdate:
     }
   | null = null
 
-/** rAF 合并流式 token，避免每个 token 都跑完整 markdown-it + DOM diff */
+const flushPendingStreamTailUpdate = () => {
+  streamTailUpdateRafId = 0
+  streamTailThrottleTimer = 0
+  const pending = pendingStreamTailUpdate
+  pendingStreamTailUpdate = null
+  if (!pending) {
+    return
+  }
+  streamTailLastRunAt = Date.now()
+  updateStreamTailSegmentInPlace(
+    pending.root,
+    pending.markdown,
+    pending.appendEllipsis
+  )
+}
+
+/** rAF + 时间节流合并流式 token，避免每帧对增长中的尾段跑完整 markdown-it + innerHTML */
 export const scheduleUpdateStreamTailSegmentInPlace = (
   root: HTMLElement,
   markdown: string,
@@ -722,33 +748,34 @@ export const scheduleUpdateStreamTailSegmentInPlace = (
       cancelAnimationFrame(streamTailUpdateRafId)
       streamTailUpdateRafId = 0
     }
-    const pending = pendingStreamTailUpdate
-    pendingStreamTailUpdate = null
-    if (pending) {
-      updateStreamTailSegmentInPlace(
-        pending.root,
-        pending.markdown,
-        pending.appendEllipsis
-      )
+    if (streamTailThrottleTimer) {
+      clearTimeout(streamTailThrottleTimer)
+      streamTailThrottleTimer = 0
     }
+    flushPendingStreamTailUpdate()
     return
   }
-  if (streamTailUpdateRafId) {
-    return
-  }
-  streamTailUpdateRafId = requestAnimationFrame(() => {
-    streamTailUpdateRafId = 0
-    const pending = pendingStreamTailUpdate
-    pendingStreamTailUpdate = null
-    if (!pending) {
+
+  const scheduleAfterThrottle = () => {
+    if (streamTailUpdateRafId) {
       return
     }
-    updateStreamTailSegmentInPlace(
-      pending.root,
-      pending.markdown,
-      pending.appendEllipsis
-    )
-  })
+    streamTailUpdateRafId = requestAnimationFrame(flushPendingStreamTailUpdate)
+  }
+
+  const elapsed = Date.now() - streamTailLastRunAt
+  if (elapsed >= STREAM_TAIL_MIN_INTERVAL_MS) {
+    scheduleAfterThrottle()
+    return
+  }
+
+  if (streamTailThrottleTimer) {
+    return
+  }
+  streamTailThrottleTimer = window.setTimeout(() => {
+    streamTailThrottleTimer = 0
+    scheduleAfterThrottle()
+  }, STREAM_TAIL_MIN_INTERVAL_MS - elapsed)
 }
 
 /** 聊天页 idle 预加载 mermaid/vega/plantuml，降低首图冷启动延迟 */
@@ -2686,6 +2713,16 @@ export const resetMarkdownRendererForTest = () => {
     batchRefitRafId = 0
   }
   renderMarkdownBlocksChain = Promise.resolve()
+  if (streamTailUpdateRafId) {
+    cancelAnimationFrame(streamTailUpdateRafId)
+    streamTailUpdateRafId = 0
+  }
+  if (streamTailThrottleTimer) {
+    clearTimeout(streamTailThrottleTimer)
+    streamTailThrottleTimer = 0
+  }
+  streamTailLastRunAt = 0
+  pendingStreamTailUpdate = null
 }
 
 /** 单测用：xychart 横向修正与类目计数 */
