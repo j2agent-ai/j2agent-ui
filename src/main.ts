@@ -1,4 +1,5 @@
 import routes from './routes'
+import { bindAppRouter } from './routes/router-holder'
 import langLoaders from './locale'
 import { App } from '@ai-system/lib'
 import { ElLoading } from 'element-plus'
@@ -48,9 +49,19 @@ async function APP() {
 
 	// 挂载路由
 	app.createRouter(routes)
+	bindAppRouter(app.router)
 	// 挂载应用
 	app.mount('#app')
-	console.log('---->main app')
+	const bootCount =
+		Number(sessionStorage.getItem('j2agent-app-boot-count') || 0) + 1
+	sessionStorage.setItem('j2agent-app-boot-count', String(bootCount))
+	if (bootCount > 1) {
+		console.warn(
+			'[j2agent] document reload detected — in-memory chat sessions were reset (boot #%d)',
+			bootCount
+		)
+	}
+	console.log('---->main app', `(boot #${bootCount})`)
 }
 
 APP()

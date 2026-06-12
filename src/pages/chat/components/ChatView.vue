@@ -407,7 +407,16 @@
 
 <script setup lang="ts">
 import { ArrowDown, ChatLineSquare, DocumentCopy, Loading, Picture, Position, Refresh } from '@element-plus/icons-vue'
-import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch
+} from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ElAvatar,
@@ -1478,6 +1487,18 @@ const unbindUserScrollIntent = () => {
   scrollIntentEl = null
 }
 
+const reconnectMessageListResizeObserver = () => {
+  const el = messageListRef.value
+  messageListResizeObserver?.disconnect()
+  messageListResizeObserver = undefined
+  if (el && typeof ResizeObserver !== 'undefined') {
+    messageListResizeObserver = new ResizeObserver(() => {
+      keepBottomAnchored()
+    })
+    messageListResizeObserver.observe(el)
+  }
+}
+
 let send = false
 
 const handleKeydown = (event: KeyboardEvent) => {
@@ -1792,15 +1813,8 @@ watch(
  * 监听消息列表高度变化：贴底时同步补偿 scrollTop，而不是下一帧滚到底部。
  * 这样内容向下增长时，最后一个气泡底边在屏幕上的位置保持不变。
  */
-watch(messageListRef, (el) => {
-  messageListResizeObserver?.disconnect()
-  messageListResizeObserver = undefined
-  if (el && typeof ResizeObserver !== 'undefined') {
-    messageListResizeObserver = new ResizeObserver(() => {
-      keepBottomAnchored()
-    })
-    messageListResizeObserver.observe(el)
-  }
+watch(messageListRef, () => {
+  reconnectMessageListResizeObserver()
 })
 
 /** 滚动容器可能因 v-if（历史栏 / 全屏切换）重建，wrapRef 变化后需重新挂载用户滚动监听 */
@@ -1973,11 +1987,28 @@ onMounted(async () => {
 onActivated(() => {
   nextTick(() => {
     bindUserScrollIntent()
+    reconnectMessageListResizeObserver()
     if (activeSession.value?.pendingScroll.value && shouldAutoScroll()) {
       scrollToBottom()
       activeSession.value.pendingScroll.value = false
     }
+    flushActivateMarkdownBlocks()
   })
+})
+
+/** keep-alive 切走：暂停 UI 监听，不中断 WebSocket 流式 */
+onDeactivated(() => {
+  unbindUserScrollIntent()
+  if (userScrollIdleTimer !== null) {
+    clearTimeout(userScrollIdleTimer)
+    userScrollIdleTimer = null
+  }
+  messageListResizeObserver?.disconnect()
+  messageListResizeObserver = undefined
+  if (scrollRafId !== null) {
+    cancelAnimationFrame(scrollRafId)
+    scrollRafId = null
+  }
 })
 
 onUnmounted(() => {

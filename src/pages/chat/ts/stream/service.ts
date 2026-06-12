@@ -7,6 +7,7 @@ import { ElMessage } from 'element-plus'
 import { t } from '@ai-system/lib'
 import { chatWebsocketClientApi } from '@/api/ai.api'
 import type { AgentUiEventEnvelope, ChatRequestDto } from '@/types/ai.types'
+import { getAppRouter } from '@/routes/router-holder'
 import { chatActivityStore } from '../activity/store'
 import type { ChatSessionRuntime } from '../session/types'
 
@@ -118,7 +119,12 @@ export const startTurn = (
 	ws.onerror = (error: unknown) => {
 		const err = error as { responseCode?: number }
 		if (err.responseCode === 401) {
-			location.hash = '/login'
+			const router = getAppRouter()
+			if (router) {
+				void router.push('/login')
+			} else {
+				location.hash = '/login'
+			}
 			return
 		}
 		console.error(error)
