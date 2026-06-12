@@ -2242,7 +2242,7 @@ defineExpose({
 
   .chat-view {
     /* 固定预留：输入区浮在滚动层上方，不随 input 实时高度改变 scroll 内边距 */
-    --chat-bottom-reserve: 150px;
+    --chat-bottom-reserve: 140px;
     --chat-bottom-scroll-gap: 30px;
     /* 与 .input-area.is-input-editing 展开高度一致，按钮相对屏幕底边固定 */
     --chat-input-expanded-height: 148px;
