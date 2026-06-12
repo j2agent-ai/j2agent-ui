@@ -8,6 +8,25 @@ import {
   getVegaLiteEmbedConfig,
   injectPlantUmlTheme
 } from './diagramTheme'
+import {
+  countXychartBarValues,
+  countXychartCategories,
+  getXychartCategoryCount,
+  getXychartDeclarationLine,
+  isMermaidErrorSvg,
+  isXychartHorizontal,
+  isXychartSource,
+  normalizeMermaidSource,
+  normalizeXychartOrientation,
+  parseVegaLiteSpec,
+  XYCHART_HORIZONTAL_MIN_CATEGORIES
+} from './diagramSourceNormalize'
+import {
+  registerDiagramRenderFallback,
+  renderDiagramInWorker,
+  resetDiagramRenderWorker,
+  warmupDiagramRenderWorker
+} from './diagramRenderWorkerClient'
 
 type MermaidModule = {
   default?: MermaidApi
@@ -54,20 +73,17 @@ const HTML_PREVIEW_THUMB_MEASURE_PADDING = 20
 const MARKDOWN_DIAGRAM_BODY_PADDING_VERTICAL = 28
 /** body 水平内边距合计（padding-left + padding-right，各 16px） */
 const MARKDOWN_DIAGRAM_BODY_PADDING_HORIZONTAL = 32
-/** xychart 类目数达到该阈值且未声明 horizontal 时，自动改为横向条形图 */
-const XYCHART_HORIZONTAL_MIN_CATEGORIES = 11
 /** 横向条形图每行类目预留高度（px），用于拉高容器减少行挤压 */
 const XYCHART_HORIZONTAL_ROW_MIN_HEIGHT = 22
 /** 竖向图底部标签换行时的行高系数 */
 const XYCHART_LABEL_LINE_HEIGHT_RATIO = 1.25
 /** 换行后 viewBox / 容器底部预留（px） */
 const XYCHART_WRAPPED_LABEL_BOTTOM_PAD = 20
-/** Vega-Lite 多类目时自动倾斜 X 轴标签的阈值 */
-const VEGA_LITE_MULTI_CATEGORY_THRESHOLD = 8
 const MARKDOWN_HTML_CACHE_MAX_ENTRIES = 200
 const HTML_PREVIEW_MAX_MEASURE_NODES = 200
 const MARKDOWN_FIT_WIDTH_ATTR = 'data-md-fit-width'
-const MARKDOWN_TAIL_HTML_ATTR = 'data-md-tail-html'
+/** 流式尾段 markdown-it 最小更新间隔（ms），与 rAF 合并使用 */
+const STREAM_TAIL_MIN_INTERVAL_MS = 80
 
 const markdownHtmlCache = new Map<string, string>()
 const pendingRefitBodies = new Set<HTMLElement>()
@@ -366,6 +382,7 @@ let mermaidSeq = 0
 let plantUmlRenderer: PlantUmlRenderer | undefined
 let plantUmlModuleLoad: Promise<PlantUmlRenderer> | undefined
 let vegaEmbedFn: VegaEmbedFn | undefined
+const blockAbortControllers = new WeakMap<Element, AbortController>()
 
 const md = new MarkdownIt({
   html: false,
@@ -667,9 +684,16 @@ const replaceRootChildren = (root: HTMLElement, template: HTMLElement) => {
   )
 }
 
+/** 各流式尾段容器最近一次渲染的 markdown 原文，用于渲染前短路去重 */
+const lastStreamTailMarkdown = new WeakMap<HTMLElement, string>()
+
 /**
  * 流式尾段就地更新：pending 图表/HTML 占位节点保留在文档中，仅同步前缀与 hidden source，
  * 避免 v-html 整段替换导致流光动画重启。
+ *
+ * 注意：尾段每帧都在增长、内容几乎不重复，绝不能走 renderMarkdownCached——
+ * 否则 LRU 会被数百份「接近全文的尾段快照」（原文 + HTML 双份大字符串）占满，
+ * 既挤掉稳定消息的缓存，长回答时还会导致内存溢出。
  */
 export const updateStreamTailSegmentInPlace = (
   root: HTMLElement,
@@ -677,10 +701,10 @@ export const updateStreamTailSegmentInPlace = (
   appendEllipsis = false
 ): void => {
   const text = markdown + (appendEllipsis ? '...' : '')
-  const nextHtml = renderMarkdownCached(text)
-  if (root.getAttribute(MARKDOWN_TAIL_HTML_ATTR) === nextHtml) {
+  if (lastStreamTailMarkdown.get(root) === text) {
     return
   }
+  const nextHtml = renderMarkdown(text)
 
   const template = document.createElement('div')
   template.innerHTML = nextHtml
@@ -692,15 +716,17 @@ export const updateStreamTailSegmentInPlace = (
     syncChildNodesBefore(root, oldPending, template, newPending)
     syncBlockSource(oldPending, newPending)
     removeChildNodesAfter(root, oldPending)
-    root.setAttribute(MARKDOWN_TAIL_HTML_ATTR, nextHtml)
+    lastStreamTailMarkdown.set(root, text)
     return
   }
 
   root.innerHTML = nextHtml
-  root.setAttribute(MARKDOWN_TAIL_HTML_ATTR, nextHtml)
+  lastStreamTailMarkdown.set(root, text)
 }
 
 let streamTailUpdateRafId = 0
+let streamTailThrottleTimer = 0
+let streamTailLastRunAt = 0
 let pendingStreamTailUpdate:
   | {
       root: HTMLElement
@@ -709,7 +735,23 @@ let pendingStreamTailUpdate:
     }
   | null = null
 
-/** rAF 合并流式 token，避免每个 token 都跑完整 markdown-it + DOM diff */
+const flushPendingStreamTailUpdate = () => {
+  streamTailUpdateRafId = 0
+  streamTailThrottleTimer = 0
+  const pending = pendingStreamTailUpdate
+  pendingStreamTailUpdate = null
+  if (!pending) {
+    return
+  }
+  streamTailLastRunAt = Date.now()
+  updateStreamTailSegmentInPlace(
+    pending.root,
+    pending.markdown,
+    pending.appendEllipsis
+  )
+}
+
+/** rAF + 时间节流合并流式 token，避免每帧对增长中的尾段跑完整 markdown-it + innerHTML */
 export const scheduleUpdateStreamTailSegmentInPlace = (
   root: HTMLElement,
   markdown: string,
@@ -722,41 +764,42 @@ export const scheduleUpdateStreamTailSegmentInPlace = (
       cancelAnimationFrame(streamTailUpdateRafId)
       streamTailUpdateRafId = 0
     }
-    const pending = pendingStreamTailUpdate
-    pendingStreamTailUpdate = null
-    if (pending) {
-      updateStreamTailSegmentInPlace(
-        pending.root,
-        pending.markdown,
-        pending.appendEllipsis
-      )
+    if (streamTailThrottleTimer) {
+      clearTimeout(streamTailThrottleTimer)
+      streamTailThrottleTimer = 0
     }
+    flushPendingStreamTailUpdate()
     return
   }
-  if (streamTailUpdateRafId) {
-    return
-  }
-  streamTailUpdateRafId = requestAnimationFrame(() => {
-    streamTailUpdateRafId = 0
-    const pending = pendingStreamTailUpdate
-    pendingStreamTailUpdate = null
-    if (!pending) {
+
+  const scheduleAfterThrottle = () => {
+    if (streamTailUpdateRafId) {
       return
     }
-    updateStreamTailSegmentInPlace(
-      pending.root,
-      pending.markdown,
-      pending.appendEllipsis
-    )
-  })
+    streamTailUpdateRafId = requestAnimationFrame(flushPendingStreamTailUpdate)
+  }
+
+  const elapsed = Date.now() - streamTailLastRunAt
+  if (elapsed >= STREAM_TAIL_MIN_INTERVAL_MS) {
+    scheduleAfterThrottle()
+    return
+  }
+
+  if (streamTailThrottleTimer) {
+    return
+  }
+  streamTailThrottleTimer = window.setTimeout(() => {
+    streamTailThrottleTimer = 0
+    scheduleAfterThrottle()
+  }, STREAM_TAIL_MIN_INTERVAL_MS - elapsed)
 }
 
-/** 聊天页 idle 预加载 mermaid/vega/plantuml，降低首图冷启动延迟 */
+/** 聊天页 idle 预加载图表 Worker 运行时，降低首图冷启动延迟 */
 export const preloadDiagramRuntimes = () => {
-  void getMermaidApi()
-  void getVegaEmbed().catch(() => {})
-  void getPlantUmlRenderer().catch(() => {})
+  warmupDiagramRenderWorker()
 }
+
+export { resetDiagramRenderWorker } from './diagramRenderWorkerClient'
 
 /** 异步渲染 Markdown 图表块时的选项 */
 export type RenderMarkdownBlocksOptions = {
@@ -1196,134 +1239,6 @@ export const getMarkdownHtmlBlockSource = (block: Element) =>
 export const buildMarkdownHtmlPreviewSrcdoc = (source: string) =>
   buildHtmlPreviewDocument(source)
 
-/**
- * 为 pie 图中未加引号的扇区标签补引号（含括号、空格时 lexer 会失败）。
- */
-const quotePieSliceLines = (source: string) => {
-  if (!/^\s*pie\b/im.test(source)) {
-    return source
-  }
-  return source
-    .split('\n')
-    .map((line) => {
-      const match = line.match(/^(\s*)(.+?)\s*:\s*([\d.]+)\s*$/)
-      if (!match) {
-        return line
-      }
-      const [, indent, label, value] = match
-      const trimmed = label.trim()
-      if (/^title\b/i.test(trimmed)) {
-        return line
-      }
-      const unquoted = trimmed.replace(/^\\?["']|["']$/g, '').trim()
-      if (!unquoted) {
-        return line
-      }
-      return `${indent}"${unquoted}" : ${value}`
-    })
-    .join('\n')
-}
-
-/** 统计方括号列表中的项数（尊重引号内的逗号）。 */
-const countBracketListItems = (listContent: string) => {
-  let count = 0
-  let depth = 0
-  let inQuote: '"' | '\'' | null = null
-  let hasContent = false
-
-  for (let i = 0; i < listContent.length; i++) {
-    const ch = listContent[i]
-    if (inQuote) {
-      if (ch === inQuote && listContent[i - 1] !== '\\') {
-        inQuote = null
-      }
-      if (!inQuote) {
-        hasContent = true
-      }
-      continue
-    }
-    if (ch === '"' || ch === '\'') {
-      inQuote = ch
-      continue
-    }
-    if (ch === '[') {
-      depth++
-      hasContent = true
-      continue
-    }
-    if (ch === ']') {
-      depth = Math.max(0, depth - 1)
-      continue
-    }
-    if (ch === ',' && depth === 0) {
-      if (hasContent) {
-        count++
-      }
-      hasContent = false
-      continue
-    }
-    if (!/\s/.test(ch)) {
-      hasContent = true
-    }
-  }
-  if (hasContent) {
-    count++
-  }
-  return count
-}
-
-/** xychart 声明首行（仅该行可携带 horizontal 关键字）。 */
-const getXychartDeclarationLine = (source: string) =>
-  source.match(/^\s*xychart(?:-beta)?[^\n]*/im)?.[0] ?? ''
-
-/** 解析 xychart 的 x-axis 类目数量。 */
-const countXychartCategories = (source: string) => {
-  const match = source.match(/^\s*x-axis\b[^\[]*\[([\s\S]*?)\]/im)
-  if (!match) {
-    return 0
-  }
-  return countBracketListItems(match[1])
-}
-
-/** 解析 xychart 的 bar 数据点数量。 */
-const countXychartBarValues = (source: string) => {
-  const match = source.match(/^\s*bar\b[^\[]*\[([\s\S]*?)\]/im)
-  if (!match) {
-    return 0
-  }
-  return countBracketListItems(match[1])
-}
-
-/** 类目计数取 x-axis 与 bar 的较大值，避免「标题 TOP15、x-axis 仅 10 项」漏触发横向。 */
-const getXychartCategoryCount = (source: string) =>
-  Math.max(countXychartCategories(source), countXychartBarValues(source))
-
-/**
- * 多类目竖向 xychart 自动改为 horizontal，避免 X 轴标签重叠。
- */
-const normalizeXychartOrientation = (source: string) => {
-  if (!/^\s*xychart(?:-beta)?\b/im.test(source)) {
-    return source
-  }
-  if (/\bhorizontal\b/i.test(getXychartDeclarationLine(source))) {
-    return source
-  }
-  if (getXychartCategoryCount(source) < XYCHART_HORIZONTAL_MIN_CATEGORIES) {
-    return source
-  }
-  return source.replace(
-    /^(\s*xychart(?:-beta)?)(?!\s+horizontal)\b/im,
-    '$1 horizontal'
-  )
-}
-
-const isXychartSource = (source: string) =>
-  /^\s*xychart(?:-beta)?\b/im.test(source)
-
-const isXychartHorizontal = (source: string) =>
-  isXychartSource(source) &&
-  /\bhorizontal\b/i.test(getXychartDeclarationLine(source))
-
 let textMeasureCanvas: HTMLCanvasElement | undefined
 
 /** 解析 Mermaid text 节点 transform 中的 translate(x, y)。 */
@@ -1605,254 +1520,25 @@ const applyXychartDiagramPresentation = (
   }
 }
 
-/**
- * 将同一行内串联的多条 flowchart 边拆成多行。
- * LLM 常输出 `A --> B{x} B -->|y| C` 导致解析器在 B{x} 后期望换行却遇到下一个节点。
- */
-const splitChainedFlowchartEdgesOnLine = (line: string) => {
-  const indent = line.match(/^[\t ]*/)?.[0] ?? ''
-  const splitOnce = (input: string) =>
-    input.replace(
-      /([\]\)\}])([ \t]+)([A-Za-z_][\w-]*)([ \t]+(?:-->|---|===|-\.->|==>|--o|--x)(?:\|[^|\n]+\|)?)/g,
-      '$1\n$3$4'
-    )
-
-  let cur = line
-  let prev = ''
-  while (prev !== cur) {
-    prev = cur
-    cur = splitOnce(cur)
+const abortBlockRender = (block: Element) => {
+  const controller = blockAbortControllers.get(block)
+  if (controller) {
+    controller.abort()
+    blockAbortControllers.delete(block)
   }
-
-  return cur
-    .split('\n')
-    .map((part, index) => (index === 0 ? part : indent + part.trimStart()))
-    .join('\n')
 }
 
-const shouldNormalizeFlowchartLine = (trimmed: string) => {
-  if (!trimmed || trimmed.startsWith('%%')) {
-    return false
-  }
-  if (
-    /^(?:style|classDef|class|linkStyle|click|subgraph|end)\b/i.test(trimmed)
-  ) {
-    return false
-  }
-  const arrowMatches = trimmed.match(
-    /(?:-->|---|===|-\.->|==>|--o|--x)/g
-  )
-  return (arrowMatches?.length ?? 0) >= 2
+const beginBlockRender = (block: Element): AbortSignal => {
+  abortBlockRender(block)
+  const controller = new AbortController()
+  blockAbortControllers.set(block, controller)
+  return controller.signal
 }
 
-const countLeadingSpaces = (line: string) => {
-  const prefix = line.match(/^[\t ]*/)?.[0] ?? ''
-  let n = 0
-  for (const ch of prefix) {
-    n += ch === '\t' ? 4 : 1
-  }
-  return n
-}
-
-/** 从已有缩进推断 mindmap 每层步长（常见为 2 或 4） */
-const detectMindmapIndentStep = (lines: string[]) => {
-  const indents = [
-    ...new Set(
-      lines.map((l) => countLeadingSpaces(l)).filter((i) => i > 0)
-    )
-  ].sort((a, b) => a - b)
-  if (indents.length >= 2 && indents[1] - indents[0] > 0) {
-    return indents[1] - indents[0]
-  }
-  return 2
-}
-
-/**
- * 修正 mindmap 缩进：LLM 常把子节点顶格（如「工具调用」），会被当成第二个 root 导致渲染失败。
- */
-const normalizeMindmapIndentation = (source: string) => {
-  if (!/^\s*mindmap\b/im.test(source)) {
-    return source
-  }
-
-  const lines = source.split('\n')
-  const indentStep = detectMindmapIndentStep(lines)
-  const out: string[] = []
-  const stack: number[] = []
-  let rootIndent = -1
-  let seenRoot = false
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) {
-      out.push(line)
-      continue
-    }
-    if (/^mindmap$/i.test(trimmed)) {
-      out.push(line)
-      continue
-    }
-
-    const indent = countLeadingSpaces(line)
-
-    if (!seenRoot) {
-      seenRoot = true
-      rootIndent = indent
-      stack.length = 0
-      stack.push(rootIndent)
-      out.push(line)
-      continue
-    }
-
-    let fixedIndent = indent
-
-    if (indent <= rootIndent) {
-      fixedIndent = stack[stack.length - 1] + indentStep
-    } else {
-      while (stack.length > 1 && indent <= stack[stack.length - 1]) {
-        stack.pop()
-      }
-      if (indent <= stack[stack.length - 1]) {
-        fixedIndent = stack[stack.length - 1] + indentStep
-      }
-    }
-
-    while (stack.length > 1 && fixedIndent <= stack[stack.length - 1]) {
-      stack.pop()
-    }
-    stack.push(fixedIndent)
-    out.push(' '.repeat(fixedIndent) + trimmed)
-  }
-
-  return out.join('\n')
-}
-
-/**
- * 将同一行内并列的多个 flowchart 节点定义拆成多行。
- * LLM 常输出 `NE["网元"]  CHASSIS["机框"]`，解析器在首节点后期望换行却遇到下一个节点 ID。
- */
-const splitMultipleFlowchartNodeDefsOnLine = (line: string) => {
-  const indent = line.match(/^[\t ]*/)?.[0] ?? ''
-  const nodePatterns = [
-    /([A-Za-z_][\w-]*\[[^\]]*\])([ \t]+)(?=[A-Za-z_][\w-]*)/g,
-    /([A-Za-z_][\w-]*\([^)]*\))([ \t]+)(?=[A-Za-z_][\w-]*)/g,
-    /([A-Za-z_][\w-]*\{[^}]*\})([ \t]+)(?=[A-Za-z_][\w-]*)/g
-  ]
-
-  let cur = line
-  let prev = ''
-  while (prev !== cur) {
-    prev = cur
-    for (const pattern of nodePatterns) {
-      cur = cur.replace(pattern, '$1\n')
-    }
-  }
-
-  return cur
-    .split('\n')
-    .map((part, index) => (index === 0 ? part : indent + part.trimStart()))
-    .join('\n')
-}
-
-const shouldNormalizeFlowchartNodeLine = (trimmed: string) => {
-  if (!trimmed || trimmed.startsWith('%%')) {
-    return false
-  }
-  if (
-    /^(?:style|classDef|class|linkStyle|click|subgraph|end|graph|flowchart)\b/i.test(
-      trimmed
-    )
-  ) {
-    return false
-  }
-  const nodeLike =
-    /[A-Za-z_][\w-]*(?:\[[^\]]*\]|\([^)]*\)|\{[^}]*\})/g
-  const matches = trimmed.match(nodeLike)
-  return (matches?.length ?? 0) >= 2
-}
-
-/** 仅对 graph / flowchart 图：把一行多个节点定义拆成多行 */
-const normalizeFlowchartMultilineNodeDefs = (source: string) => {
-  if (!/^\s*(?:graph|flowchart)\s/im.test(source)) {
-    return source
-  }
-  return source
-    .split('\n')
-    .map((line) => {
-      const trimmed = line.trim()
-      if (!shouldNormalizeFlowchartNodeLine(trimmed)) {
-        return line
-      }
-      return splitMultipleFlowchartNodeDefsOnLine(line)
-    })
-    .join('\n')
-}
-
-/** 仅对 graph / flowchart 图：把一行多条边拆成多行 */
-const normalizeFlowchartMultilineEdges = (source: string) => {
-  if (!/^\s*(?:graph|flowchart)\s/im.test(source)) {
-    return source
-  }
-  return source
-    .split('\n')
-    .map((line) => {
-      const trimmed = line.trim()
-      if (!shouldNormalizeFlowchartLine(trimmed)) {
-        return line
-      }
-      return splitChainedFlowchartEdgesOnLine(line)
-    })
-    .join('\n')
-}
-
-/**
- * 修正 subgraph 中文标签写法。LLM 常输出 `subgraph入库侧` 或 `subgraph 查询侧`，
- * 解析器要求 `subgraph id [标签]`（id 为 ASCII，标签可含中文）。
- */
-const normalizeFlowchartSubgraphLabels = (source: string) => {
-  if (!/^\s*(?:graph|flowchart)\s/im.test(source)) {
-    return source
-  }
-  let counter = 0
-  return source.replace(
-    /^(\s*)subgraph\s*([^\[\n]+?)\s*$/gm,
-    (match, indent: string, rest: string) => {
-      const trimmed = rest.trim()
-      if (!trimmed || /^end\b/i.test(trimmed)) {
-        return match
-      }
-      if (/^[A-Za-z_][\w-]*\s*\[/.test(trimmed)) {
-        return match
-      }
-      counter += 1
-      return `${indent}subgraph _sg${counter} [${trimmed}]`
-    }
-  )
-}
-
-/**
- * 规范化 LLM 生成的 Mermaid 源码，修复弯引号、全角冒号、转义引号等常见导致解析失败的问题。
- */
-const normalizeMermaidSource = (source: string) => {
-  let text = source
-    .replace(/\r\n/g, '\n')
-    .replace(/&quot;/gi, '"')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/[\u201c\u201d\u201e\u201f\u2033\u2036]/g, '"')
-    .replace(/[\u2018\u2019\u201a\u201b\u2032\u2035]/g, '\'')
-    .replace(/\\"/g, '"')
-    .replace(/\\'/g, '\'')
-    .replace(/：/g, ':')
-    .replace(/\u00a0/g, ' ')
-  text = normalizeMindmapIndentation(text)
-  text = normalizeFlowchartSubgraphLabels(text)
-  text = normalizeFlowchartMultilineNodeDefs(text)
-  text = normalizeFlowchartMultilineEdges(text)
-  text = quotePieSliceLines(text)
-  return normalizeXychartOrientation(text)
-}
+const isRenderAborted = (error: unknown, signal: AbortSignal) =>
+  signal.aborted ||
+  (error instanceof Error && error.name === 'DiagramRenderWorkerError' &&
+    error.message === 'Diagram render aborted')
 
 const setBlockError = (block: Element, error: unknown) => {
   const body = block.querySelector<HTMLElement>('.md-diagram-body')
@@ -1894,15 +1580,75 @@ const getMermaidApi = async () => {
   return mermaidApi
 }
 
-/**
- * 判断 Mermaid 返回的 SVG 是否为内置错误图。
- * 不可用 includes('error-icon')：正常图表的 <style> 里也会定义 .error-icon 样式。
- */
-const isMermaidErrorSvg = (svg: string) =>
-  /aria-roledescription=["']error["']/.test(svg) ||
-  /<(?:g|svg)[^>]*\sclass=["'][^"']*\berror-icon\b/.test(svg)
+const renderMermaidMarkupFallback = async (source: string) => {
+  const normalized = normalizeMermaidSource(source)
+  const mermaid = await getMermaidApi()
+  const id = `md-mermaid-${Date.now()}-${++mermaidSeq}`
+  const { svg } = await mermaid.render(id, normalized)
+  if (isMermaidErrorSvg(svg)) {
+    throw new Error('Mermaid 图表语法无效')
+  }
+  return svg
+}
 
-const renderMermaidBlock = async (block: Element) => {
+const renderPlantUmlMarkupFallback = async (source: string) => {
+  const renderer = await getPlantUmlRenderer()
+  return renderer(injectPlantUmlTheme(source))
+}
+
+const renderVegaLiteMarkupFallback = async (source: string) => {
+  const spec = parseVegaLiteSpec(source)
+  const embed = await getVegaEmbed()
+  const host = document.createElement('div')
+  host.className = 'md-vegalite-host-fallback'
+  host.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none'
+  document.body.appendChild(host)
+  try {
+    await embed(host, spec, {
+      actions: false,
+      renderer: 'svg',
+      theme: 'quartz',
+      config: getVegaLiteEmbedConfig(),
+      tooltip: { theme: 'light' }
+    })
+    const vegaSvg = host.querySelector('svg')
+    if (!vegaSvg) {
+      throw new Error('Vega-Lite 渲染未生成 SVG')
+    }
+    return vegaSvg.outerHTML
+  } finally {
+    host.remove()
+  }
+}
+
+registerDiagramRenderFallback(async (type, source) => {
+  switch (type) {
+    case 'mermaid':
+      return renderMermaidMarkupFallback(source)
+    case 'plantuml':
+      return renderPlantUmlMarkupFallback(source)
+    case 'vegalite':
+      return renderVegaLiteMarkupFallback(source)
+    default:
+      throw new Error(`Unsupported diagram type: ${type satisfies never}`)
+  }
+})
+
+const mountDiagramMarkup = (body: HTMLElement, markup: string) => {
+  const trimmed = markup.trim()
+  if (trimmed.startsWith('<svg')) {
+    const template = document.createElement('template')
+    template.innerHTML = trimmed
+    const svg = template.content.firstElementChild
+    if (svg) {
+      body.replaceChildren(svg)
+      return
+    }
+  }
+  body.innerHTML = markup
+}
+
+const renderMermaidBlock = async (block: Element, signal: AbortSignal) => {
   const rawSource = getSourceFromBlock(block)
   const body = block.querySelector<HTMLElement>('.md-diagram-body')
   if (!rawSource.trim() || !body) {
@@ -1911,12 +1657,7 @@ const renderMermaidBlock = async (block: Element) => {
 
   const source = normalizeMermaidSource(rawSource)
   applyXychartDiagramPresentation(block, body, source)
-  const mermaid = await getMermaidApi()
-  const id = `md-mermaid-${Date.now()}-${++mermaidSeq}`
-  const { svg, bindFunctions } = await mermaid.render(id, source)
-  if (isMermaidErrorSvg(svg)) {
-    throw new Error('Mermaid 图表语法无效')
-  }
+  const svg = await renderDiagramInWorker('mermaid', source, signal)
   body.innerHTML = svg
   const renderedSvg = body.querySelector('svg')
   if (renderedSvg instanceof SVGElement && isXychartSource(source)) {
@@ -1932,7 +1673,6 @@ const renderMermaidBlock = async (block: Element) => {
   } else {
     scheduleFitDiagramSvg(body)
   }
-  bindFunctions?.(body)
 }
 
 const loadPlantUmlModule = () => {
@@ -1959,115 +1699,19 @@ const getPlantUmlRenderer = async () => {
   return plantUmlRenderer
 }
 
-const renderPlantUmlBlock = async (block: Element) => {
+const renderPlantUmlBlock = async (block: Element, signal: AbortSignal) => {
   const source = getSourceFromBlock(block)
   const body = block.querySelector<HTMLElement>('.md-diagram-body')
   if (!source.trim() || !body) {
     return
   }
 
-  const renderer = await getPlantUmlRenderer()
-  body.innerHTML = await renderer(injectPlantUmlTheme(source))
+  const markup = await renderDiagramInWorker('plantuml', source, signal)
+  body.innerHTML = markup
   scheduleFitDiagramSvg(body)
 }
 
-/**
- * 规范化 LLM 生成的 Vega-Lite JSON 源码，修复弯引号、HTML 实体等常见解析问题。
- */
-const normalizeVegaLiteSource = (source: string) =>
-  source
-    .replace(/^\uFEFF/, '')
-    .replace(/\r\n/g, '\n')
-    .replace(/&quot;/gi, '"')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/[\u201c\u201d\u201e\u201f\u2033\u2036]/g, '"')
-    .replace(/[\u2018\u2019\u201a\u201b\u2032\u2035]/g, '\'')
-    .replace(/\\"/g, '"')
-    .replace(/\\'/g, '\'')
-    .trim()
-
-/** 多类目 nominal/ordinal X 轴自动倾斜标签（不覆盖 Agent 已配置的 axis）。 */
-const enhanceVegaLiteSpec = (spec: Record<string, unknown>) => {
-  const encoding = spec.encoding as Record<string, unknown> | undefined
-  if (!encoding?.x || typeof encoding.x !== 'object' || Array.isArray(encoding.x)) {
-    return spec
-  }
-  const xEnc = encoding.x as Record<string, unknown>
-  const xType = xEnc.type as string | undefined
-  if (xType && xType !== 'nominal' && xType !== 'ordinal') {
-    return spec
-  }
-
-  let categoryCount = 0
-  const data = spec.data as { values?: unknown[] } | undefined
-  if (Array.isArray(data?.values)) {
-    const field = typeof xEnc.field === 'string' ? xEnc.field : ''
-    if (field) {
-      const unique = new Set(
-        data.values.map((row) =>
-          row && typeof row === 'object'
-            ? (row as Record<string, unknown>)[field]
-            : undefined
-        )
-      )
-      categoryCount = unique.size
-    } else {
-      categoryCount = data.values.length
-    }
-  }
-  if (categoryCount < VEGA_LITE_MULTI_CATEGORY_THRESHOLD) {
-    return spec
-  }
-
-  const existingAxis =
-    xEnc.axis && typeof xEnc.axis === 'object' && !Array.isArray(xEnc.axis)
-      ? (xEnc.axis as Record<string, unknown>)
-      : {}
-  if (existingAxis.labelAngle != null) {
-    return spec
-  }
-
-  return {
-    ...spec,
-    encoding: {
-      ...encoding,
-      x: {
-        ...xEnc,
-        axis: {
-          ...existingAxis,
-          labelAngle: -45,
-          labelLimit: 120
-        }
-      }
-    }
-  }
-}
-
-/**
- * 将代码块内容解析为 Vega-Lite 规格对象。
- */
-const parseVegaLiteSpec = (source: string): Record<string, unknown> => {
-  const text = normalizeVegaLiteSource(source)
-  if (!text) {
-    throw new Error('Vega-Lite 规格不能为空')
-  }
-  try {
-    const spec = JSON.parse(text) as unknown
-    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
-      throw new Error('Vega-Lite 规格必须是 JSON 对象')
-    }
-    return enhanceVegaLiteSpec(spec as Record<string, unknown>)
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith('Vega-Lite')) {
-      throw error
-    }
-    throw new Error('Vega-Lite 规格必须是合法 JSON')
-  }
-}
-
-/** 懒加载 vega-embed，仅在首次渲染 Vega-Lite 块时拉取 */
+/** 懒加载 vega-embed，仅在 Worker fallback 渲染 Vega-Lite 块时拉取 */
 const getVegaEmbed = async (): Promise<VegaEmbedFn> => {
   if (!vegaEmbedFn) {
     const mod = await import('vega-embed')
@@ -2081,31 +1725,15 @@ const getVegaEmbed = async (): Promise<VegaEmbedFn> => {
 }
 
 /** 渲染 Vega-Lite 代码块为 SVG，并接入图表缩放逻辑 */
-const renderVegaLiteBlock = async (block: Element) => {
+const renderVegaLiteBlock = async (block: Element, signal: AbortSignal) => {
   const rawSource = getSourceFromBlock(block)
   const body = block.querySelector<HTMLElement>('.md-diagram-body')
   if (!rawSource.trim() || !body) {
     return
   }
 
-  const spec = parseVegaLiteSpec(rawSource)
-  const embed = await getVegaEmbed()
-  const host = document.createElement('div')
-  host.className = 'md-vegalite-host'
-  body.replaceChildren(host)
-  await embed(host, spec, {
-    actions: false,
-    renderer: 'svg',
-    theme: 'quartz',
-    config: getVegaLiteEmbedConfig(),
-    tooltip: { theme: 'light' }
-  })
-  // vega-embed 把 svg 包进 .vega-embed 容器，svg 不是 body 直接子节点；
-  // 提到 body 直下，便于 fit 测量/缩放，并去掉空的中间容器避免影响居中与高度。
-  const vegaSvg = host.querySelector('svg')
-  if (vegaSvg) {
-    body.replaceChildren(vegaSvg)
-  }
+  const markup = await renderDiagramInWorker('vegalite', rawSource, signal)
+  mountDiagramMarkup(body, markup)
   scheduleFitDiagramSvg(body)
 }
 
@@ -2465,6 +2093,7 @@ const renderHtmlPreviewBlock = (block: Element) => {
 
 /** 图表块已按旧版逻辑渲染时，重置为占位以便用当前 revision 重绘。 */
 const resetStaleDiagramBlock = (block: Element) => {
+  abortBlockRender(block)
   block.removeAttribute(MARKDOWN_RENDERED_ATTR)
   block.classList.remove(
     'md-diagram-error',
@@ -2526,20 +2155,28 @@ const renderBlock = async (
   }
 
   block.setAttribute(MARKDOWN_RENDERING_ATTR, 'true')
+  const signal = beginBlockRender(block)
   try {
     if (type === 'html') {
       renderHtmlPreviewBlock(block)
     } else if (type === 'mermaid') {
-      await renderMermaidBlock(block)
+      await renderMermaidBlock(block, signal)
     } else if (type === 'plantuml') {
-      await renderPlantUmlBlock(block)
+      await renderPlantUmlBlock(block, signal)
     } else if (type === 'vegalite') {
-      await renderVegaLiteBlock(block)
+      await renderVegaLiteBlock(block, signal)
+    }
+    if (signal.aborted) {
+      return undefined
     }
     block.setAttribute(MARKDOWN_RENDERED_ATTR, 'true')
     block.setAttribute(MARKDOWN_REVISION_ATTR, MARKDOWN_RENDERER_REVISION)
+    blockAbortControllers.delete(block)
     return getDiagramBodyForRefit(block)
   } catch (error) {
+    if (isRenderAborted(error, signal)) {
+      return undefined
+    }
     setBlockError(block, error)
     return undefined
   } finally {
@@ -2686,6 +2323,17 @@ export const resetMarkdownRendererForTest = () => {
     batchRefitRafId = 0
   }
   renderMarkdownBlocksChain = Promise.resolve()
+  if (streamTailUpdateRafId) {
+    cancelAnimationFrame(streamTailUpdateRafId)
+    streamTailUpdateRafId = 0
+  }
+  if (streamTailThrottleTimer) {
+    clearTimeout(streamTailThrottleTimer)
+    streamTailThrottleTimer = 0
+  }
+  streamTailLastRunAt = 0
+  pendingStreamTailUpdate = null
+  resetDiagramRenderWorker()
 }
 
 /** 单测用：xychart 横向修正与类目计数 */

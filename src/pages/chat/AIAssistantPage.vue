@@ -27,6 +27,11 @@
 		/>
 	</div>
 </template>
+<script lang="ts">
+export default {
+	name: 'pageChatAssistant'
+}
+</script>
 <script setup lang="ts">
 import ChatView from './components/ChatView.vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'

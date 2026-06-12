@@ -1,0 +1,330 @@
+import type { DiagramRenderType } from './diagramSourceNormalize'
+
+export type DiagramRenderFallback = (
+  type: DiagramRenderType,
+  source: string
+) => Promise<string>
+
+type PendingTask = {
+  id: string
+  type: DiagramRenderType
+  source: string
+  signal?: AbortSignal
+  onAbort: () => void
+  resolve: (markup: string) => void
+  reject: (error: Error) => void
+}
+
+const WORKER_RECYCLE_AFTER = 18
+const DEFAULT_CONCURRENCY = 2
+const WORKER_REQUEST_TIMEOUT_MS = 120_000
+
+let worker: Worker | undefined
+let workerDisabled = false
+let completedRenderCount = 0
+let inFlightCount = 0
+let taskSeq = 0
+let fallbackRenderer: DiagramRenderFallback | undefined
+let warmupSent = false
+
+const queue: PendingTask[] = []
+const pendingById = new Map<string, PendingTask>()
+const timeoutById = new Map<string, ReturnType<typeof setTimeout>>()
+
+class DiagramRenderWorkerError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'DiagramRenderWorkerError'
+  }
+}
+
+const rejectTask = (task: PendingTask, error: Error) => {
+  pendingById.delete(task.id)
+  const timer = timeoutById.get(task.id)
+  if (timer) {
+    clearTimeout(timer)
+    timeoutById.delete(task.id)
+  }
+  if (task.signal) {
+    task.signal.removeEventListener('abort', task.onAbort)
+  }
+  task.reject(error)
+}
+
+const resolveTask = (task: PendingTask, markup: string) => {
+  pendingById.delete(task.id)
+  const timer = timeoutById.get(task.id)
+  if (timer) {
+    clearTimeout(timer)
+    timeoutById.delete(task.id)
+  }
+  if (task.signal) {
+    task.signal.removeEventListener('abort', task.onAbort)
+  }
+  task.resolve(markup)
+}
+
+const scheduleTaskTimeout = (task: PendingTask) => {
+  const timer = setTimeout(() => {
+    if (!pendingById.has(task.id)) {
+      return
+    }
+    rejectTask(task, new DiagramRenderWorkerError('Diagram worker render timeout'))
+    recycleWorker()
+    drainQueue()
+  }, WORKER_REQUEST_TIMEOUT_MS)
+  timeoutById.set(task.id, timer)
+}
+
+const attachAbortHandler = (task: PendingTask) => {
+  if (!task.signal) {
+    return
+  }
+  task.onAbort = () => {
+    rejectTask(task, new DiagramRenderWorkerError('Diagram render aborted'))
+    inFlightCount = Math.max(0, inFlightCount - 1)
+    drainQueue()
+  }
+  if (task.signal.aborted) {
+    task.onAbort()
+    return
+  }
+  task.signal.addEventListener('abort', task.onAbort, { once: true })
+}
+
+const createWorker = (): Worker | undefined => {
+  if (typeof Worker === 'undefined' || workerDisabled) {
+    return undefined
+  }
+  try {
+    return new Worker(
+      new URL('../workers/diagramRender.worker.ts', import.meta.url),
+      { type: 'module' }
+    )
+  } catch {
+    workerDisabled = true
+    return undefined
+  }
+}
+
+const ensureWorker = (): Worker | undefined => {
+  if (workerDisabled) {
+    return undefined
+  }
+  if (!worker) {
+    worker = createWorker()
+    if (!worker) {
+      return undefined
+    }
+    worker.addEventListener('message', handleWorkerMessage)
+    worker.addEventListener('error', handleWorkerError)
+  }
+  return worker
+}
+
+const handleWorkerError = () => {
+  const failedTasks = [...pendingById.values()]
+  recycleWorker(true)
+  for (const task of failedTasks) {
+    inFlightCount = Math.max(0, inFlightCount - 1)
+    void finishTaskWithFallback(task, 'Diagram worker crashed')
+  }
+  drainQueue()
+}
+
+const handleWorkerMessage = (event: MessageEvent) => {
+  const data = event.data
+  if (!data || typeof data !== 'object') {
+    return
+  }
+
+  if (data.kind === 'warmup-done') {
+    return
+  }
+
+  if (data.kind !== 'result' || typeof data.id !== 'string') {
+    return
+  }
+
+  const task = pendingById.get(data.id)
+  if (!task) {
+    return
+  }
+
+  inFlightCount = Math.max(0, inFlightCount - 1)
+  completedRenderCount += 1
+
+  if (data.ok && typeof data.markup === 'string') {
+    resolveTask(task, data.markup)
+  } else {
+    void finishTaskWithFallback(
+      task,
+      typeof data.error === 'string' ? data.error : 'Diagram worker render failed'
+    ).finally(() => {
+      drainQueue()
+    })
+  }
+
+  if (completedRenderCount >= WORKER_RECYCLE_AFTER) {
+    recycleWorker()
+  }
+
+  drainQueue()
+}
+
+const recycleWorker = (fromError = false) => {
+  if (worker) {
+    worker.removeEventListener('message', handleWorkerMessage)
+    worker.removeEventListener('error', handleWorkerError)
+    worker.terminate()
+    worker = undefined
+  }
+  completedRenderCount = 0
+  warmupSent = false
+  if (fromError) {
+    workerDisabled = false
+  }
+}
+
+const finishTaskWithFallback = async (
+  task: PendingTask,
+  workerError?: string
+) => {
+  pendingById.delete(task.id)
+  const timer = timeoutById.get(task.id)
+  if (timer) {
+    clearTimeout(timer)
+    timeoutById.delete(task.id)
+  }
+  if (task.signal) {
+    task.signal.removeEventListener('abort', task.onAbort)
+  }
+
+  if (task.signal?.aborted) {
+    task.reject(new DiagramRenderWorkerError('Diagram render aborted'))
+    return
+  }
+
+  if (!fallbackRenderer) {
+    task.reject(
+      new DiagramRenderWorkerError(
+        workerError || 'Diagram worker unavailable and no fallback registered'
+      )
+    )
+    return
+  }
+
+  try {
+    const markup = await fallbackRenderer(task.type, task.source)
+    if (task.signal?.aborted) {
+      task.reject(new DiagramRenderWorkerError('Diagram render aborted'))
+      return
+    }
+    task.resolve(markup)
+  } catch (error) {
+    task.reject(
+      error instanceof Error
+        ? error
+        : new DiagramRenderWorkerError(
+            workerError || String(error || 'Fallback render failed')
+          )
+    )
+  }
+}
+
+const dispatchToWorker = (task: PendingTask) => {
+  const activeWorker = ensureWorker()
+  if (!activeWorker) {
+    inFlightCount += 1
+    void finishTaskWithFallback(task, 'Diagram worker unavailable').finally(() => {
+      inFlightCount = Math.max(0, inFlightCount - 1)
+      drainQueue()
+    })
+    return
+  }
+
+  inFlightCount += 1
+  pendingById.set(task.id, task)
+  attachAbortHandler(task)
+  if (task.signal?.aborted) {
+    inFlightCount = Math.max(0, inFlightCount - 1)
+    pendingById.delete(task.id)
+    drainQueue()
+    return
+  }
+  scheduleTaskTimeout(task)
+  activeWorker.postMessage({
+    kind: 'render',
+    id: task.id,
+    type: task.type,
+    source: task.source
+  })
+}
+
+const drainQueue = () => {
+  while (inFlightCount < DEFAULT_CONCURRENCY && queue.length > 0) {
+    const task = queue.shift()
+    if (!task) {
+      return
+    }
+    if (task.signal?.aborted) {
+      task.reject(new DiagramRenderWorkerError('Diagram render aborted'))
+      continue
+    }
+    dispatchToWorker(task)
+  }
+}
+
+export const registerDiagramRenderFallback = (
+  renderer: DiagramRenderFallback
+) => {
+  fallbackRenderer = renderer
+}
+
+export const warmupDiagramRenderWorker = () => {
+  const activeWorker = ensureWorker()
+  if (!activeWorker || warmupSent) {
+    return
+  }
+  warmupSent = true
+  activeWorker.postMessage({ kind: 'warmup' })
+}
+
+export const resetDiagramRenderWorker = () => {
+  while (queue.length > 0) {
+    const task = queue.shift()
+    if (task) {
+      task.reject(new DiagramRenderWorkerError('Diagram worker reset'))
+    }
+  }
+  for (const task of [...pendingById.values()]) {
+    rejectTask(task, new DiagramRenderWorkerError('Diagram worker reset'))
+  }
+  recycleWorker()
+  workerDisabled = false
+}
+
+export const renderDiagramInWorker = (
+  type: DiagramRenderType,
+  source: string,
+  signal?: AbortSignal
+): Promise<string> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DiagramRenderWorkerError('Diagram render aborted'))
+      return
+    }
+
+    const task: PendingTask = {
+      id: `diagram-task-${Date.now()}-${++taskSeq}`,
+      type,
+      source,
+      signal,
+      onAbort: () => {},
+      resolve,
+      reject
+    }
+
+    queue.push(task)
+    drainQueue()
+  })

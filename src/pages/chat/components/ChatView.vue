@@ -407,7 +407,16 @@
 
 <script setup lang="ts">
 import { ArrowDown, ChatLineSquare, DocumentCopy, Loading, Picture, Position, Refresh } from '@element-plus/icons-vue'
-import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch
+} from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ElAvatar,
@@ -1105,6 +1114,8 @@ const scrollToBottomAfterMessageFlush = () => {
 
 /** 已闭合的围栏代码块（``` 或 ~~~，含信息行与配对结束行），用于切分稳定段与流式尾段 */
 const FENCE_BLOCK_RE = /^([ \t]*)(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n\1\2[ \t]*(?:\n|$)/gm
+/** 增量切分：delta 内出现围栏行才需要全量 regex 重扫 */
+const FENCE_LINE_IN_DELTA_RE = /(^|\n)[ \t]*(`{3,}|~{3,})/
 
 type StreamSegment = { text: string; complete: boolean }
 
@@ -1127,13 +1138,74 @@ const splitStreamingSegments = (content: string): StreamSegment[] => {
   return segments
 }
 
+/** 当前流式 assistant 消息的增量切分缓存，避免每个 token 对全文跑 FENCE_BLOCK_RE */
+let activeStreamSplitCache: {
+  content: string
+  segments: StreamSegment[]
+} | null = null
+
+const resetActiveStreamSplitCache = () => {
+  activeStreamSplitCache = null
+  resetActiveStreamRenderedCache()
+}
+
+/**
+ * 流式输出专用：纯追加 token 且 delta 内无新围栏行时，只延长尾段而不全量 regex。
+ */
+const splitStreamingSegmentsForActiveStream = (
+  content: string
+): StreamSegment[] => {
+  if (activeStreamSplitCache?.content === content) {
+    return activeStreamSplitCache.segments
+  }
+  const prev = activeStreamSplitCache
+  if (
+    prev &&
+    content.startsWith(prev.content) &&
+    prev.segments.length > 0 &&
+    !prev.segments[prev.segments.length - 1].complete
+  ) {
+    const delta = content.slice(prev.content.length)
+    if (!FENCE_LINE_IN_DELTA_RE.test(delta)) {
+      const completed = prev.segments.slice(0, -1)
+      let tailStart = 0
+      for (const seg of completed) {
+        tailStart += seg.text.length
+      }
+      const segments = [
+        ...completed,
+        { text: content.slice(tailStart), complete: false }
+      ]
+      activeStreamSplitCache = { content, segments }
+      return segments
+    }
+  }
+  const segments = splitStreamingSegments(content)
+  activeStreamSplitCache = { content, segments }
+  return segments
+}
+
 type RenderedStreamSegment = StreamSegment & { html: string }
+
+/** 非流式 assistant 消息段缓存（content 不变则跳过分段与 markdown-it） */
+const stableAssistantSegmentCache = new Map<
+  number,
+  { content: string; segments: RenderedStreamSegment[] }
+>()
+
+/** 用户消息 HTML 缓存 */
+const stableUserHtmlCache = new Map<
+  number,
+  { content: string; html: string }
+>()
 
 const buildRenderedSegments = (
   content: string,
   streamingTail = false
 ): RenderedStreamSegment[] => {
-  const segments = splitStreamingSegments(content)
+  const segments = streamingTail
+    ? splitStreamingSegmentsForActiveStream(content)
+    : splitStreamingSegments(content)
   return segments.map((seg, idx) => {
     const isTail = idx === segments.length - 1 && !seg.complete
     const shouldRenderHtml = seg.complete || !isTail || !streamingTail
@@ -1144,7 +1216,85 @@ const buildRenderedSegments = (
   })
 }
 
-/** 预解析 assistant 消息段，避免模板内重复 markdown-it */
+/** 流式 assistant 已渲染段缓存：仅尾段增长时复用数组与已闭合段对象，避免 Vue 每 token 重建 DOM */
+let activeStreamRenderedCache: {
+  content: string
+  segments: RenderedStreamSegment[]
+} | null = null
+
+const resetActiveStreamRenderedCache = () => {
+  activeStreamRenderedCache = null
+}
+
+const buildRenderedSegmentsForActiveStream = (
+  content: string
+): RenderedStreamSegment[] => {
+  if (activeStreamRenderedCache?.content === content) {
+    return activeStreamRenderedCache.segments
+  }
+  const rawSegments = splitStreamingSegmentsForActiveStream(content)
+  const prev = activeStreamRenderedCache
+  if (
+    prev &&
+    content.startsWith(prev.content) &&
+    rawSegments.length > 0 &&
+    !rawSegments[rawSegments.length - 1].complete &&
+    rawSegments.length === prev.segments.length
+  ) {
+    const nextSegments = prev.segments.slice(0, -1)
+    const tailRaw = rawSegments[rawSegments.length - 1]
+    nextSegments.push({ ...tailRaw, html: '' })
+    activeStreamRenderedCache = { content, segments: nextSegments }
+    return nextSegments
+  }
+
+  const nextSegments: RenderedStreamSegment[] = []
+  for (let idx = 0; idx < rawSegments.length; idx++) {
+    const seg = rawSegments[idx]
+    const isTail = idx === rawSegments.length - 1 && !seg.complete
+    const prevSeg = prev?.segments[idx]
+    if (
+      prevSeg &&
+      prevSeg.complete &&
+      seg.complete &&
+      prevSeg.text === seg.text
+    ) {
+      nextSegments.push(prevSeg)
+      continue
+    }
+    nextSegments.push({
+      ...seg,
+      html: isTail ? '' : renderMarkdownCached(seg.text)
+    })
+  }
+  activeStreamRenderedCache = { content, segments: nextSegments }
+  return nextSegments
+}
+
+const buildStableAssistantSegments = (
+  index: number,
+  content: string
+): RenderedStreamSegment[] => {
+  const hit = stableAssistantSegmentCache.get(index)
+  if (hit?.content === content) {
+    return hit.segments
+  }
+  const segments = buildRenderedSegments(content, false)
+  stableAssistantSegmentCache.set(index, { content, segments })
+  return segments
+}
+
+const getStableUserHtml = (index: number, content: string): string => {
+  const hit = stableUserHtmlCache.get(index)
+  if (hit?.content === content) {
+    return hit.html
+  }
+  const html = renderMarkdownCached(content)
+  stableUserHtmlCache.set(index, { content, html })
+  return html
+}
+
+/** 预解析 assistant 消息段；流式期间仅重算当前轮，历史消息走稳定段缓存 */
 const assistantRenderedSegments = computed(() => {
   const map = new Map<number, RenderedStreamSegment[]>()
   const streamingIdx = isBusyByState.value
@@ -1152,13 +1302,11 @@ const assistantRenderedSegments = computed(() => {
     : -1
   visibleMessageContext.value.forEach((message, index) => {
     if (message.role === 'assistant' && message.content) {
-      map.set(
-        index,
-        buildRenderedSegments(
-          message.content,
-          isBusyByState.value && index === streamingIdx
-        )
-      )
+      if (isBusyByState.value && index === streamingIdx) {
+        map.set(index, buildRenderedSegmentsForActiveStream(message.content))
+      } else {
+        map.set(index, buildStableAssistantSegments(index, message.content))
+      }
     }
   })
   return map
@@ -1168,7 +1316,7 @@ const userMessageHtmlMap = computed(() => {
   const map = new Map<number, string>()
   visibleMessageContext.value.forEach((message, index) => {
     if (message.role === 'user' && message.content) {
-      map.set(index, renderMarkdownCached(message.content))
+      map.set(index, getStableUserHtml(index, message.content))
     }
   })
   return map
@@ -1187,7 +1335,7 @@ const activeAssistantTailText = computed(() => {
   if (!message?.content || message.role !== 'assistant') {
     return null
   }
-  const segments = splitStreamingSegments(message.content)
+  const segments = splitStreamingSegmentsForActiveStream(message.content)
   const tail = segments[segments.length - 1]
   if (tail.complete) {
     return null
@@ -1337,6 +1485,18 @@ const unbindUserScrollIntent = () => {
   scrollIntentEl.removeEventListener('touchstart', handleScrollTouchStart)
   scrollIntentEl.removeEventListener('touchmove', handleScrollTouchMove)
   scrollIntentEl = null
+}
+
+const reconnectMessageListResizeObserver = () => {
+  const el = messageListRef.value
+  messageListResizeObserver?.disconnect()
+  messageListResizeObserver = undefined
+  if (el && typeof ResizeObserver !== 'undefined') {
+    messageListResizeObserver = new ResizeObserver(() => {
+      keepBottomAnchored()
+    })
+    messageListResizeObserver.observe(el)
+  }
 }
 
 let send = false
@@ -1653,15 +1813,8 @@ watch(
  * 监听消息列表高度变化：贴底时同步补偿 scrollTop，而不是下一帧滚到底部。
  * 这样内容向下增长时，最后一个气泡底边在屏幕上的位置保持不变。
  */
-watch(messageListRef, (el) => {
-  messageListResizeObserver?.disconnect()
-  messageListResizeObserver = undefined
-  if (el && typeof ResizeObserver !== 'undefined') {
-    messageListResizeObserver = new ResizeObserver(() => {
-      keepBottomAnchored()
-    })
-    messageListResizeObserver.observe(el)
-  }
+watch(messageListRef, () => {
+  reconnectMessageListResizeObserver()
 })
 
 /** 滚动容器可能因 v-if（历史栏 / 全屏切换）重建，wrapRef 变化后需重新挂载用户滚动监听 */
@@ -1679,9 +1832,33 @@ watch(
       return
     }
     scheduleUpdateStreamTailSegmentInPlace(el, text, true)
-    activateMarkdownBlocks()
   },
   { flush: 'post' }
+)
+
+/** 围栏闭合产生新稳定段时再触发图表渲染，避免每个 token 都 scan DOM */
+watch(
+  () => {
+    if (!isBusyByState.value) {
+      return 0
+    }
+    const idx = activeAssistantVisibleIndex.value
+    if (idx < 0) {
+      return 0
+    }
+    const message = visibleMessageContext.value[idx]
+    if (!message?.content) {
+      return 0
+    }
+    return splitStreamingSegmentsForActiveStream(message.content).filter(
+      (seg) => seg.complete
+    ).length
+  },
+  (count, prev) => {
+    if (count > (prev ?? 0)) {
+      activateMarkdownBlocks()
+    }
+  }
 )
 
 /** 历史消息入列或流式结束后补渲染图表块；流式期间不 deep 扫描全列表 */
@@ -1706,6 +1883,7 @@ watch(
 /** 流式结束但 content 不再变化时，补渲染推迟的 mermaid/plantuml/vegalite/html 块 */
 watch(isBusyByState, (busy, wasBusy) => {
   if (!busy && wasBusy) {
+    resetActiveStreamSplitCache()
     const el = activeTailSegmentEl.value
     const idx = activeAssistantVisibleIndex.value
     if (el && idx >= 0) {
@@ -1741,6 +1919,9 @@ watch(
 watch(
   () => chatSessionRegistry.activeSessionKey.value,
   () => {
+    stableAssistantSegmentCache.clear()
+    stableUserHtmlCache.clear()
+    resetActiveStreamSplitCache()
     nextTick(() => {
       scrollToBottom()
       flushActivateMarkdownBlocks()
@@ -1806,11 +1987,28 @@ onMounted(async () => {
 onActivated(() => {
   nextTick(() => {
     bindUserScrollIntent()
+    reconnectMessageListResizeObserver()
     if (activeSession.value?.pendingScroll.value && shouldAutoScroll()) {
       scrollToBottom()
       activeSession.value.pendingScroll.value = false
     }
+    flushActivateMarkdownBlocks()
   })
+})
+
+/** keep-alive 切走：暂停 UI 监听，不中断 WebSocket 流式 */
+onDeactivated(() => {
+  unbindUserScrollIntent()
+  if (userScrollIdleTimer !== null) {
+    clearTimeout(userScrollIdleTimer)
+    userScrollIdleTimer = null
+  }
+  messageListResizeObserver?.disconnect()
+  messageListResizeObserver = undefined
+  if (scrollRafId !== null) {
+    cancelAnimationFrame(scrollRafId)
+    scrollRafId = null
+  }
 })
 
 onUnmounted(() => {
@@ -2075,7 +2273,7 @@ defineExpose({
 
   .chat-view {
     /* 固定预留：输入区浮在滚动层上方，不随 input 实时高度改变 scroll 内边距 */
-    --chat-bottom-reserve: 150px;
+    --chat-bottom-reserve: 140px;
     --chat-bottom-scroll-gap: 30px;
     /* 与 .input-area.is-input-editing 展开高度一致，按钮相对屏幕底边固定 */
     --chat-input-expanded-height: 148px;

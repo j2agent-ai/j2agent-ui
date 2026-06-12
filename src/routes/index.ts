@@ -1,5 +1,6 @@
 import type { RouteRecordRaw } from 'vue-router'
 import { ROLE_USER } from '@/utils/role'
+import { getAppRouter } from '@/routes/router-holder'
 
 import chat from '@/routes/chat'
 import kb from '@/routes/kb'
@@ -46,8 +47,15 @@ const routes = [
 
 export default routes
 
+/** 应用内导航：优先走 vue-router，避免直接写 location.hash 与 hash history 不同步引发整页刷新 */
 export const goTo = (path: string) => {
-	location.hash = path
+	const normalized = path.startsWith('/') ? path : `/${path}`
+	const router = getAppRouter()
+	if (router) {
+		void router.push(normalized)
+		return
+	}
+	location.hash = normalized
 }
 
 /** 退出登录：有进行中任务时先警告，确认后停止所有任务再跳转。 */
@@ -57,6 +65,6 @@ export const goToLogout = async () => {
 	)
 	const canLeave = await guardLeaveWithActiveTasks()
 	if (canLeave) {
-		location.hash = '/logout'
+		goTo('/logout')
 	}
 }
