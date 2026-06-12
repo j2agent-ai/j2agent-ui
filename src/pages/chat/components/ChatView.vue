@@ -260,7 +260,7 @@
           <ArrowDown />
         </ElIcon>
       </div>
-      <div ref="bottomDockRef" class="chat-bottom-dock">
+      <div class="chat-bottom-dock">
         <div
           v-show="suggestedFollowUps.length && !isBusyByState"
           class="suggested-follow-ups"
@@ -478,9 +478,6 @@ const showChatManage = ref(false)
 const chatManageRef = ref(null)
 /** 聊天主区域根节点，用于写入底部悬浮层高度 CSS 变量 */
 const chatViewRef = ref<HTMLElement>()
-/** 底部悬浮层（状态 / 推荐追问 / 输入框）容器 */
-const bottomDockRef = ref<HTMLElement>()
-let bottomDockResizeObserver: ResizeObserver | undefined
 /** 监听消息列表高度变化（图片/iframe/图表异步撑高），跟随态下瞬时贴底 */
 let messageListResizeObserver: ResizeObserver | undefined
 const {
@@ -828,10 +825,8 @@ const clearChatTextareaInlineSize = () => {
 const syncChatInputHeight = () => {
   nextTick(() => {
     clearChatTextareaInlineSize()
-    scheduleChatBottomInsetUpdate()
     requestAnimationFrame(() => {
       clearChatTextareaInlineSize()
-      scheduleChatBottomInsetUpdate()
     })
   })
 }
@@ -1346,16 +1341,6 @@ const unbindUserScrollIntent = () => {
 
 let send = false
 
-const lastAssistantTurnStepsLength = computed(() => {
-  const list = visibleMessageContext.value
-  for (let i = list.length - 1; i >= 0; i--) {
-    if (list[i].role === 'assistant') {
-      return list[i].turnSteps?.length ?? 0
-    }
-  }
-  return 0
-})
-
 const handleKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Enter' && !event.shiftKey) {
     send = true
@@ -1789,31 +1774,6 @@ const interruptChat = () => {
   }
 }
 
-/**
- * 根据底部悬浮层实际高度更新滚动区内边距，避免最后几条气泡被遮挡。
- */
-const updateChatBottomInset = () => {
-  const dockEl = bottomDockRef.value
-  const viewEl = chatViewRef.value
-  if (!dockEl || !viewEl) {
-    return
-  }
-  const wrap = getScrollWrap()
-  if (wrap) {
-    lastScrollHeight = wrap.scrollHeight
-  }
-  const height = Math.ceil(dockEl.getBoundingClientRect().height)
-  viewEl.style.setProperty('--chat-bottom-inset', `${height}px`)
-  keepBottomAnchored()
-}
-
-/** 在 DOM 更新后重新测量底部悬浮层高度 */
-const scheduleChatBottomInsetUpdate = () => {
-  nextTick(() => {
-    updateChatBottomInset()
-  })
-}
-
 watch(inputFocused, () => {
   syncChatInputHeight()
 })
@@ -1840,13 +1800,6 @@ onMounted(async () => {
   nextTick(() => {
     chatManageRef.value?.getHistoryListData()
     bindUserScrollIntent()
-    scheduleChatBottomInsetUpdate()
-    if (typeof ResizeObserver !== 'undefined' && bottomDockRef.value) {
-      bottomDockResizeObserver = new ResizeObserver(() => {
-        updateChatBottomInset()
-      })
-      bottomDockResizeObserver.observe(bottomDockRef.value)
-    }
   })
 })
 
@@ -1871,8 +1824,6 @@ onUnmounted(() => {
     clearTimeout(userScrollIdleTimer)
     userScrollIdleTimer = null
   }
-  bottomDockResizeObserver?.disconnect()
-  bottomDockResizeObserver = undefined
   messageListResizeObserver?.disconnect()
   messageListResizeObserver = undefined
   if (scrollRafId !== null) {
@@ -1883,17 +1834,6 @@ onUnmounted(() => {
   closeImagePreview()
   closeHtmlPreview()
 })
-
-watch(
-  () => [
-    lastAssistantTurnStepsLength.value,
-    suggestedFollowUps.value.length,
-    isBusyByState.value
-  ],
-  () => {
-    scheduleChatBottomInsetUpdate()
-  }
-)
 
 defineExpose({
   showChatManage,
@@ -2134,8 +2074,15 @@ defineExpose({
   }
 
   .chat-view {
-    --chat-bottom-inset: 200px;
+    /* 固定预留：输入区浮在滚动层上方，不随 input 实时高度改变 scroll 内边距 */
+    --chat-bottom-reserve: 150px;
     --chat-bottom-scroll-gap: 30px;
+    /* 与 .input-area.is-input-editing 展开高度一致，按钮相对屏幕底边固定 */
+    --chat-input-expanded-height: 148px;
+    --chat-scroll-button-gap: 12px;
+    --chat-scroll-button-offset: calc(
+      var(--chat-input-expanded-height) + var(--chat-scroll-button-gap)
+    );
     --chat-scrollbar-right-offset: calc(-2 * var(--n-padding-basic) + 2px);
     --chat-scrollbar-thumb: color-mix(
       in srgb,
@@ -2159,7 +2106,9 @@ defineExpose({
       overflow: visible;
 
       :deep(.el-scrollbar__view) {
-        padding-bottom: calc(var(--chat-bottom-inset, 200px) + var(--chat-bottom-scroll-gap, 24px));
+        padding-bottom: calc(
+          var(--chat-bottom-reserve, 260px) + var(--chat-bottom-scroll-gap, 30px)
+        );
       }
 
       :deep(.el-scrollbar__bar.is-vertical) {
@@ -2734,9 +2683,9 @@ defineExpose({
     --chat-input-inset-y: 14px;
 
     :deep(.el-textarea__inner) {
-      min-height: 148px;
-      height: 148px !important;
-      max-height: 148px;
+      min-height: var(--chat-input-expanded-height, 148px);
+      height: var(--chat-input-expanded-height, 148px) !important;
+      max-height: var(--chat-input-expanded-height, 148px);
       overflow-y: auto;
     }
   }
@@ -3037,7 +2986,7 @@ defineExpose({
 .chat-view .scroll-to-bottom-button {
   position: absolute;
   bottom: calc(
-    var(--chat-bottom-inset, 200px) + var(--chat-bottom-scroll-gap, 24px) + var(--chat-side-gutter, 20px)
+    var(--chat-scroll-button-offset, 160px) + var(--chat-side-gutter, 20px)
   );
   left: 50%;
   z-index: 11;
