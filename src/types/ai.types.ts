@@ -34,7 +34,18 @@ export type ChatAttachmentDto = {
 
 export type FileDto = {
 	fullFileName: string
+	/** 知识库仓库内相对路径（相对 repo 根目录） */
+	relativePath?: string
 	url: string
+}
+
+/** 来源展示文案：去掉首段目录前缀，区分同名文件 */
+export const formatSrcFileLabel = (file: FileDto): string => {
+	if (file.relativePath) {
+		const slash = file.relativePath.indexOf('/')
+		return slash >= 0 ? file.relativePath.slice(slash + 1) : file.relativePath
+	}
+	return file.fullFileName
 }
 
 /**
@@ -48,7 +59,7 @@ export const convertSrcFilesToMd = (files?: FileDto[]) => {
 	}
 	return files
 		.map((file) => {
-			return `- [${file.fullFileName}](${file.url})`
+			return `- [${formatSrcFileLabel(file)}](${file.url})`
 		})
 		.join('\n')
 }

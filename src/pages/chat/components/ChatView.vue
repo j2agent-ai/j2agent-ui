@@ -122,11 +122,20 @@
                     <p>
                       {{ $t('ai.source') }}
                     </p>
-                    <div
-                      v-html="
-												renderMarkdown(convertSrcFilesToMd(message.srcFile))
-											"
-                    />
+                    <ul class="src-file-list">
+                      <li
+                        v-for="(file, fileIndex) in message.srcFile"
+                        :key="`${file.url}-${fileIndex}`"
+                      >
+                        <a
+                          class="src-file-link"
+                          :href="file.url"
+                          :download="file.fullFileName || undefined"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >{{ formatSrcFileLabel(file) }}</a>
+                      </li>
+                    </ul>
                   </div>
                   <AgentTurnTimeline
                     v-if="message.turnSteps?.length"
@@ -400,7 +409,7 @@ import HtmlPreviewOverlay from './HtmlPreviewOverlay.vue'
 import {
   ChatAttachmentDto,
   ChatRequestDto,
-  convertSrcFilesToMd,
+  formatSrcFileLabel,
   MessageDto
 } from '@/types/ai.types'
 import { t } from '@ai-system/lib'
@@ -2414,6 +2423,20 @@ defineExpose({
           margin-top: 15px;
           font-style: italic;
           font-size: var(--n-font-size-1);
+
+          .src-file-list {
+            margin: 0;
+            padding-left: 1.25em;
+          }
+
+          .src-file-link {
+            color: var(--n-color-link);
+            text-decoration: none;
+
+            &:hover {
+              text-decoration: underline;
+            }
+          }
         }
 
         .message-actions {
