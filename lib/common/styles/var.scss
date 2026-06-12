@@ -198,7 +198,10 @@
   --n-inline-code-border: color-mix(in srgb, var(--n-color-border-control) 70%, transparent);
   --n-inline-code-text: var(--n-color-text-primary);
 
+  /* 全屏浮层（dialog / md-viewer / html-preview 等）距视口边缘的安全边距 */
+  --n-overlay-safe-inset: 24px;
   /* Dialog：透明度对齐改造前（低于 overlay 浮层） */
+  --n-dialog-border-radius: 20px;
   --n-dialog-glass-frost: 48%;
   --n-dialog-glass-tint: 22%;
   --n-dialog-blur: 12px;

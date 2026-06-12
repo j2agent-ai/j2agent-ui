@@ -1,10 +1,20 @@
 /* Dialog / MessageBox 全局外壳：毛玻璃、危险标题、紧凑验证码变体 */
 
+@mixin n-dialog-border-radius {
+	border-radius: var(--n-dialog-border-radius);
+}
+
+/* 与 el-dialog 同圆角/描边的非毛玻璃面板（md-viewer、html-preview 等） */
+@mixin n-overlay-dialog-shell {
+	@include n-dialog-border-radius;
+	border: 1px solid var(--n-color-border-soft);
+}
+
 @mixin n-overlay-glass {
+	@include n-dialog-border-radius;
 	background: var(--n-color-bg-glass);
 	backdrop-filter: blur(10px);
 	-webkit-backdrop-filter: blur(10px);
-	border-radius: var(--n-radius-quadruple);
 	border: 1px solid var(--n-color-border-soft);
 	isolation: isolate;
 	color: var(--n-color-text-primary);
@@ -138,7 +148,7 @@
 
 @mixin n-overlay-danger-header-surface {
 	padding: 12px 14px;
-	border-radius: 12px;
+	border-radius: calc(var(--n-dialog-border-radius) - 8px);
 	background: var(--n-color-bg-glass-danger);
 	backdrop-filter: blur(10px);
 	-webkit-backdrop-filter: blur(10px);
@@ -172,6 +182,11 @@
 	.el-dialog__headerbtn .el-dialog__close {
 		color: color-mix(in srgb, var(--n-color-text-primary), transparent 35%);
 	}
+}
+
+.el-dialog:not(.is-fullscreen),
+.el-message-box {
+	border-radius: var(--n-dialog-border-radius) !important;
 }
 
 .el-message-box {
@@ -242,4 +257,90 @@
 		padding: 12px 4px 0;
 		@include n-overlay-footer-buttons;
 	}
+}
+
+/*
+ * backdrop-filter 在祖先 opacity 动画期间会延迟生效。
+ * 遮罩只动画 background-color，内容壳只动画 transform，祖先保持 opacity: 1。
+ */
+@keyframes n-ep-overlay-mask-in {
+	from {
+		background-color: transparent;
+	}
+
+	to {
+		background-color: var(--el-overlay-color-lighter);
+	}
+}
+
+@keyframes n-ep-overlay-mask-out {
+	from {
+		background-color: var(--el-overlay-color-lighter);
+	}
+
+	to {
+		background-color: transparent;
+	}
+}
+
+@keyframes n-overlay-shell-in {
+	from {
+		transform: translate3d(0, -16px, 0);
+	}
+
+	to {
+		transform: translate3d(0, 0, 0);
+	}
+}
+
+@keyframes n-overlay-shell-out {
+	from {
+		transform: translate3d(0, 0, 0);
+	}
+
+	to {
+		transform: translate3d(0, -16px, 0);
+	}
+}
+
+.dialog-fade-enter-active.el-overlay {
+	animation: n-ep-overlay-mask-in var(--el-transition-duration) ease !important;
+}
+
+.dialog-fade-leave-active.el-overlay {
+	animation: n-ep-overlay-mask-out var(--el-transition-duration) ease forwards !important;
+}
+
+.dialog-fade-enter-from.el-overlay,
+.dialog-fade-leave-to.el-overlay {
+	opacity: 1 !important;
+}
+
+.dialog-fade-enter-active .el-overlay-dialog {
+	animation: n-overlay-shell-in var(--el-transition-duration) ease !important;
+}
+
+.dialog-fade-leave-active .el-overlay-dialog {
+	animation: n-overlay-shell-out var(--el-transition-duration) ease forwards !important;
+}
+
+.el-overlay.is-message-box.fade-in-linear-enter-active {
+	animation: n-ep-overlay-mask-in var(--el-transition-duration) ease !important;
+}
+
+.el-overlay.is-message-box.fade-in-linear-leave-active {
+	animation: n-ep-overlay-mask-out var(--el-transition-duration) ease forwards !important;
+}
+
+.el-overlay.is-message-box.fade-in-linear-enter-from,
+.el-overlay.is-message-box.fade-in-linear-leave-to {
+	opacity: 1 !important;
+}
+
+.fade-in-linear-enter-active .el-overlay-message-box {
+	animation: n-overlay-shell-in var(--el-transition-duration) ease !important;
+}
+
+.fade-in-linear-leave-active .el-overlay-message-box {
+	animation: n-overlay-shell-out var(--el-transition-duration) ease forwards !important;
 }
