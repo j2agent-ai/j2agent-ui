@@ -213,6 +213,8 @@ export default {
 		'DashScope Anthropic compatible: https://dashscope.aliyuncs.com/apps/anthropic; official Claude API: https://api.anthropic.com (or leave empty for SDK default)',
 	'providerConfig.baseUrl.example.llm.ollama':
 		'Example: http://127.0.0.1:11434 (local); or http://ollama-host:11434',
+	'providerConfig.baseUrl.example.llm.lmStudio':
+		'Example: http://127.0.0.1:1234 (local LM Studio default port)',
 	'providerConfig.baseUrl.example.embedding.openAi':
 		'Example: https://embedding-gateway.example.com; or https://api.openai.com',
 	'providerConfig.baseUrl.example.embedding.ollama':
@@ -220,6 +222,7 @@ export default {
 	'providerConfig.provider.openai': 'OpenAI Compatible',
 	'providerConfig.provider.vllm': 'vLLM',
 	'providerConfig.provider.anthropic': 'Anthropic Compatible',
+	'providerConfig.provider.lmStudio': 'LM Studio',
 	'providerConfig.provider.ollama': 'Ollama',
 	'providerConfig.col.name': 'Name',
 	'providerConfig.col.provider': 'Provider',
@@ -277,11 +280,15 @@ export default {
 	'providerConfig.thinkingMode.on': 'On',
 	'providerConfig.thinkingMode.off': 'Off',
 	'providerConfig.thinkingBudgetTokens': 'Thinking token budget',
-	'providerConfig.thinkingBudgetTokens.hint': 'Default is 10240; you may change it.',
+	'providerConfig.thinkingBudgetTokens.hint': 'Default is 4096; you may change it.',
+	'providerConfig.thinkingBudgetTokens.hint.lmStudio':
+		'Maps to LM Studio reasoning_tokens; default is 4096; you may change it.',
 	'providerConfig.field.thinkingMode.tip':
-		'Anthropic Compatible and Ollama only. Provider default: omit thinking/think and use model or gateway defaults; On/Off set explicitly.',
+		'Anthropic Compatible, LM Studio, and Ollama. Provider default: omit thinking params and use model or gateway defaults; On/Off set explicitly.',
 	'providerConfig.field.thinkingBudgetTokens.tip':
-		'Anthropic Compatible only when deep thinking is On. Default budget is 10240; adjust below if needed.',
+		'Anthropic Compatible only when deep thinking is On. Default budget is 4096; adjust below if needed.',
+	'providerConfig.field.thinkingBudgetTokens.tip.lmStudio':
+		'LM Studio only when deep thinking is On. Maps to the OpenAI-compatible API reasoning_tokens parameter.',
 	'settings.rag.section': 'RAG Settings',
 	'settings.rag.topk': 'Max retrieve results',
 	'settings.rag.metric.type.dense': 'Dense vector (semantic) metric',

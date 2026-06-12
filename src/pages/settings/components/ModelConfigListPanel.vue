@@ -138,6 +138,8 @@ const providerLabel = (raw: string) => {
 			return t('providerConfig.provider.vllm')
 		case 'anthropic':
 			return t('providerConfig.provider.anthropic')
+		case 'lm-studio':
+			return t('providerConfig.provider.lmStudio')
 		case 'ollama':
 			return t('providerConfig.provider.ollama')
 		default:
@@ -273,7 +275,7 @@ const normalizeProviderConfig = (config: Record<string, any>, providerType: stri
 			delete copy.maxTokens
 		}
 	}
-	if (providerType !== 'anthropic' && providerType !== 'ollama') {
+	if (providerType !== 'anthropic' && providerType !== 'ollama' && providerType !== 'lm-studio') {
 		delete copy.thinkingMode
 		delete copy.thinkingBudgetTokens
 	} else {

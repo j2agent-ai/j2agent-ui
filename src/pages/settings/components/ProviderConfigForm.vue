@@ -210,7 +210,7 @@
 					<template #label>
 						<FormFieldLabel
 							:label="t('providerConfig.thinkingBudgetTokens')"
-							:tip="t('providerConfig.field.thinkingBudgetTokens.tip')"
+							:tip="t(thinkingBudgetTipKey)"
 						/>
 					</template>
 					<div class="thinking-budget-field">
@@ -222,7 +222,7 @@
 							controls-position="right"
 							autocomplete="off"
 						/>
-						<div class="field-hint">{{ t('providerConfig.thinkingBudgetTokens.hint') }}</div>
+						<div class="field-hint">{{ t(thinkingBudgetHintKey) }}</div>
 					</div>
 				</el-form-item>
 			</template>
@@ -249,8 +249,11 @@ import type { ProviderApiType, ProviderConfigDto } from '@/api/provider-config.a
 
 /** Anthropic 表单 maxTokens 缺省填写值（非运行时兜底，保存须为正整数） */
 const ANTHROPIC_FORM_DEFAULT_MAX_TOKENS = 16384
-/** Anthropic 深度思考 budget 表单默认值（与后端 LlmThinkingSupport 一致） */
-const ANTHROPIC_DEFAULT_THINKING_BUDGET = 10240
+/** 深度思考 budget 表单默认值（与后端 LlmThinkingSupport.DEFAULT_THINKING_BUDGET 一致） */
+const DEFAULT_THINKING_BUDGET = 4096
+/** LM Studio 默认服务地址（与后端 LlmBackedChatModelFactory 一致） */
+const LM_STUDIO_DEFAULT_BASE_URL = 'http://127.0.0.1:1234'
+const LM_STUDIO_DEFAULT_COMPLETIONS_PATH = '/v1/chat/completions'
 
 const THINKING_MODE_PROVIDER_DEFAULT = 'provider_default'
 const LEGACY_THINKING_MODE_AUTO = 'auto'
@@ -286,6 +289,7 @@ const providerOptions = computed(() => {
 			{ label: t('providerConfig.provider.openai'), value: 'open-ai' },
 			{ label: t('providerConfig.provider.vllm'), value: 'vllm' },
 			{ label: t('providerConfig.provider.anthropic'), value: 'anthropic' },
+			{ label: t('providerConfig.provider.lmStudio'), value: 'lm-studio' },
 			{ label: t('providerConfig.provider.ollama'), value: 'ollama' }
 		]
 	}
@@ -321,7 +325,7 @@ const buildInitialConfig = () => (isLlm.value ? defaultLlmConfig() : defaultEmbe
 
 /** 表单内规范深度思考字段 */
 function normalizeThinkingInForm(config: Record<string, any>, provider: string) {
-	if (provider !== 'anthropic' && provider !== 'ollama') {
+	if (provider !== 'anthropic' && provider !== 'ollama' && provider !== 'lm-studio') {
 		delete config.thinkingMode
 		delete config.thinkingBudgetTokens
 		return
@@ -342,7 +346,7 @@ function normalizeThinkingInForm(config: Record<string, any>, provider: string) 
 		config.thinkingBudgetTokens === undefined ||
 		config.thinkingBudgetTokens === 0
 	) {
-		config.thinkingBudgetTokens = ANTHROPIC_DEFAULT_THINKING_BUDGET
+		config.thinkingBudgetTokens = DEFAULT_THINKING_BUDGET
 	}
 }
 
@@ -401,31 +405,51 @@ const providerType = computed(() => formState.providerType)
 const needsBaseUrl = computed(() => true)
 const needsApiKey = computed(() => true)
 const needsCompletionsPath = computed(
-	() => isLlm.value && (providerType.value === 'open-ai' || providerType.value === 'vllm')
+	() =>
+		isLlm.value &&
+		(providerType.value === 'open-ai' ||
+			providerType.value === 'vllm' ||
+			providerType.value === 'lm-studio')
 )
 const needsEmbeddingsPath = computed(() => !isLlm.value && providerType.value === 'open-ai')
 const needsKeepAlive = computed(() => providerType.value === 'ollama')
 /** 仅 Ollama 使用 num_ctx；留空则使用模型默认上下文长度 */
 const needsContextLength = computed(() => isLlm.value && providerType.value === 'ollama')
 const needsMaxTokens = computed(() => isLlm.value && providerType.value === 'anthropic')
-/** Anthropic / Ollama 支持深度思考配置 */
+/** Anthropic / LM Studio / Ollama 支持深度思考配置 */
 const supportsThinking = computed(
-	() => isLlm.value && (providerType.value === 'anthropic' || providerType.value === 'ollama')
+	() =>
+		isLlm.value &&
+		(providerType.value === 'anthropic' ||
+			providerType.value === 'lm-studio' ||
+			providerType.value === 'ollama')
 )
 const needsThinkingBudget = computed(
-	() => providerType.value === 'anthropic' && formState.config.thinkingMode === THINKING_MODE_ON
+	() =>
+		(providerType.value === 'anthropic' || providerType.value === 'lm-studio') &&
+		formState.config.thinkingMode === THINKING_MODE_ON
+)
+const thinkingBudgetTipKey = computed(() =>
+	providerType.value === 'lm-studio'
+		? 'providerConfig.field.thinkingBudgetTokens.tip.lmStudio'
+		: 'providerConfig.field.thinkingBudgetTokens.tip'
+)
+const thinkingBudgetHintKey = computed(() =>
+	providerType.value === 'lm-studio'
+		? 'providerConfig.thinkingBudgetTokens.hint.lmStudio'
+		: 'providerConfig.thinkingBudgetTokens.hint'
 )
 
 /** 切换为「开启」时预填默认 budget，避免窄输入框 placeholder 显示不全 */
 watch(
 	() => [formState.config.thinkingMode, formState.providerType] as const,
 	([mode, provider]) => {
-		if (provider === 'anthropic' && mode === THINKING_MODE_ON) {
+		if ((provider === 'anthropic' || provider === 'lm-studio') && mode === THINKING_MODE_ON) {
 			if (
 				formState.config.thinkingBudgetTokens == null ||
 				formState.config.thinkingBudgetTokens === undefined
 			) {
-				formState.config.thinkingBudgetTokens = ANTHROPIC_DEFAULT_THINKING_BUDGET
+				formState.config.thinkingBudgetTokens = DEFAULT_THINKING_BUDGET
 			}
 		}
 	}
@@ -447,6 +471,9 @@ const baseUrlExampleKey = computed(() => {
 	if (provider === 'ollama') {
 		return `providerConfig.baseUrl.example.${kind}.ollama`
 	}
+	if (provider === 'lm-studio') {
+		return 'providerConfig.baseUrl.example.llm.lmStudio'
+	}
 	return `providerConfig.baseUrl.example.${kind}.openAi`
 })
 
@@ -464,9 +491,14 @@ const embeddingsPathPlaceholder = computed(() => '/v1/embeddings')
 const onProviderTypeChange = () => {
 	if (providerType.value === 'ollama') {
 		formState.config.completionsPath = ''
-	} else if (providerType.value === 'vllm') {
+	} else if (providerType.value === 'vllm' || providerType.value === 'lm-studio') {
 		if (!formState.config.completionsPath) {
-			formState.config.completionsPath = '/v1/chat/completions'
+			formState.config.completionsPath = LM_STUDIO_DEFAULT_COMPLETIONS_PATH
+		}
+	}
+	if (providerType.value === 'lm-studio') {
+		if (!formState.config.baseUrl) {
+			formState.config.baseUrl = LM_STUDIO_DEFAULT_BASE_URL
 		}
 	}
 	if (providerType.value !== 'ollama') {
@@ -479,7 +511,11 @@ const onProviderTypeChange = () => {
 	} else {
 		formState.config.maxTokens = undefined
 	}
-	if (providerType.value === 'anthropic' || providerType.value === 'ollama') {
+	if (
+		providerType.value === 'anthropic' ||
+		providerType.value === 'lm-studio' ||
+		providerType.value === 'ollama'
+	) {
 		if (!formState.config.thinkingMode) {
 			formState.config.thinkingMode = THINKING_MODE_PROVIDER_DEFAULT
 		}

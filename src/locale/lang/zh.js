@@ -207,6 +207,8 @@ export default {
 		'百炼 Anthropic 兼容：https://dashscope.aliyuncs.com/apps/anthropic；官方 Claude API：https://api.anthropic.com（亦可留空使用 SDK 默认）',
 	'providerConfig.baseUrl.example.llm.ollama':
 		'示例：http://127.0.0.1:11434（本机）；或 http://ollama-host:11434',
+	'providerConfig.baseUrl.example.llm.lmStudio':
+		'示例：http://127.0.0.1:1234（本机 LM Studio 默认端口）',
 	'providerConfig.baseUrl.example.embedding.openAi':
 		'示例：https://embedding-gateway.example.com；或 https://api.openai.com',
 	'providerConfig.baseUrl.example.embedding.ollama':
@@ -214,6 +216,7 @@ export default {
 	'providerConfig.provider.openai': 'OpenAI 兼容',
 	'providerConfig.provider.vllm': 'vLLM',
 	'providerConfig.provider.anthropic': 'Anthropic 兼容',
+	'providerConfig.provider.lmStudio': 'LM Studio',
 	'providerConfig.provider.ollama': 'Ollama',
 	'providerConfig.col.name': '名称',
 	'providerConfig.col.provider': '提供商',
@@ -271,11 +274,15 @@ export default {
 	'providerConfig.thinkingMode.on': '开启',
 	'providerConfig.thinkingMode.off': '关闭',
 	'providerConfig.thinkingBudgetTokens': '思考 Token 预算',
-	'providerConfig.thinkingBudgetTokens.hint': '默认 10240，可自行调整。',
+	'providerConfig.thinkingBudgetTokens.hint': '默认 4096，可自行调整。',
+	'providerConfig.thinkingBudgetTokens.hint.lmStudio':
+		'映射为 LM Studio reasoning_tokens；默认 4096，可自行调整。',
 	'providerConfig.field.thinkingMode.tip':
-		'仅 Anthropic 兼容、Ollama 支持。提供商默认：不向 API 传 thinking/think，由模型或网关默认；开启/关闭为显式控制。',
+		'Anthropic 兼容、LM Studio、Ollama 支持。提供商默认：不向 API 传思考参数，由模型或网关默认；开启/关闭为显式控制。',
 	'providerConfig.field.thinkingBudgetTokens.tip':
-		'仅 Anthropic 兼容且开启深度思考时有效。默认 10240，可在下方修改。',
+		'仅 Anthropic 兼容且开启深度思考时有效。默认 4096，可在下方修改。',
+	'providerConfig.field.thinkingBudgetTokens.tip.lmStudio':
+		'仅 LM Studio 且开启深度思考时有效，对应 OpenAI 兼容 API 的 reasoning_tokens 参数。',
 	'settings.rag.section': 'RAG 设置',
 	'settings.rag.topk': '检索结果最大数量',
 	'settings.rag.metric.type.dense': '稠密向量（语义）检索度量指标',
