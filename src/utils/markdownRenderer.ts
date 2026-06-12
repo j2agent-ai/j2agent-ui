@@ -1882,6 +1882,22 @@ const scheduleHtmlPreviewFit = (iframe: HTMLIFrameElement) => {
   })
 }
 
+const resolveExpandedHtmlPreviewContainerWidth = (iframe: HTMLIFrameElement) => {
+  const wrap = iframe.closest('.md-html-preview-wrap') as HTMLElement | null
+  if (wrap) {
+    return Math.max(resolveHtmlPreviewContainerWidth(wrap), 360)
+  }
+  const parent = iframe.parentElement
+  if (!parent) {
+    return 360
+  }
+  const styles = getComputedStyle(parent)
+  const padX =
+    (Number.parseFloat(styles.paddingLeft) || 0) +
+    (Number.parseFloat(styles.paddingRight) || 0)
+  return Math.max(parent.clientWidth - padX, 360)
+}
+
 /** 全屏 HTML 预览：自然尺寸、可滚动、可交互 */
 export const resizeMarkdownHtmlPreviewExpanded = (
   iframe: HTMLIFrameElement
@@ -1891,11 +1907,7 @@ export const resizeMarkdownHtmlPreviewExpanded = (
     if (!doc?.body) {
       return false
     }
-    const wrap = iframe.closest('.md-html-preview-wrap') as HTMLElement | null
-    const containerWidth = Math.max(
-      wrap ? resolveHtmlPreviewContainerWidth(wrap) : 360,
-      360
-    )
+    const containerWidth = resolveExpandedHtmlPreviewContainerWidth(iframe)
     const { width: contentWidth, height: contentHeight } =
       measureHtmlPreviewContentSize(doc, containerWidth)
 

@@ -607,8 +607,16 @@ onUnmounted(() => {
 	position: absolute;
 	inset: 0;
 	background: color-mix(in srgb, var(--n-color-font-dark, #000) 28%, transparent);
-	backdrop-filter: blur(var(--n-glass-blur-2)) saturate(var(--n-glass-saturate));
-	-webkit-backdrop-filter: blur(var(--n-glass-blur-2)) saturate(var(--n-glass-saturate));
+	transition: background-color 0.2s ease;
+
+	&::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		backdrop-filter: blur(var(--n-glass-blur-2)) saturate(var(--n-glass-saturate));
+		-webkit-backdrop-filter: blur(var(--n-glass-blur-2)) saturate(var(--n-glass-saturate));
+		pointer-events: none;
+	}
 }
 
 .md-viewer-shell {
@@ -627,7 +635,7 @@ onUnmounted(() => {
 	flex-direction: column;
 	min-width: 0;
 	overflow: hidden;
-	border-radius: var(--n-radius-quadruple);
+	@include n-overlay-dialog-shell;
 	box-shadow: var(--n-shadow-elevation-3);
 }
 
@@ -639,8 +647,9 @@ onUnmounted(() => {
 	gap: 10px;
 	padding: 16px 20px 12px;
 	@include n-overlay-glass;
-	border-radius: var(--n-radius-quadruple) var(--n-radius-quadruple) 0 0;
+	border: none;
 	border-bottom: 1px solid var(--n-color-border-soft);
+	border-radius: 0;
 
 	&--single {
 		grid-template-columns: minmax(0, 1fr) auto;
@@ -776,14 +785,25 @@ onUnmounted(() => {
 	animation: md-viewer-spin 1s linear infinite;
 }
 
-.md-viewer-fade-enter-active,
-.md-viewer-fade-leave-active {
-	transition: opacity 0.2s ease;
+/* Avoid opacity transition on wrapper: it delays descendant backdrop-filter. */
+.md-viewer-fade-enter-active .md-viewer-mask,
+.md-viewer-fade-leave-active .md-viewer-mask {
+	transition: background-color 0.2s ease;
 }
 
-.md-viewer-fade-enter-from,
-.md-viewer-fade-leave-to {
-	opacity: 0;
+.md-viewer-fade-enter-from .md-viewer-mask,
+.md-viewer-fade-leave-to .md-viewer-mask {
+	background: transparent;
+}
+
+.md-viewer-fade-enter-active .md-viewer-shell,
+.md-viewer-fade-leave-active .md-viewer-shell {
+	transition: transform 0.2s ease;
+}
+
+.md-viewer-fade-enter-from .md-viewer-shell,
+.md-viewer-fade-leave-to .md-viewer-shell {
+	transform: translateY(10px);
 }
 
 @keyframes md-viewer-spin {

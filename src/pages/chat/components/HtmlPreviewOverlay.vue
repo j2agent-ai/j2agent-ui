@@ -228,7 +228,11 @@ onUnmounted(() => {
 </script>
 
 <style scoped lang="scss">
+@use '@ai-system/common/styles/dialog-overlays' as *;
+
 .html-preview-wrapper {
+	--html-preview-content-pad-x: 20px;
+	--html-preview-content-pad-y: 16px;
 	position: fixed;
 	inset: 0;
 	z-index: 2050;
@@ -239,13 +243,23 @@ onUnmounted(() => {
 	position: absolute;
 	inset: 0;
 	background: rgba(0, 0, 0, 0.5);
+	transition: background-color 0.2s ease;
+
+	&::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		backdrop-filter: blur(var(--n-glass-blur-2)) saturate(var(--n-glass-saturate));
+		-webkit-backdrop-filter: blur(var(--n-glass-blur-2)) saturate(var(--n-glass-saturate));
+		pointer-events: none;
+	}
 }
 
 .html-preview-close {
 	position: absolute;
 	z-index: 3;
-	top: 24px;
-	right: 24px;
+	top: max(var(--n-overlay-safe-inset), env(safe-area-inset-top, 0px));
+	right: max(var(--n-overlay-safe-inset), env(safe-area-inset-right, 0px));
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -267,14 +281,18 @@ onUnmounted(() => {
 .html-preview-panel {
 	position: absolute;
 	z-index: 1;
-	top: 72px;
-	right: 24px;
-	bottom: 24px;
-	left: 24px;
+	top: calc(
+		max(var(--n-overlay-safe-inset), env(safe-area-inset-top, 0px)) + 48px
+	);
+	right: max(var(--n-overlay-safe-inset), env(safe-area-inset-right, 0px));
+	bottom: max(var(--n-overlay-safe-inset), env(safe-area-inset-bottom, 0px));
+	left: max(var(--n-overlay-safe-inset), env(safe-area-inset-left, 0px));
 	overflow: auto;
-	border-radius: 12px;
+	padding: var(--html-preview-content-pad-y) var(--html-preview-content-pad-x)
+		calc(var(--html-preview-content-pad-y) + 4px);
+	@include n-overlay-dialog-shell;
 	background: #fff;
-	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+	box-shadow: var(--n-shadow-elevation-3);
 	-webkit-overflow-scrolling: touch;
 }
 
@@ -318,13 +336,13 @@ onUnmounted(() => {
 
 .html-preview-prev {
 	top: 50%;
-	left: 40px;
+	left: calc(max(var(--n-overlay-safe-inset), env(safe-area-inset-left, 0px)) + 16px);
 	transform: translateY(-50%);
 }
 
 .html-preview-next {
 	top: 50%;
-	right: 40px;
+	right: calc(max(var(--n-overlay-safe-inset), env(safe-area-inset-right, 0px)) + 16px);
 	transform: translateY(-50%);
 }
 
@@ -332,20 +350,45 @@ onUnmounted(() => {
 	position: absolute;
 	z-index: 2;
 	left: 50%;
-	bottom: 40px;
+	bottom: calc(max(var(--n-overlay-safe-inset), env(safe-area-inset-bottom, 0px)) + 16px);
 	transform: translateX(-50%);
 	color: #fff;
 	font-size: 14px;
 	line-height: 1.4;
 }
 
-.html-preview-fade-enter-active,
-.html-preview-fade-leave-active {
-	transition: opacity 0.2s ease;
+.html-preview-fade-enter-active .html-preview-mask,
+.html-preview-fade-leave-active .html-preview-mask {
+	transition: background-color 0.2s ease;
 }
 
-.html-preview-fade-enter-from,
-.html-preview-fade-leave-to {
-	opacity: 0;
+.html-preview-fade-enter-from .html-preview-mask,
+.html-preview-fade-leave-to .html-preview-mask {
+	background: transparent;
+}
+
+.html-preview-fade-enter-active .html-preview-panel,
+.html-preview-fade-leave-active .html-preview-panel,
+.html-preview-fade-enter-active .html-preview-close,
+.html-preview-fade-leave-active .html-preview-close,
+.html-preview-fade-enter-active .html-preview-btn,
+.html-preview-fade-leave-active .html-preview-btn,
+.html-preview-fade-enter-active .html-preview-progress,
+.html-preview-fade-leave-active .html-preview-progress {
+	transition: transform 0.2s ease;
+}
+
+.html-preview-fade-enter-from .html-preview-panel,
+.html-preview-fade-enter-from .html-preview-close,
+.html-preview-fade-enter-from .html-preview-btn,
+.html-preview-fade-enter-from .html-preview-progress {
+	transform: translateY(10px);
+}
+
+.html-preview-fade-leave-to .html-preview-panel,
+.html-preview-fade-leave-to .html-preview-close,
+.html-preview-fade-leave-to .html-preview-btn,
+.html-preview-fade-leave-to .html-preview-progress {
+	transform: translateY(10px);
 }
 </style>

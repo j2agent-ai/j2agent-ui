@@ -424,6 +424,16 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
+  transition: background-color 0.2s ease;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    backdrop-filter: blur(var(--n-glass-blur-2)) saturate(var(--n-glass-saturate));
+    -webkit-backdrop-filter: blur(var(--n-glass-blur-2)) saturate(var(--n-glass-saturate));
+    pointer-events: none;
+  }
 }
 
 .diagram-preview-canvas {
@@ -572,35 +582,38 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.35);
 }
 
-.diagram-preview-fade-enter-active {
-  animation: diagram-preview-fade-in 0.2s ease;
+.diagram-preview-fade-enter-active .diagram-preview-mask,
+.diagram-preview-fade-leave-active .diagram-preview-mask {
+  transition: background-color 0.2s ease;
 }
 
-.diagram-preview-fade-leave-active {
-  animation: diagram-preview-fade-out 0.2s ease;
+.diagram-preview-fade-enter-from .diagram-preview-mask,
+.diagram-preview-fade-leave-to .diagram-preview-mask {
+  background: transparent;
 }
 
-@keyframes diagram-preview-fade-in {
-  from {
-    opacity: 0;
-    transform: translate3d(0, -20px, 0);
-  }
-
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
+.diagram-preview-fade-enter-active .diagram-preview-canvas,
+.diagram-preview-fade-leave-active .diagram-preview-canvas,
+.diagram-preview-fade-enter-active .diagram-preview-btn,
+.diagram-preview-fade-leave-active .diagram-preview-btn,
+.diagram-preview-fade-enter-active .diagram-preview-progress,
+.diagram-preview-fade-leave-active .diagram-preview-progress,
+.diagram-preview-fade-enter-active .diagram-preview-actions,
+.diagram-preview-fade-leave-active .diagram-preview-actions {
+  transition: transform 0.2s ease;
 }
 
-@keyframes diagram-preview-fade-out {
-  from {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
+.diagram-preview-fade-enter-from .diagram-preview-canvas,
+.diagram-preview-fade-enter-from .diagram-preview-btn,
+.diagram-preview-fade-enter-from .diagram-preview-progress,
+.diagram-preview-fade-enter-from .diagram-preview-actions {
+  transform: translateY(10px);
+}
 
-  to {
-    opacity: 0;
-    transform: translate3d(0, -20px, 0);
-  }
+.diagram-preview-fade-leave-to .diagram-preview-canvas,
+.diagram-preview-fade-leave-to .diagram-preview-btn,
+.diagram-preview-fade-leave-to .diagram-preview-progress,
+.diagram-preview-fade-leave-to .diagram-preview-actions {
+  transform: translateY(10px);
 }
 </style>
