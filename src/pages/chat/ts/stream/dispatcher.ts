@@ -536,11 +536,13 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		const tail = messageContext.value[messageContext.value.length - 1]
 		const hasTurnSteps = (tail?.turnSteps?.length ?? 0) > 0
 		const hasReasoning = !!tail?.reasoningContent?.trim()
+		const hasSrcFile = (tail?.srcFile?.length ?? 0) > 0
 		if (
 			tail?.role === 'assistant' &&
 			!tail.content?.trim() &&
 			!hasTurnSteps &&
-			!hasReasoning
+			!hasReasoning &&
+			!hasSrcFile
 		) {
 			const popIdx = messageContext.value.length - 1
 			messageContext.value.pop()
