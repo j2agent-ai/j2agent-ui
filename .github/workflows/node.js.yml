@@ -1,5 +1,4 @@
-# This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
+# This workflow will do a clean installation of node dependencies, build the source code and deploy dist
 name: Node.js CI
 permissions:
   pull-requests: write
@@ -23,7 +22,8 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - run: npm install
+          cache-dependency-path: package-lock.json
+      - run: npm ci
       - run: npm run build
       - name: Deploy to dist branch
         uses: peaceiris/actions-gh-pages@v3
@@ -45,7 +45,8 @@ jobs:
         with:
           node-version: 22.x
           cache: npm
-      - run: npm install
+          cache-dependency-path: package-lock.json
+      - run: npm ci
       - run: BUILD_ANALYZE=true npm run build
       - uses: actions/upload-artifact@v4
         with:
