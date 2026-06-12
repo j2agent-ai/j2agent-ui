@@ -15,6 +15,11 @@
     var(--md-pending-shimmer-primary) 14%,
     transparent
   );
+  --md-pending-bg: color-mix(
+    in srgb,
+    var(--n-color-bg-glass-weak, var(--n-color-preview-bg)) 85%,
+    transparent
+  );
   /* 以聊天气泡正文 14px 为基准的字阶（em 相对本容器 font-size） */
   --md-text-size: var(--n-font-size-2);
   --md-text-line-height: 1.6;
@@ -416,18 +421,22 @@
   }
 
   .md-diagram-body {
-    min-height: 80px;
+    min-height: var(--md-diagram-max-height);
     max-height: var(--md-diagram-max-height);
-    height: auto;
+    height: var(--md-diagram-max-height);
     padding: 14px 16px;
     border-radius: 12px;
     background: var(--n-color-diagram-bg);
-    backdrop-filter: blur(var(--n-glass-blur-1));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     border: 1px solid var(--n-color-diagram-border);
     color: var(--n-color-diagram-text);
     overflow: hidden;
     text-align: center;
     box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: border-color 120ms ease,
     box-shadow 160ms ease,
     background 160ms ease;
@@ -438,21 +447,21 @@
     box-shadow: var(--n-shadow-elevation-1);
   }
 
-  /* 横向 xychart：左侧类目竖排，行数多时可纵向滚动 */
+  /* 横向 xychart：固定外框内展示，避免渲染完成后撑高气泡 */
   .md-diagram-xychart--horizontal .md-diagram-body {
-    overflow-y: auto;
+    overflow-y: hidden;
     text-align: left;
   }
 
-  /* 竖向 xychart 底部标签换行后允许容器增高；极高时纵向滚动 */
+  /* 竖向 xychart 同样保持固定外框，避免视口内布局跳变 */
   .md-diagram-xychart--vertical .md-diagram-body {
     overflow-x: hidden;
-    overflow-y: auto;
+    overflow-y: hidden;
   }
 
   .md-diagram:has(.md-diagram-xychart--vertical) {
-    height: auto;
-    max-height: none;
+    height: var(--md-diagram-max-height);
+    max-height: var(--md-diagram-max-height);
   }
 
   .md-diagram-fit {
@@ -618,8 +627,11 @@
 
   /* 生成中：shimmer 背景 + 中央 loading 提示 */
   .md-html-preview-wrap.md-block-pending {
-    min-height: 200px;
+    height: var(--md-html-preview-max-height);
+    min-height: var(--md-html-preview-max-height);
+    max-height: var(--md-html-preview-max-height);
     overflow: hidden;
+    background: var(--md-pending-bg);
     animation: md-pending-border-glow 2.2s ease-in-out infinite;
 
     &::before {
@@ -638,16 +650,27 @@
         transparent 100%
       );
       transform: translateX(-130%) skewX(-14deg);
-      will-change: transform;
       opacity: 0.72;
       animation: md-html-shimmer var(--md-pending-shimmer-duration) linear infinite;
       pointer-events: none;
       z-index: 1;
     }
 
+    &:not([data-md-offscreen])::before {
+      will-change: transform;
+    }
+
+    &[data-md-offscreen]::before {
+      animation-play-state: paused;
+    }
+
+    &[data-md-offscreen] {
+      animation-play-state: paused;
+    }
+
     .md-html-preview {
       display: block;
-      min-height: 200px;
+      min-height: var(--md-html-preview-max-height);
       visibility: hidden;
     }
 
@@ -664,9 +687,11 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 200px;
+    height: var(--md-diagram-max-height);
+    min-height: var(--md-diagram-max-height);
+    max-height: var(--md-diagram-max-height);
     padding: 14px 16px;
-    background: var(--n-color-preview-bg);
+    background: var(--md-pending-bg);
     border: 1px solid var(--n-color-preview-border);
     border-radius: 10px;
     backdrop-filter: none;
@@ -693,11 +718,22 @@
         transparent 100%
       );
       transform: translateX(-130%) skewX(-14deg);
-      will-change: transform;
       opacity: 0.72;
       animation: md-html-shimmer var(--md-pending-shimmer-duration) linear infinite;
       pointer-events: none;
       z-index: 1;
+    }
+
+    &:not([data-md-offscreen])::before {
+      will-change: transform;
+    }
+
+    &[data-md-offscreen]::before {
+      animation-play-state: paused;
+    }
+
+    &[data-md-offscreen] {
+      animation-play-state: paused;
     }
 
     &:hover {
@@ -812,5 +848,16 @@
     margin-top: 8px;
     max-height: 180px;
     overflow: auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .md-diagram-body.md-block-pending,
+    .md-html-preview-wrap.md-block-pending {
+      animation: none;
+
+      &::before {
+        animation: none;
+      }
+    }
   }
 }
