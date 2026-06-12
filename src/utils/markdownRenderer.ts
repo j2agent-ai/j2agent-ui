@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it'
+import { normalizeMarkdownRepoFileUrls, normalizeRepoFileUrl } from './repoFileUrl'
 import {
   DIAGRAM_COLOR_PALETTE,
   DIAGRAM_FONT_FAMILY,
@@ -48,7 +49,7 @@ const MARKDOWN_REVISION_ATTR = 'data-md-revision'
  * 图表后处理逻辑变更时递增，用于让历史气泡在 SPA 内重新渲染（非 Mermaid 缓存）。
  * 与 ChatView 中 v-html 的 :key 保持一致。
  */
-export const MARKDOWN_RENDERER_REVISION = '23'
+export const MARKDOWN_RENDERER_REVISION = '24'
 /** 与 markdown.scss 中 --md-diagram-max-height 回退值保持一致 */
 const MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK = 360
 /** 与 markdown.scss 中 --md-html-preview-max-height 回退值保持一致 */
@@ -502,7 +503,8 @@ md.renderer.rules.td_open = function() {
   return '<td class="md-td">'
 }
 
-export const renderMarkdown = (markdown?: string) => md.render(markdown || '')
+export const renderMarkdown = (markdown?: string) =>
+  md.render(normalizeMarkdownRepoFileUrls(markdown || ''))
 
 /** 流式尾段中可由 renderMarkdownBlocks 异步渲染的围栏语言 */
 const ASYNC_DIAGRAM_FENCE_LANGS = new Set([
@@ -2148,6 +2150,13 @@ const bindImageLoadNormalization = (img: HTMLImageElement) => {
  */
 export const normalizeMarkdownImageParagraphs = (root: ParentNode | Element) => {
   root.querySelectorAll<HTMLImageElement>('.message-md img').forEach((img) => {
+    const src = img.getAttribute('src')
+    if (src) {
+      const normalized = normalizeRepoFileUrl(src)
+      if (normalized !== src) {
+        img.src = normalized
+      }
+    }
     bindImageLoadNormalization(img)
   })
 }
