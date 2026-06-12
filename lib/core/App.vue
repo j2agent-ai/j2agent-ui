@@ -14,10 +14,13 @@
 <script lang="ts" setup>
 import { ElConfigProvider } from 'element-plus'
 import { useElementLocale } from '@ai-system/hooks'
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { t } from '@ai-system/lib'
-import ChatActivityPanel from '@/pages/chat/components/ChatActivityPanel.vue'
+
+const ChatActivityPanel = defineAsyncComponent(
+	() => import('@/pages/chat/components/ChatActivityPanel.vue')
+)
 import { useWarnBeforeUnloadOnActiveTasks } from '@/pages/chat/ts/index'
 import { ensureAgentNamesLoaded } from '@/pages/chat/ts/agent/name-registry'
 import { hasRoleAccess, ROLE_USER } from '@/utils/role'

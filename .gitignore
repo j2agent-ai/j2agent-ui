@@ -34,3 +34,5 @@ package-lock.json
 
 # auto generated files
 /lib/common/styles/_oem-vars.scss
+components.d.ts
+auto-imports.d.ts
