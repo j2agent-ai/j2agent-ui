@@ -382,6 +382,8 @@ export default {
 	'captcha.tip': 'Please slide the block to the right to log in',
 	'captcha.validate.fail': 'verification failed',
 	'logout': 'Logout',
+	'diagramPreview.saveSvg': 'Save SVG',
+	'diagramPreview.saveSvg.failed': 'Failed to save SVG',
 	...enAi,
 	...enKb
 }

@@ -376,6 +376,8 @@ export default {
 	'captcha.tip': '请拖动滑块对齐图像以登录',
 	'captcha.validate.fail': '验证失败',
 	'logout': '退出登录',
+	'diagramPreview.saveSvg': '保存 SVG',
+	'diagramPreview.saveSvg.failed': '保存 SVG 失败',
 	...zhAi,
 	...zhKb
 }

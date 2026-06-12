@@ -60,6 +60,14 @@
             <ElIcon @click="handleActions('clockwise')">
               <RefreshRight />
             </ElIcon>
+            <i class="diagram-preview-actions__divider" />
+            <ElIcon
+              :class="{ 'is-disabled': savingSvg }"
+              :title="t('diagramPreview.saveSvg')"
+              @click="saveActiveDiagramSvg"
+            >
+              <Download />
+            </ElIcon>
           </div>
         </div>
 
@@ -88,6 +96,7 @@
 import {
   ArrowLeft,
   ArrowRight,
+  Download,
   FullScreen,
   RefreshLeft,
   RefreshRight,
@@ -95,9 +104,11 @@ import {
   ZoomIn,
   ZoomOut
 } from '@element-plus/icons-vue'
+import { t } from '@ai-system/lib'
 import { throttle } from 'lodash-es'
 import { computed, markRaw, nextTick, onUnmounted, ref, shallowRef, watch } from 'vue'
-import { ElIcon } from 'element-plus'
+import { ElIcon, ElMessage } from 'element-plus'
+import { downloadDiagramSvg } from '@/utils/diagramExport'
 
 const ZOOM_RATE = 1.2
 const MIN_SCALE = 0.2
@@ -144,6 +155,7 @@ const emit = defineEmits<{
 const overlayRef = ref<HTMLElement | null>(null)
 const hostRef = ref<HTMLElement | null>(null)
 const activeIndex = ref(props.initialIndex)
+const savingSvg = ref(false)
 const mode = shallowRef<ViewerMode>(modes.CONTAIN)
 const transform = ref<TransformState>({
   scale: 1,
@@ -231,6 +243,25 @@ const toggleMode = () => {
   const nextModeName = modeNames[(currentIndex + 1) % modeNames.length]
   mode.value = modes[nextModeName]
   resetTransform()
+}
+
+const saveActiveDiagramSvg = async () => {
+  if (savingSvg.value) {
+    return
+  }
+  const svg = props.diagrams[activeIndex.value]
+  if (!(svg instanceof SVGElement)) {
+    return
+  }
+  savingSvg.value = true
+  try {
+    const suffix = props.diagrams.length > 1 ? `-${activeIndex.value + 1}` : ''
+    downloadDiagramSvg(svg, `diagram${suffix}.svg`)
+  } catch {
+    ElMessage.error(t('diagramPreview.saveSvg.failed'))
+  } finally {
+    savingSvg.value = false
+  }
 }
 
 const handleActions = (
@@ -525,6 +556,12 @@ onUnmounted(() => {
 
   .el-icon {
     cursor: pointer;
+
+    &.is-disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
   }
 }
 
