@@ -34,13 +34,6 @@ type VegaEmbedFn = (
   options?: Record<string, unknown>
 ) => Promise<unknown>
 
-declare global {
-  interface Window {
-    plantuml?: unknown
-    PlantUML?: unknown
-  }
-}
-
 const MARKDOWN_RENDER_ATTR = 'data-md-render'
 const MARKDOWN_RENDERED_ATTR = 'data-md-rendered'
 const MARKDOWN_RENDERING_ATTR = 'data-md-rendering'
@@ -351,7 +344,7 @@ const scheduleFitDiagramSvg = (body: HTMLElement) => {
 let mermaidApi: MermaidApi | undefined
 let mermaidSeq = 0
 let plantUmlRenderer: PlantUmlRenderer | undefined
-let plantUmlVendorLoad: Promise<void> | undefined
+let plantUmlModuleLoad: Promise<PlantUmlRenderer> | undefined
 let vegaEmbedFn: VegaEmbedFn | undefined
 
 const md = new MarkdownIt({
@@ -1453,62 +1446,26 @@ const renderMermaidBlock = async (block: Element) => {
   bindFunctions?.(body)
 }
 
-const findPlantUmlRenderer = (): PlantUmlRenderer | undefined => {
-  const candidates = [window.plantuml, window.PlantUML]
-
-  for (const candidate of candidates) {
-    if (!candidate || typeof candidate !== 'object') {
-      continue
-    }
-    const api = candidate as Record<string, unknown>
-    const renderer =
-      api.renderSvg || api.renderSVG || api.render || api.toSvg || api.toSVG
-    if (typeof renderer === 'function') {
-      return async (source: string) => {
-        const output = await renderer.call(api, source)
-        if (typeof output === 'string') {
-          return output
-        }
-        if (output && typeof output === 'object' && 'svg' in output) {
-          return String((output as { svg: unknown }).svg)
-        }
-        return String(output || '')
-      }
-    }
-  }
-
-  return undefined
-}
-
-const loadPlantUmlVendor = () => {
-  if (!plantUmlVendorLoad) {
-    plantUmlVendorLoad = new Promise<void>((resolve, reject) => {
-      const script = document.createElement('script')
-      script.src = '/vendor/plantuml-js/plantuml.js'
-      script.async = true
-      script.onload = () => resolve()
-      script.onerror = () =>
-        reject(
-          new Error(
-            '未找到 PlantUML.js 前端渲染运行时，请提供 /vendor/plantuml-js/plantuml.js'
+const loadPlantUmlModule = () => {
+  if (!plantUmlModuleLoad) {
+    plantUmlModuleLoad = (async () => {
+      await import('@plantuml/core/viz-global.js')
+      const { renderToString } = await import('@plantuml/core')
+      return (source: string) =>
+        new Promise<string>((resolve, reject) => {
+          const lines = source.split(/\r\n|\r|\n/)
+          renderToString(lines, resolve, (message: string) =>
+            reject(new Error(message))
           )
-        )
-      document.head.appendChild(script)
-    })
+        })
+    })()
   }
-  return plantUmlVendorLoad
+  return plantUmlModuleLoad
 }
 
 const getPlantUmlRenderer = async () => {
   if (!plantUmlRenderer) {
-    plantUmlRenderer = findPlantUmlRenderer()
-  }
-  if (!plantUmlRenderer) {
-    await loadPlantUmlVendor()
-    plantUmlRenderer = findPlantUmlRenderer()
-  }
-  if (!plantUmlRenderer) {
-    throw new Error('PlantUML.js 前端渲染运行时未暴露 renderSvg/render API')
+    plantUmlRenderer = await loadPlantUmlModule()
   }
   return plantUmlRenderer
 }
@@ -2193,7 +2150,7 @@ export const resetMarkdownRendererForTest = () => {
   mermaidApi = undefined
   mermaidSeq = 0
   plantUmlRenderer = undefined
-  plantUmlVendorLoad = undefined
+  plantUmlModuleLoad = undefined
   vegaEmbedFn = undefined
   invalidateDiagramMaxHeightCache()
 }
