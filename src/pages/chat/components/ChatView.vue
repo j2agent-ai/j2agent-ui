@@ -127,7 +127,14 @@
                         v-for="(file, fileIndex) in message.srcFile"
                         :key="`${file.url}-${fileIndex}`"
                       >
+                        <button
+                          v-if="isSrcMarkdownFile(file)"
+                          type="button"
+                          class="src-file-link src-file-link--button"
+                          @click="openSrcFilePreview(message.srcFile!, fileIndex)"
+                        >{{ formatSrcFileLabel(file) }}</button>
                         <a
+                          v-else
                           class="src-file-link"
                           :href="file.url"
                           :download="file.fullFileName || undefined"
@@ -383,6 +390,12 @@
       :initial-index="htmlPreviewIndex"
       @close="closeHtmlPreview"
     />
+    <MdViewerOverlay
+      :visible="mdViewerVisible"
+      :sources="mdViewerSources"
+      :initial-index="mdViewerIndex"
+      @close="closeMdViewer"
+    />
   </div>
 </template>
 
@@ -406,12 +419,20 @@ import AgentTurnTimeline from './AgentTurnTimeline.vue'
 import AgentThinkingBlock from './AgentThinkingBlock.vue'
 import DiagramPreviewOverlay from './DiagramPreviewOverlay.vue'
 import HtmlPreviewOverlay from './HtmlPreviewOverlay.vue'
+import MdViewerOverlay, {
+  type MdViewerSource
+} from './MdViewerOverlay.vue'
 import {
   ChatAttachmentDto,
   ChatRequestDto,
+  FileDto,
   formatSrcFileLabel,
   MessageDto
 } from '@/types/ai.types'
+import {
+  isMarkdownFile,
+  resolveMarkdownFileName
+} from '@/utils/repoFileUrl'
 import { t } from '@ai-system/lib'
 import {
   addMessageFeedback,
@@ -674,6 +695,45 @@ const htmlPreviewVisible = ref(false)
 const htmlPreviewSources = ref<string[]>([])
 /** HTML 预览初始下标 */
 const htmlPreviewIndex = ref(0)
+/** Markdown 来源预览是否可见 */
+const mdViewerVisible = ref(false)
+/** Markdown 来源预览列表 */
+const mdViewerSources = ref<MdViewerSource[]>([])
+/** Markdown 来源预览初始下标 */
+const mdViewerIndex = ref(0)
+
+const isSrcMarkdownFile = (file: FileDto) =>
+  isMarkdownFile(resolveMarkdownFileName(file))
+
+const toMdViewerSource = (file: FileDto): MdViewerSource => ({
+  url: file.url,
+  title: formatSrcFileLabel(file),
+  relativePath: file.relativePath
+})
+
+const openSrcFilePreview = (files: FileDto[], index: number) => {
+  const mdSources = files
+    .map((file, fileIndex) => ({ file, fileIndex }))
+    .filter(({ file }) => isSrcMarkdownFile(file))
+  if (!mdSources.length) {
+    return
+  }
+  const clicked = files[index]
+  const viewerIndex = clicked
+    ? mdSources.findIndex(({ file }) => file.url === clicked.url)
+    : 0
+  closeImagePreview()
+  closeDiagramPreview()
+  closeHtmlPreview()
+  mdViewerSources.value = mdSources.map(({ file }) => toMdViewerSource(file))
+  mdViewerIndex.value = Math.max(viewerIndex, 0)
+  mdViewerVisible.value = true
+}
+
+const closeMdViewer = () => {
+  mdViewerVisible.value = false
+  mdViewerSources.value = []
+}
 
 /** 非终态 busy 时当前轮 assistant 在可见列表中的下标。 */
 const activeAssistantVisibleIndex = computed(() => {
@@ -2436,6 +2496,16 @@ defineExpose({
             &:hover {
               text-decoration: underline;
             }
+          }
+
+          .src-file-link--button {
+            padding: 0;
+            border: none;
+            background: transparent;
+            font: inherit;
+            font-style: italic;
+            cursor: pointer;
+            text-align: left;
           }
         }
 

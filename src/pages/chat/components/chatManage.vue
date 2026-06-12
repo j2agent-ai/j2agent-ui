@@ -34,11 +34,9 @@
             <div
               v-if="batchMode"
               class="list-action clear-all"
-              :class="{ 'is-disabled': selectedCount === 0 }"
-              @click="selectedCount > 0 && confirmBatchDelete()"
+              @click="clearAllHistoryChat()"
             >
-              <i class="iconfont icon-trash-alt"></i>{{ t('ai.batch.delete.action') }}
-              <template v-if="selectedCount > 0"> ({{ selectedCount }})</template>
+              <i class="iconfont icon-trash-alt"></i>{{ t('ai.delete.all.chat') }}
             </div>
             <div
               v-if="!batchMode"
@@ -124,9 +122,11 @@
           <el-button
             type="danger"
             size="small"
-            @click="clearAllHistoryChat()"
+            :disabled="selectedCount === 0"
+            @click="confirmBatchDelete()"
           >
-            {{ t('ai.delete.all.chat') }}
+            {{ t('ai.batch.delete.action') }}
+            <template v-if="selectedCount > 0"> ({{ selectedCount }})</template>
           </el-button>
         </div>
       </div>
@@ -716,7 +716,6 @@ defineExpose({
     min-height: 0;
     width: 100%;
     box-sizing: border-box;
-    overflow: hidden;
 
     .list-title {
       justify-content: space-between;
@@ -785,7 +784,7 @@ defineExpose({
       display: flex;
       justify-content: center;
       gap: 8px;
-      padding: 10px var(--chat-list-pad-x) var(--chat-list-pad-bottom);
+      padding: 12px var(--chat-list-pad-x) calc(var(--chat-list-pad-bottom) + 6px);
       box-sizing: border-box;
       border-top: 1px solid color-mix(in srgb, var(--n-color-text-primary) 8%, transparent);
       background: transparent;

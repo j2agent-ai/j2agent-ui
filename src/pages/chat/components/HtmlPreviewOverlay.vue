@@ -6,6 +6,7 @@
 				ref="overlayRef"
 				class="html-preview-wrapper"
 				tabindex="-1"
+				@keydown.esc.prevent.stop="emit('close')"
 			>
 				<div class="html-preview-mask" @click="emit('close')" />
 
@@ -104,6 +105,7 @@ const fitExpandedIframe = () => {
 
 const onIframeLoad = () => {
 	fitExpandedIframe()
+	bindIframeEscape()
 }
 
 const setActiveIndex = (index: number) => {
@@ -135,6 +137,48 @@ const next = () => {
 }
 
 let prevBodyOverflow = ''
+let documentKeydownHandler: ((event: KeyboardEvent) => void) | null = null
+let iframeKeydownHandler: ((event: KeyboardEvent) => void) | null = null
+
+const handleEscape = (event: KeyboardEvent) => {
+	if (event.key !== 'Escape') {
+		return
+	}
+	event.preventDefault()
+	event.stopPropagation()
+	emit('close')
+}
+
+const bindIframeEscape = () => {
+	const doc = iframeRef.value?.contentDocument
+	if (!doc) {
+		return
+	}
+	unbindIframeEscape()
+	iframeKeydownHandler = handleEscape
+	doc.addEventListener('keydown', iframeKeydownHandler)
+}
+
+const unbindIframeEscape = () => {
+	const doc = iframeRef.value?.contentDocument
+	if (doc && iframeKeydownHandler) {
+		doc.removeEventListener('keydown', iframeKeydownHandler)
+	}
+	iframeKeydownHandler = null
+}
+
+const registerKeydownListener = () => {
+	documentKeydownHandler = handleEscape
+	document.addEventListener('keydown', documentKeydownHandler, true)
+}
+
+const unregisterKeydownListener = () => {
+	if (documentKeydownHandler) {
+		document.removeEventListener('keydown', documentKeydownHandler, true)
+		documentKeydownHandler = null
+	}
+	unbindIframeEscape()
+}
 
 watch(
 	() => props.visible,
@@ -142,6 +186,7 @@ watch(
 		if (visible) {
 			prevBodyOverflow = document.body.style.overflow
 			document.body.style.overflow = 'hidden'
+			registerKeydownListener()
 			activeIndex.value = Math.min(
 				Math.max(props.initialIndex, 0),
 				Math.max(props.sources.length - 1, 0)
@@ -149,6 +194,7 @@ watch(
 			nextTick(() => overlayRef.value?.focus())
 			return
 		}
+		unregisterKeydownListener()
 		document.body.style.overflow = prevBodyOverflow
 	},
 	{ immediate: true }
@@ -175,6 +221,7 @@ watch(
 )
 
 onUnmounted(() => {
+	unregisterKeydownListener()
 	document.body.style.overflow = prevBodyOverflow
 	iframeRef.value?.removeEventListener('load', onIframeLoad)
 })
