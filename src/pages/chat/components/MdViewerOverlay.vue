@@ -136,8 +136,9 @@ import {
 	getMarkdownCodeBlockText,
 	getMarkdownHtmlBlockSource,
 	preloadDiagramRuntimes,
-	renderMarkdown,
-	renderMarkdownBlocks
+	renderMarkdownCached,
+	renderMarkdownBlocks,
+	buildMdViewerPrefetchRootMargin
 } from '@/utils/markdownRenderer'
 import {
 	normalizeMarkdownRepoFileUrls,
@@ -174,6 +175,7 @@ const loading = ref(false)
 const error = ref('')
 const rawMarkdown = ref('')
 let fetchToken = 0
+let activateToken = 0
 let preloadStarted = false
 
 const imagePreviewVisible = ref(false)
@@ -251,12 +253,22 @@ const prepareMarkdown = (text: string, relativePath?: string) => {
 	return markdown
 }
 
-const renderedHtml = computed(() => renderMarkdown(prepareMarkdown(rawMarkdown.value, currentSource.value?.relativePath)))
+const renderedHtml = ref('')
+
+const syncRenderedHtml = () => {
+	const markdown = prepareMarkdown(
+		rawMarkdown.value,
+		currentSource.value?.relativePath
+	)
+	renderedHtml.value = markdown ? renderMarkdownCached(markdown) : ''
+}
 
 const loadCurrentSource = async () => {
+	activateToken++
 	const source = currentSource.value
 	if (!source?.url) {
 		rawMarkdown.value = ''
+		renderedHtml.value = ''
 		error.value = t('mdViewer.loadFailed')
 		loading.value = false
 		return
@@ -275,6 +287,7 @@ const loadCurrentSource = async () => {
 			return
 		}
 		rawMarkdown.value = text
+		syncRenderedHtml()
 	} catch {
 		if (token !== fetchToken) {
 			return
@@ -293,7 +306,17 @@ const activateMarkdown = async () => {
 	if (!root) {
 		return
 	}
-	await renderMarkdownBlocks(root)
+	const token = ++activateToken
+	await renderMarkdownBlocks(root, {
+		scrollRoot: root,
+		concurrency: 4,
+		backgroundConcurrency: 2,
+		prefetchRootMargin: buildMdViewerPrefetchRootMargin(root),
+		lazy: true
+	})
+	if (token !== activateToken) {
+		return
+	}
 }
 
 const ensureDiagramPreload = () => {
@@ -555,7 +578,9 @@ watch(
 		unregisterKeydownListener()
 		document.body.style.overflow = prevBodyOverflow
 		fetchToken++
+		activateToken++
 		rawMarkdown.value = ''
+		renderedHtml.value = ''
 		error.value = ''
 		loading.value = false
 		closeImagePreview()
@@ -584,6 +609,16 @@ watch(
 		void activateMarkdown()
 	},
 	{ flush: 'post' }
+)
+
+watch(
+	() => currentSource.value?.relativePath,
+	() => {
+		if (!rawMarkdown.value) {
+			return
+		}
+		syncRenderedHtml()
+	}
 )
 
 onUnmounted(() => {
@@ -760,7 +795,7 @@ onUnmounted(() => {
 	min-height: 0;
 	overflow: auto;
 	padding: 14px 16px 20px;
-	background: var(--n-color-bg-primary, #fff);
+	background: var(--n-color-neutral-w, #fff);
 	-webkit-overflow-scrolling: touch;
 }
 
@@ -771,7 +806,7 @@ onUnmounted(() => {
 	justify-content: center;
 	gap: 10px;
 	padding: 24px;
-	background: var(--n-color-bg-primary, #fff);
+	background: var(--n-color-neutral-w, #fff);
 	color: var(--n-color-text-muted);
 	font-size: 14px;
 }

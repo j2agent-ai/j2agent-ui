@@ -38,11 +38,12 @@ const MARKDOWN_RENDER_ATTR = 'data-md-render'
 const MARKDOWN_RENDERED_ATTR = 'data-md-rendered'
 const MARKDOWN_RENDERING_ATTR = 'data-md-rendering'
 const MARKDOWN_REVISION_ATTR = 'data-md-revision'
+const MARKDOWN_OFFSCREEN_ATTR = 'data-md-offscreen'
 /**
  * 图表后处理逻辑变更时递增，用于让历史气泡在 SPA 内重新渲染（非 Mermaid 缓存）。
  * 与 ChatView 中 v-html 的 :key 保持一致。
  */
-export const MARKDOWN_RENDERER_REVISION = '24'
+export const MARKDOWN_RENDERER_REVISION = '27'
 /** 与 markdown.scss 中 --md-diagram-max-height 回退值保持一致 */
 const MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK = 360
 /** 与 markdown.scss 中 --md-html-preview-max-height 回退值保持一致 */
@@ -63,9 +64,23 @@ const XYCHART_LABEL_LINE_HEIGHT_RATIO = 1.25
 const XYCHART_WRAPPED_LABEL_BOTTOM_PAD = 20
 /** Vega-Lite 多类目时自动倾斜 X 轴标签的阈值 */
 const VEGA_LITE_MULTI_CATEGORY_THRESHOLD = 8
+const MARKDOWN_HTML_CACHE_MAX_ENTRIES = 200
+const HTML_PREVIEW_MAX_MEASURE_NODES = 200
+const MARKDOWN_FIT_WIDTH_ATTR = 'data-md-fit-width'
+const MARKDOWN_TAIL_HTML_ATTR = 'data-md-tail-html'
+
+const markdownHtmlCache = new Map<string, string>()
+const pendingRefitBodies = new Set<HTMLElement>()
+let batchRefitRafId = 0
+let renderMarkdownBlocksChain: Promise<void> = Promise.resolve()
 
 const diagramFitObservers = new WeakMap<HTMLElement, ResizeObserver>()
 const diagramFitRafIds = new WeakMap<HTMLElement, number>()
+const diagramFitThrottleTimers = new WeakMap<
+  HTMLElement,
+  ReturnType<typeof setTimeout>
+>()
+const DIAGRAM_REFIT_THROTTLE_MS = 100
 let diagramWindowResizeBound = false
 let diagramWindowResizeRaf = 0
 let diagramMaxHeightCache = 0
@@ -210,28 +225,27 @@ const fitDiagramSvgInBody = (body: HTMLElement) => {
   const maxBodyHeight = getMarkdownDiagramMaxHeight()
   const contentMaxHeight = getDiagramContentMaxHeight()
   const wrap = ensureDiagramFitWrapper(body, svg)
-  const natural = getSvgNaturalSize(svg)
 
   const bodyWidth = Math.max(
     body.clientWidth - MARKDOWN_DIAGRAM_BODY_PADDING_HORIZONTAL,
     120
   )
-  const scaleWidth = bodyWidth / natural.width
-  const isVerticalWrapped =
-    block?.classList.contains('md-diagram-xychart--vertical') &&
-    svg.querySelector('g.bottom-axis g.label text tspan') !== null
-
-  let scale = Math.min(1, scaleWidth, contentMaxHeight / natural.height)
-  if (isVerticalWrapped) {
-    // 底部多行标签：不再按默认高度上限压扁，完整展示后再由容器增高
-    scale = Math.min(1, scaleWidth)
+  const prevFitWidth = body.getAttribute(MARKDOWN_FIT_WIDTH_ATTR)
+  if (
+    prevFitWidth === String(bodyWidth) &&
+    body.style.height &&
+    svg.getAttribute('width')
+  ) {
+    return
   }
+  body.setAttribute(MARKDOWN_FIT_WIDTH_ATTR, String(bodyWidth))
+
+  const natural = getSvgNaturalSize(svg)
+  const scaleWidth = bodyWidth / natural.width
+  const scale = Math.min(1, scaleWidth, contentMaxHeight / natural.height)
 
   const displayWidth = Math.max(1, Math.ceil(natural.width * scale))
   const displayHeight = Math.max(1, Math.ceil(natural.height * scale))
-  const effectiveMaxBodyHeight = isVerticalWrapped
-    ? Math.max(maxBodyHeight, displayHeight + MARKDOWN_DIAGRAM_BODY_PADDING_VERTICAL)
-    : maxBodyHeight
 
   svg.style.transform = ''
   svg.style.transformOrigin = ''
@@ -251,45 +265,54 @@ const fitDiagramSvgInBody = (body: HTMLElement) => {
   wrap.style.lineHeight = '0'
   wrap.style.height = `${displayHeight}px`
 
-  const bodyHeight = displayHeight + MARKDOWN_DIAGRAM_BODY_PADDING_VERTICAL
+  const bodyHeight = maxBodyHeight
   body.style.boxSizing = 'border-box'
-  body.style.maxHeight = `${effectiveMaxBodyHeight}px`
+  body.style.minHeight = `${bodyHeight}px`
+  body.style.maxHeight = `${bodyHeight}px`
   body.style.height = `${bodyHeight}px`
-  body.style.overflowY =
-    isVerticalWrapped && bodyHeight > maxBodyHeight ? 'auto' : 'hidden'
+  body.style.display = 'flex'
+  body.style.alignItems = 'center'
+  body.style.justifyContent = 'center'
   body.classList.remove('md-diagram-body--wide')
   body.style.overflowX = 'hidden'
   body.style.overflow = 'hidden'
 
   if (block) {
-    block.style.maxHeight = `${effectiveMaxBodyHeight}px`
+    block.style.minHeight = `${bodyHeight}px`
+    block.style.maxHeight = `${bodyHeight}px`
     block.style.height = `${bodyHeight}px`
-    if (isVerticalWrapped) {
-      block.style.overflowX = 'hidden'
-      block.style.overflowY =
-        bodyHeight > maxBodyHeight ? 'auto' : 'hidden'
-    } else {
-      block.style.overflow = 'hidden'
-    }
+    block.style.overflow = 'hidden'
   }
 }
 
-/** 延迟测量，确保宽度变化后浏览器已完成 SVG 布局 */
-const scheduleFitDiagramSvgReflow = (body: HTMLElement) => {
-  const prev = diagramFitRafIds.get(body)
-  if (prev) {
-    cancelAnimationFrame(prev)
+/** 合并滚动/resize 期间的重复 refit，避免主线程被 ResizeObserver 打满 */
+const scheduleFitDiagramSvgReflowThrottled = (body: HTMLElement) => {
+  if (diagramFitThrottleTimers.has(body)) {
+    return
   }
-  diagramFitRafIds.set(
-    body,
-    requestAnimationFrame(() => {
-      fitDiagramSvgInBody(body)
-      requestAnimationFrame(() => {
-        diagramFitRafIds.delete(body)
-        fitDiagramSvgInBody(body)
-      })
-    })
-  )
+  const timer = setTimeout(() => {
+    diagramFitThrottleTimers.delete(body)
+    scheduleFitDiagramSvgReflow(body)
+  }, DIAGRAM_REFIT_THROTTLE_MS)
+  diagramFitThrottleTimers.set(body, timer)
+}
+
+const flushBatchDiagramRefit = () => {
+  batchRefitRafId = 0
+  const bodies = [...pendingRefitBodies]
+  pendingRefitBodies.clear()
+  bodies.forEach((body) => {
+    fitDiagramSvgInBody(body)
+  })
+}
+
+/** 批量 refit，合并同一帧内的多次 ResizeObserver 触发 */
+const scheduleFitDiagramSvgReflow = (body: HTMLElement) => {
+  pendingRefitBodies.add(body)
+  if (batchRefitRafId) {
+    return
+  }
+  batchRefitRafId = requestAnimationFrame(flushBatchDiagramRefit)
 }
 
 /** 窗口尺寸变化时重算所有图表外框（侧栏收起/拉宽等场景） */
@@ -318,26 +341,23 @@ const observeDiagramBodyResize = (body: HTMLElement) => {
   if (typeof ResizeObserver === 'undefined') {
     return
   }
-  const block = body.closest('.md-diagram') as HTMLElement | null
-  const observer = new ResizeObserver(() => scheduleFitDiagramSvgReflow(body))
+  const observer = new ResizeObserver(() =>
+    scheduleFitDiagramSvgReflowThrottled(body)
+  )
   observer.observe(body)
-  if (block) {
-    observer.observe(block)
-  }
-  const messageContent = body.closest('.message-md, .message-content') as HTMLElement | null
-  if (messageContent) {
-    observer.observe(messageContent)
-  }
   diagramFitObservers.set(body, observer)
 }
 
-/** 布局稳定后再测量并适配 SVG */
+/**
+ * 图表渲染完成后原子切换占位态：
+ * 先在 pending 状态下完成一次同步高度适配，再移除 pending，避免气泡先被 SVG 自然高度撑开。
+ */
 const scheduleFitDiagramSvg = (body: HTMLElement) => {
+  fitDiagramSvgInBody(body)
+  clearDiagramBodyPending(body)
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      fitDiagramSvgInBody(body)
-      observeDiagramBodyResize(body)
-    })
+    fitDiagramSvgInBody(body)
+    observeDiagramBodyResize(body)
   })
 }
 
@@ -499,6 +519,35 @@ md.renderer.rules.td_open = function() {
 export const renderMarkdown = (markdown?: string) =>
   md.render(normalizeMarkdownRepoFileUrls(markdown || ''))
 
+const buildMarkdownHtmlCacheKey = (markdown: string, cacheKey?: string) =>
+  `${MARKDOWN_RENDERER_REVISION}:${cacheKey ?? markdown}`
+
+/** 带 LRU 的 Markdown HTML 缓存，避免 Vue 重渲染重复 markdown-it 解析 */
+export const renderMarkdownCached = (
+  markdown?: string,
+  cacheKey?: string
+) => {
+  const normalized = normalizeMarkdownRepoFileUrls(markdown || '')
+  const key = buildMarkdownHtmlCacheKey(normalized, cacheKey)
+  const cached = markdownHtmlCache.get(key)
+  if (cached !== undefined) {
+    return cached
+  }
+  const html = md.render(normalized)
+  if (markdownHtmlCache.size >= MARKDOWN_HTML_CACHE_MAX_ENTRIES) {
+    const oldest = markdownHtmlCache.keys().next().value
+    if (oldest) {
+      markdownHtmlCache.delete(oldest)
+    }
+  }
+  markdownHtmlCache.set(key, html)
+  return html
+}
+
+export const clearMarkdownHtmlCache = () => {
+  markdownHtmlCache.clear()
+}
+
 /** 流式尾段中可由 renderMarkdownBlocks 异步渲染的围栏语言 */
 const ASYNC_DIAGRAM_FENCE_LANGS = new Set([
   'mermaid',
@@ -628,8 +677,13 @@ export const updateStreamTailSegmentInPlace = (
   appendEllipsis = false
 ): void => {
   const text = markdown + (appendEllipsis ? '...' : '')
+  const nextHtml = renderMarkdownCached(text)
+  if (root.getAttribute(MARKDOWN_TAIL_HTML_ATTR) === nextHtml) {
+    return
+  }
+
   const template = document.createElement('div')
-  template.innerHTML = renderMarkdown(text)
+  template.innerHTML = nextHtml
 
   const oldPending = findPendingAsyncMarkdownBlock(root)
   const newPending = findPendingAsyncMarkdownBlock(template)
@@ -638,10 +692,63 @@ export const updateStreamTailSegmentInPlace = (
     syncChildNodesBefore(root, oldPending, template, newPending)
     syncBlockSource(oldPending, newPending)
     removeChildNodesAfter(root, oldPending)
+    root.setAttribute(MARKDOWN_TAIL_HTML_ATTR, nextHtml)
     return
   }
 
-  replaceRootChildren(root, template)
+  root.innerHTML = nextHtml
+  root.setAttribute(MARKDOWN_TAIL_HTML_ATTR, nextHtml)
+}
+
+let streamTailUpdateRafId = 0
+let pendingStreamTailUpdate:
+  | {
+      root: HTMLElement
+      markdown: string
+      appendEllipsis: boolean
+    }
+  | null = null
+
+/** rAF 合并流式 token，避免每个 token 都跑完整 markdown-it + DOM diff */
+export const scheduleUpdateStreamTailSegmentInPlace = (
+  root: HTMLElement,
+  markdown: string,
+  appendEllipsis = false,
+  immediate = false
+) => {
+  pendingStreamTailUpdate = { root, markdown, appendEllipsis }
+  if (immediate) {
+    if (streamTailUpdateRafId) {
+      cancelAnimationFrame(streamTailUpdateRafId)
+      streamTailUpdateRafId = 0
+    }
+    const pending = pendingStreamTailUpdate
+    pendingStreamTailUpdate = null
+    if (pending) {
+      updateStreamTailSegmentInPlace(
+        pending.root,
+        pending.markdown,
+        pending.appendEllipsis
+      )
+    }
+    return
+  }
+  if (streamTailUpdateRafId) {
+    return
+  }
+  streamTailUpdateRafId = requestAnimationFrame(() => {
+    streamTailUpdateRafId = 0
+    const pending = pendingStreamTailUpdate
+    pendingStreamTailUpdate = null
+    if (!pending) {
+      return
+    }
+    updateStreamTailSegmentInPlace(
+      pending.root,
+      pending.markdown,
+      pending.appendEllipsis
+    )
+  })
 }
 
 /** 聊天页 idle 预加载 mermaid/vega/plantuml，降低首图冷启动延迟 */
@@ -660,14 +767,395 @@ export type RenderMarkdownBlocksOptions = {
   deferDiagrams?: boolean
   /** 并发渲染图表块上限，默认 2 */
   concurrency?: number
+  /** 视口外后台渲染并发上限，默认 1 */
+  backgroundConcurrency?: number
+  /** 滚动容器，用于视口优先调度（ChatView / MdViewer 传入） */
+  scrollRoot?: Element | null
+  /** IntersectionObserver 预取边距，默认提前约 1~2 屏 */
+  prefetchRootMargin?: string
+  /** 为 false 时按 DOM 顺序全量渲染（便于测试/回退），默认 true */
+  lazy?: boolean
 }
 
 const DEFAULT_DIAGRAM_RENDER_CONCURRENCY = 2
+const DEFAULT_BACKGROUND_RENDER_CONCURRENCY = 2
+const MARKDOWN_MIN_PREFETCH_PX = 2400
+const MARKDOWN_PREFETCH_VIEWPORT_MULTIPLIER = 2.5
+const DEFAULT_PREFETCH_ROOT_MARGIN = `${MARKDOWN_MIN_PREFETCH_PX}px 0px`
+const IDLE_BACKGROUND_TIMEOUT_MS = 2000
+
+/** 按容器高度计算 Markdown 异步块预取区（约 2.5 屏，至少 2400px） */
+export const buildMarkdownPrefetchRootMargin = (scrollRoot: Element | null) => {
+  const viewportHeight =
+    scrollRoot instanceof HTMLElement
+      ? scrollRoot.clientHeight
+      : typeof window !== 'undefined'
+        ? window.innerHeight
+        : 800
+  const prefetchPx = Math.max(
+    MARKDOWN_MIN_PREFETCH_PX,
+    Math.ceil(viewportHeight * MARKDOWN_PREFETCH_VIEWPORT_MULTIPLIER)
+  )
+  return `${prefetchPx}px 0px`
+}
+
+/** MdViewer 复用通用预取策略，保留旧导出名供调用方使用 */
+export const buildMdViewerPrefetchRootMargin = buildMarkdownPrefetchRootMargin
 
 /** 待渲染块：未渲染或 revision 落后于当前渲染器版本 */
 const buildPendingBlocksSelector = () =>
   `[${MARKDOWN_RENDER_ATTR}]:not([${MARKDOWN_RENDERED_ATTR}="true"]), ` +
   `[${MARKDOWN_RENDER_ATTR}][${MARKDOWN_RENDERED_ATTR}="true"]:not([${MARKDOWN_REVISION_ATTR}="${MARKDOWN_RENDERER_REVISION}"])`
+
+export const hasPendingMarkdownBlocks = (root: ParentNode | Element): boolean =>
+  root.querySelector(buildPendingBlocksSelector()) !== null
+
+const isHeavyMarkdownBlock = (block: Element): boolean => {
+  const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
+  return type === 'html' || type === 'plantuml'
+}
+
+const isBlockPendingRender = (block: Element): boolean => {
+  if (block.getAttribute(MARKDOWN_RENDERING_ATTR) === 'true') {
+    return true
+  }
+  const alreadyRendered = block.getAttribute(MARKDOWN_RENDERED_ATTR) === 'true'
+  if (!alreadyRendered) {
+    return true
+  }
+  return block.getAttribute(MARKDOWN_REVISION_ATTR) !== MARKDOWN_RENDERER_REVISION
+}
+
+const parsePrefetchMarginPx = (rootMargin: string): number => {
+  const match = rootMargin.match(/(-?\d+(?:\.\d+)?)px/)
+  return match ? Number.parseFloat(match[1]) : 800
+}
+
+const getScrollRootRect = (scrollRoot: Element | null) => {
+  if (scrollRoot) {
+    return scrollRoot.getBoundingClientRect()
+  }
+  return {
+    top: 0,
+    bottom: typeof window !== 'undefined' ? window.innerHeight : 800,
+    left: 0,
+    right: typeof window !== 'undefined' ? window.innerWidth : 1200
+  }
+}
+
+/** 0=视口内，1=下方预取，2=上方预取，3=远离视口 */
+const getBlockViewportPriority = (
+  block: Element,
+  scrollRoot: Element | null,
+  prefetchPx: number
+): number => {
+  const rootRect = getScrollRootRect(scrollRoot)
+  const blockRect = block.getBoundingClientRect()
+
+  if (blockRect.bottom >= rootRect.top && blockRect.top <= rootRect.bottom) {
+    return 0
+  }
+  if (
+    blockRect.top > rootRect.bottom &&
+    blockRect.top <= rootRect.bottom + prefetchPx
+  ) {
+    return 1
+  }
+  if (
+    blockRect.bottom < rootRect.top &&
+    blockRect.bottom >= rootRect.top - prefetchPx
+  ) {
+    return 2
+  }
+  return 3
+}
+
+const getPendingBlockSurface = (block: Element): HTMLElement | null =>
+  block.querySelector<HTMLElement>('.md-diagram-body.md-block-pending') ??
+  block.querySelector<HTMLElement>('.md-html-preview-wrap.md-block-pending')
+
+const updateBlockOffscreenAttr = (block: Element, priority: number) => {
+  const surface = getPendingBlockSurface(block)
+  if (!surface) {
+    return
+  }
+  if (priority >= 3) {
+    surface.setAttribute(MARKDOWN_OFFSCREEN_ATTR, '')
+  } else {
+    surface.removeAttribute(MARKDOWN_OFFSCREEN_ATTR)
+  }
+}
+
+type ViewportObserverState = {
+  observer: IntersectionObserver
+  blocks: Set<Element>
+  rootMargin: string
+}
+
+const viewportObserverStates = new WeakMap<Element, ViewportObserverState>()
+let viewportDrainHandler: (() => void) | null = null
+
+const ensureViewportObserver = (
+  scrollRoot: Element,
+  rootMargin: string
+): ViewportObserverState => {
+  let state = viewportObserverStates.get(scrollRoot)
+  if (state && state.rootMargin !== rootMargin) {
+    state.observer.disconnect()
+    viewportObserverStates.delete(scrollRoot)
+    state = undefined
+  }
+  if (state) {
+    return state
+  }
+  state = {
+    blocks: new Set(),
+    rootMargin,
+    observer: new IntersectionObserver(
+      (entries) => {
+        let shouldDrain = false
+        for (const entry of entries) {
+          const block = entry.target
+          if (!(block instanceof Element)) {
+            continue
+          }
+          if (!isBlockPendingRender(block)) {
+            getPendingBlockSurface(block)?.removeAttribute(MARKDOWN_OFFSCREEN_ATTR)
+            continue
+          }
+          const surface = getPendingBlockSurface(block)
+          if (entry.isIntersecting) {
+            surface?.removeAttribute(MARKDOWN_OFFSCREEN_ATTR)
+            shouldDrain = true
+          } else {
+            surface?.setAttribute(MARKDOWN_OFFSCREEN_ATTR, '')
+          }
+        }
+        if (shouldDrain) {
+          viewportDrainHandler?.()
+        }
+      },
+      { root: scrollRoot, rootMargin, threshold: 0 }
+    )
+  }
+  viewportObserverStates.set(scrollRoot, state)
+  return state
+}
+
+const observeBlockForViewport = (
+  block: Element,
+  scrollRoot: Element,
+  rootMargin: string
+) => {
+  const state = ensureViewportObserver(scrollRoot, rootMargin)
+  if (state.blocks.has(block)) {
+    return
+  }
+  state.blocks.add(block)
+  state.observer.observe(block)
+}
+
+const unobserveBlockForViewport = (block: Element, scrollRoot: Element) => {
+  const state = viewportObserverStates.get(scrollRoot)
+  if (!state || !state.blocks.has(block)) {
+    return
+  }
+  state.blocks.delete(block)
+  state.observer.unobserve(block)
+}
+
+/** 调度结束后断开 IO，避免滚动继续触发 drain */
+const cleanupViewportScheduling = (
+  scrollRoot: Element | null,
+  blocks: Element[],
+  handler: () => void
+) => {
+  if (viewportDrainHandler === handler) {
+    viewportDrainHandler = null
+  }
+  if (!scrollRoot) {
+    return
+  }
+  const state = viewportObserverStates.get(scrollRoot)
+  if (!state) {
+    return
+  }
+  for (const block of blocks) {
+    if (!state.blocks.has(block)) {
+      continue
+    }
+    state.blocks.delete(block)
+    state.observer.unobserve(block)
+  }
+}
+
+const scheduleIdle = (fn: () => void) => {
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(fn, { timeout: IDLE_BACKGROUND_TIMEOUT_MS })
+  } else {
+    setTimeout(fn, 0)
+  }
+}
+
+const renderWithViewportScheduling = async (
+  blocks: Element[],
+  options: RenderMarkdownBlocksOptions
+): Promise<HTMLElement[]> => {
+  const scrollRoot = options.scrollRoot ?? null
+  const prefetchRootMargin =
+    options.prefetchRootMargin ?? DEFAULT_PREFETCH_ROOT_MARGIN
+  const prefetchPx = parsePrefetchMarginPx(prefetchRootMargin)
+  const maxVisibleConcurrency =
+    options.concurrency ?? DEFAULT_DIAGRAM_RENDER_CONCURRENCY
+  const maxBackgroundConcurrency =
+    options.backgroundConcurrency ?? DEFAULT_BACKGROUND_RENDER_CONCURRENCY
+
+  const remaining = new Set(blocks)
+  const inFlight = new Set<Element>()
+  let heavyInFlight = 0
+  const maxHeavyConcurrent = 1
+  const bodiesToRefit: HTMLElement[] = []
+  let resolveDone!: () => void
+  const done = new Promise<void>((resolve) => {
+    resolveDone = resolve
+  })
+
+  const getPendingBlocks = () =>
+    [...remaining].filter((block) => isBlockPendingRender(block))
+
+  const countInFlightVisible = () =>
+    [...inFlight].filter(
+      (block) =>
+        getBlockViewportPriority(block, scrollRoot, prefetchPx) < 3
+    ).length
+
+  const countInFlightBackground = () =>
+    [...inFlight].filter(
+      (block) =>
+        getBlockViewportPriority(block, scrollRoot, prefetchPx) >= 3
+    ).length
+
+  const maybeFinish = () => {
+    if (getPendingBlocks().length === 0 && inFlight.size === 0) {
+      resolveDone()
+    }
+  }
+
+  const startBlock = (block: Element) => {
+    if (inFlight.has(block)) {
+      return
+    }
+    if (isHeavyMarkdownBlock(block) && heavyInFlight >= maxHeavyConcurrent) {
+      return
+    }
+    if (isHeavyMarkdownBlock(block)) {
+      heavyInFlight++
+    }
+    inFlight.add(block)
+    void renderBlock(block, options)
+      .then((body) => {
+        if (body) {
+          bodiesToRefit.push(body)
+        }
+        if (!isBlockPendingRender(block)) {
+          remaining.delete(block)
+          getPendingBlockSurface(block)?.removeAttribute(MARKDOWN_OFFSCREEN_ATTR)
+          if (scrollRoot) {
+            unobserveBlockForViewport(block, scrollRoot)
+          }
+        }
+      })
+      .finally(() => {
+        if (isHeavyMarkdownBlock(block)) {
+          heavyInFlight = Math.max(0, heavyInFlight - 1)
+        }
+        inFlight.delete(block)
+        scheduleDrain()
+        maybeFinish()
+      })
+  }
+
+  const drainBackground = () => {
+    const pending = getPendingBlocks().filter((block) => !inFlight.has(block))
+    const backgroundPending = pending.filter(
+      (block) =>
+        getBlockViewportPriority(block, scrollRoot, prefetchPx) >= 3
+    )
+    let runningBackground = countInFlightBackground()
+    for (const block of backgroundPending) {
+      if (runningBackground >= maxBackgroundConcurrency) {
+        break
+      }
+      runningBackground++
+      startBlock(block)
+    }
+    maybeFinish()
+  }
+
+  const scheduleDrain = () => {
+    for (const block of getPendingBlocks()) {
+      const priority = getBlockViewportPriority(block, scrollRoot, prefetchPx)
+      updateBlockOffscreenAttr(block, priority)
+    }
+
+    const pending = getPendingBlocks().filter((block) => !inFlight.has(block))
+    if (pending.length === 0) {
+      maybeFinish()
+      return
+    }
+
+    pending.sort(
+      (a, b) =>
+        getBlockViewportPriority(a, scrollRoot, prefetchPx) -
+        getBlockViewportPriority(b, scrollRoot, prefetchPx)
+    )
+
+    let runningVisible = countInFlightVisible()
+
+    for (const block of pending) {
+      const priority = getBlockViewportPriority(block, scrollRoot, prefetchPx)
+      if (priority >= 3) {
+        continue
+      }
+      if (runningVisible >= maxVisibleConcurrency) {
+        break
+      }
+      runningVisible++
+      startBlock(block)
+    }
+
+    const hasVisiblePending = pending.some(
+      (block) =>
+        getBlockViewportPriority(block, scrollRoot, prefetchPx) < 3
+    )
+    const hasBackgroundPending = pending.some(
+      (block) =>
+        getBlockViewportPriority(block, scrollRoot, prefetchPx) >= 3
+    )
+
+    if (hasBackgroundPending) {
+      if (!hasVisiblePending) {
+        drainBackground()
+      } else if (runningVisible >= maxVisibleConcurrency) {
+        scheduleIdle(drainBackground)
+      }
+    }
+  }
+
+  viewportDrainHandler = scheduleDrain
+
+  if (scrollRoot && typeof IntersectionObserver !== 'undefined') {
+    ensureViewportObserver(scrollRoot, prefetchRootMargin)
+    for (const block of blocks) {
+      observeBlockForViewport(block, scrollRoot, prefetchRootMargin)
+    }
+  }
+
+  scheduleDrain()
+  await done
+  cleanupViewportScheduling(scrollRoot, blocks, scheduleDrain)
+  return bodiesToRefit
+}
 
 const mapWithConcurrency = async <T>(
   items: T[],
@@ -1430,12 +1918,13 @@ const renderMermaidBlock = async (block: Element) => {
     throw new Error('Mermaid 图表语法无效')
   }
   body.innerHTML = svg
-  clearDiagramBodyPending(body)
   const renderedSvg = body.querySelector('svg')
   if (renderedSvg instanceof SVGElement && isXychartSource(source)) {
     applyXychartBarColors(renderedSvg)
     if (!isXychartHorizontal(source)) {
       wrapXychartVerticalCategoryLabels(renderedSvg)
+      fitDiagramSvgInBody(body)
+      clearDiagramBodyPending(body)
       scheduleVerticalXychartLabelLayout(body, renderedSvg)
     } else {
       scheduleFitDiagramSvg(body)
@@ -1479,7 +1968,6 @@ const renderPlantUmlBlock = async (block: Element) => {
 
   const renderer = await getPlantUmlRenderer()
   body.innerHTML = await renderer(injectPlantUmlTheme(source))
-  clearDiagramBodyPending(body)
   scheduleFitDiagramSvg(body)
 }
 
@@ -1605,7 +2093,6 @@ const renderVegaLiteBlock = async (block: Element) => {
   const host = document.createElement('div')
   host.className = 'md-vegalite-host'
   body.replaceChildren(host)
-  clearDiagramBodyPending(body)
   await embed(host, spec, {
     actions: false,
     renderer: 'svg',
@@ -1693,7 +2180,14 @@ const measureHtmlPreviewContentSize = (doc: Document, layoutWidth: number) => {
       consider(child)
     }
   }
-  body.querySelectorAll<HTMLElement>('*').forEach(consider)
+  let nodeCount = 0
+  body.querySelectorAll<HTMLElement>('*').forEach((el) => {
+    if (nodeCount >= HTML_PREVIEW_MAX_MEASURE_NODES) {
+      return
+    }
+    nodeCount++
+    consider(el)
+  })
 
   const bboxHeight = Math.max(1, Math.ceil(maxBottom))
   const bboxWidth = Math.max(1, Math.ceil(maxRight))
@@ -1874,11 +2368,10 @@ const scheduleHtmlPreviewFit = (iframe: HTMLIFrameElement) => {
   const run = () => {
     resizeHtmlPreview(iframe)
   }
+  run()
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      run()
-      bindHtmlPreviewContentResize(iframe, run)
-    })
+    run()
+    bindHtmlPreviewContentResize(iframe, run)
   })
 }
 
@@ -1960,8 +2453,9 @@ const renderHtmlPreviewBlock = (block: Element) => {
   }
 
   const finishLoading = () => {
-    scheduleHtmlPreviewFit(iframe)
+    resizeHtmlPreview(iframe)
     wrap.classList.remove('md-block-pending')
+    scheduleHtmlPreviewFit(iframe)
     observeHtmlPreviewResize(block as HTMLElement, iframe)
   }
 
@@ -2131,24 +2625,44 @@ export const normalizeMarkdownImageParagraphs = (root: ParentNode | Element) => 
 }
 
 /** 在 root 内渲染 mermaid/plantuml/vegalite/html 等异步 Markdown 块 */
-export const renderMarkdownBlocks = async (
+const executeRenderMarkdownBlocks = async (
   root: ParentNode | Element,
   options?: RenderMarkdownBlocksOptions
 ) => {
   const blocks = Array.from(
     root.querySelectorAll<Element>(buildPendingBlocksSelector())
   )
-  const bodiesToRefit: HTMLElement[] = []
-  const concurrency =
-    options?.concurrency ?? DEFAULT_DIAGRAM_RENDER_CONCURRENCY
-  await mapWithConcurrency(blocks, concurrency, async (block) => {
-    const body = await renderBlock(block, options)
-    if (body) {
-      bodiesToRefit.push(body)
+  let bodiesToRefit: HTMLElement[] = []
+
+  if (blocks.length > 0) {
+    const lazy = options?.lazy !== false
+    if (lazy) {
+      bodiesToRefit = await renderWithViewportScheduling(blocks, options ?? {})
+    } else {
+      const concurrency =
+        options?.concurrency ?? DEFAULT_DIAGRAM_RENDER_CONCURRENCY
+      await mapWithConcurrency(blocks, concurrency, async (block) => {
+        const body = await renderBlock(block, options)
+        if (body) {
+          bodiesToRefit.push(body)
+        }
+      })
     }
-  })
+  }
+
   refitDiagramBodies(bodiesToRefit)
   normalizeMarkdownImageParagraphs(root)
+}
+
+export const renderMarkdownBlocks = (
+  root: ParentNode | Element,
+  options?: RenderMarkdownBlocksOptions
+): Promise<void> => {
+  const task = renderMarkdownBlocksChain.then(() =>
+    executeRenderMarkdownBlocks(root, options)
+  )
+  renderMarkdownBlocksChain = task.catch(() => {})
+  return task
 }
 
 /** 对 root 内已渲染图表按当前宽度重新适配外框高度 */
@@ -2165,6 +2679,13 @@ export const resetMarkdownRendererForTest = () => {
   plantUmlModuleLoad = undefined
   vegaEmbedFn = undefined
   invalidateDiagramMaxHeightCache()
+  clearMarkdownHtmlCache()
+  pendingRefitBodies.clear()
+  if (batchRefitRafId) {
+    cancelAnimationFrame(batchRefitRafId)
+    batchRefitRafId = 0
+  }
+  renderMarkdownBlocksChain = Promise.resolve()
 }
 
 /** 单测用：xychart 横向修正与类目计数 */

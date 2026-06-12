@@ -93,24 +93,30 @@
                     class="assistant-answer message-md"
                   >
                     <div
-                      v-for="(seg, segIdx) in splitStreamingSegments(
-												message.content
-											)"
+                      v-for="(seg, segIdx) in assistantRenderedSegments.get(
+                        index
+                      ) ?? []"
                       :key="segIdx"
                       class="assistant-stream-segment"
                       :data-md-stream-tail="
-												isActiveAssistantTurn(index) && !seg.complete
+												isActiveAssistantTurn(index) &&
+												!seg.complete &&
+												isBusyByState
 													? ''
 													: null
 											"
                     >
                       <div
-                        v-if="isActiveAssistantTurn(index) && !seg.complete"
+                        v-if="
+                          isActiveAssistantTurn(index) &&
+                          !seg.complete &&
+                          isBusyByState
+                        "
                         :ref="bindActiveTailSegmentRef"
                       />
                       <div
                         v-else
-                        v-html="renderMarkdown(seg.text)"
+                        v-html="seg.html"
                       />
                     </div>
                   </div>
@@ -223,7 +229,7 @@
                 <div
                   v-if="message.content"
                   class="message-md"
-                  v-html="renderMarkdown(message.content)"
+                  v-html="userMessageHtmlMap.get(index) ?? ''"
                 ></div>
                 <div v-show="message?.content" class="message-actions">
                   <el-button
@@ -284,7 +290,7 @@
         <div
           class="input-area"
           :class="{
-            'is-input-editing': isMobile && inputFocused,
+            'is-input-editing': inputFocused,
             'is-drag-over': isDragOverImages
           }"
           @paste="handleImagePaste"
@@ -334,8 +340,8 @@
             :autosize="chatInputAutosize"
             :maxlength="32768"
             show-word-limit
-            @touchstart.passive="ensureMobileInputExpanded"
-            @pointerdown="ensureMobileInputExpanded"
+            @touchstart.passive="ensureInputExpanded"
+            @pointerdown="ensureInputExpanded"
             @focus="onChatInputFocus"
             @blur="onChatInputBlur"
             @keydown="handleKeydown"
@@ -455,13 +461,15 @@ import {
 import { processChatImageFile } from '../ts/media/image'
 import { cloneSvgForPreview } from '@/utils/diagramPreview'
 import {
+  buildMarkdownPrefetchRootMargin,
   getMarkdownCodeBlockText,
   getMarkdownHtmlBlockSource,
   MARKDOWN_RENDERER_REVISION,
   preloadDiagramRuntimes,
-  renderMarkdown,
+  hasPendingMarkdownBlocks,
+  renderMarkdownCached,
   renderMarkdownBlocks,
-  updateStreamTailSegmentInPlace
+  scheduleUpdateStreamTailSegmentInPlace
 } from '@/utils/markdownRenderer'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
 import { getAgentDisplayName, getAgentLogo, agentNameMap } from '../ts/agent/name-registry'
@@ -797,10 +805,8 @@ const assistantGreeting = computed(() => {
 const chatInputRef = ref<InstanceType<typeof ElInput> | null>(null)
 const inputFocused = ref(false)
 
-/** 窄屏高度由 CSS 控制，禁用 autosize，避免 iOS 内联 height 盖过样式 */
-const chatInputAutosize = computed(() =>
-  props.isMobile ? false : { minRows: 5, maxRows: 10 }
-)
+/** 高度由 CSS 控制，禁用 autosize，避免内联 height 盖过样式 */
+const chatInputAutosize = false
 
 const getChatTextareaEl = (): HTMLTextAreaElement | null => {
   const root = chatInputRef.value?.$el as HTMLElement | undefined
@@ -819,10 +825,7 @@ const clearChatTextareaInlineSize = () => {
   ta.style.removeProperty('max-height')
 }
 
-const syncMobileInputHeight = () => {
-  if (!props.isMobile) {
-    return
-  }
+const syncChatInputHeight = () => {
   nextTick(() => {
     clearChatTextareaInlineSize()
     scheduleChatBottomInsetUpdate()
@@ -834,22 +837,22 @@ const syncMobileInputHeight = () => {
 }
 
 /** touchstart / pointerdown 先于 focus，同一击内先标记撑高 */
-const ensureMobileInputExpanded = () => {
-  if (!props.isMobile || inputFocused.value) {
+const ensureInputExpanded = () => {
+  if (inputFocused.value) {
     return
   }
   inputFocused.value = true
-  syncMobileInputHeight()
+  syncChatInputHeight()
 }
 
 const onChatInputFocus = () => {
   inputFocused.value = true
-  syncMobileInputHeight()
+  syncChatInputHeight()
 }
 
 const onChatInputBlur = () => {
   inputFocused.value = false
-  syncMobileInputHeight()
+  syncChatInputHeight()
 }
 
 const sendMessage = async (msg?: string) => {
@@ -1035,6 +1038,37 @@ const BOTTOM_FOLLOW_THRESHOLD = 120
 
 /** 合并多源滚动触发的 rAF 句柄，避免多个平滑动画互相打断造成抽搐 */
 let scrollRafId: number | null = null
+let lastScrollHeight = 0
+
+const getScrollWrap = (): HTMLElement | null => {
+  const wrap = scrollbarRef.value?.wrapRef
+  return wrap instanceof HTMLElement ? wrap : null
+}
+
+/**
+ * 贴底状态下的底部锚定：
+ * 内容高度变化时按 scrollHeight 增量同步补偿 scrollTop，让最后一个气泡底边保持在原屏幕位置。
+ */
+const keepBottomAnchored = () => {
+  const wrap = getScrollWrap()
+  if (!wrap) {
+    return
+  }
+  const currentScrollHeight = wrap.scrollHeight
+  if (!shouldAutoScroll()) {
+    lastScrollHeight = currentScrollHeight
+    return
+  }
+  const previousScrollHeight = lastScrollHeight || currentScrollHeight
+  const delta = currentScrollHeight - previousScrollHeight
+  if (delta !== 0) {
+    wrap.scrollTop += delta
+  } else {
+    wrap.scrollTop = currentScrollHeight - wrap.clientHeight
+  }
+  lastScrollHeight = wrap.scrollHeight
+  isAtBottom.value = true
+}
 
 /**
  * 滚动到底部。
@@ -1048,11 +1082,12 @@ const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
   }
   scrollRafId = requestAnimationFrame(() => {
     scrollRafId = null
-    const wrap = scrollbarRef.value?.wrapRef
+    const wrap = getScrollWrap()
     if (!wrap) {
       return
     }
     wrap.scrollTo({ top: wrap.scrollHeight, behavior })
+    lastScrollHeight = wrap.scrollHeight
   })
 }
 
@@ -1096,6 +1131,53 @@ const splitStreamingSegments = (content: string): StreamSegment[] => {
   segments.push({ text: content.slice(lastIndex), complete: false })
   return segments
 }
+
+type RenderedStreamSegment = StreamSegment & { html: string }
+
+const buildRenderedSegments = (
+  content: string,
+  streamingTail = false
+): RenderedStreamSegment[] => {
+  const segments = splitStreamingSegments(content)
+  return segments.map((seg, idx) => {
+    const isTail = idx === segments.length - 1 && !seg.complete
+    const shouldRenderHtml = seg.complete || !isTail || !streamingTail
+    return {
+      ...seg,
+      html: shouldRenderHtml ? renderMarkdownCached(seg.text) : ''
+    }
+  })
+}
+
+/** 预解析 assistant 消息段，避免模板内重复 markdown-it */
+const assistantRenderedSegments = computed(() => {
+  const map = new Map<number, RenderedStreamSegment[]>()
+  const streamingIdx = isBusyByState.value
+    ? activeAssistantVisibleIndex.value
+    : -1
+  visibleMessageContext.value.forEach((message, index) => {
+    if (message.role === 'assistant' && message.content) {
+      map.set(
+        index,
+        buildRenderedSegments(
+          message.content,
+          isBusyByState.value && index === streamingIdx
+        )
+      )
+    }
+  })
+  return map
+})
+
+const userMessageHtmlMap = computed(() => {
+  const map = new Map<number, string>()
+  visibleMessageContext.value.forEach((message, index) => {
+    if (message.role === 'user' && message.content) {
+      map.set(index, renderMarkdownCached(message.content))
+    }
+  })
+  return map
+})
 
 /** 当前流式 assistant 尾段原文（围栏未闭合部分），非流式时为 null */
 const activeAssistantTailText = computed(() => {
@@ -1152,7 +1234,16 @@ const runMarkdownBlocks = () => {
       return
     }
     const scopeRoot = getMarkdownBlocksScope() ?? listRoot
-    renderMarkdownBlocks(scopeRoot, { deferDiagrams: isBusyByState.value })
+    if (!hasPendingMarkdownBlocks(scopeRoot)) {
+      return
+    }
+    const scrollRoot =
+      (scrollbarRef.value?.wrapRef as HTMLElement | undefined) ?? null
+    renderMarkdownBlocks(scopeRoot, {
+      deferDiagrams: isBusyByState.value,
+      scrollRoot,
+      prefetchRootMargin: buildMarkdownPrefetchRootMargin(scrollRoot)
+    })
       .then(() => {
         if (shouldAutoScroll()) {
           scrollToBottom()
@@ -1195,13 +1286,15 @@ const schedulePreloadDiagramRuntimes = () => {
 }
 
 const checkScroll = () => {
-  if (!scrollbarRef.value?.wrapRef) {
+  const wrap = getScrollWrap()
+  if (!wrap) {
     return
   }
-  const { scrollTop, scrollHeight, clientHeight } = scrollbarRef.value.wrapRef
+  const { scrollTop, scrollHeight, clientHeight } = wrap
   const distFromBottom = scrollHeight - clientHeight - scrollTop
   // 按钮显隐与自动跟随触发区域共用同一阈值：进入贴底区即隐藏按钮，并允许自动跟随
   isAtBottom.value = distFromBottom <= BOTTOM_FOLLOW_THRESHOLD
+  lastScrollHeight = scrollHeight
 }
 
 /** 标记用户正在滚动，并在停手一段时间后复位（停手前一律不自动下滚） */
@@ -1572,17 +1665,15 @@ watch(
 )
 
 /**
- * 监听消息列表的高度变化：图片 / iframe / 图表等高度不定的元素是异步、分多帧确定高度的，
- * 任何一次撑高都会移动「底部」位置。处于跟随态时立即瞬时贴底，从根上消除「追逐过时目标」造成的抽搐。
+ * 监听消息列表高度变化：贴底时同步补偿 scrollTop，而不是下一帧滚到底部。
+ * 这样内容向下增长时，最后一个气泡底边在屏幕上的位置保持不变。
  */
 watch(messageListRef, (el) => {
   messageListResizeObserver?.disconnect()
   messageListResizeObserver = undefined
   if (el && typeof ResizeObserver !== 'undefined') {
     messageListResizeObserver = new ResizeObserver(() => {
-      if (shouldAutoScroll()) {
-        scrollToBottom('auto')
-      }
+      keepBottomAnchored()
     })
     messageListResizeObserver.observe(el)
   }
@@ -1602,26 +1693,46 @@ watch(
     if (!text || !el) {
       return
     }
-    updateStreamTailSegmentInPlace(el, text, true)
+    scheduleUpdateStreamTailSegmentInPlace(el, text, true)
     activateMarkdownBlocks()
   },
   { flush: 'post' }
 )
 
+/** 历史消息入列或流式结束后补渲染图表块；流式期间不 deep 扫描全列表 */
 watch(
-  () => activeSession.value?.messageContext.value,
-  () => {
-    activateMarkdownBlocks()
-  },
-  { deep: true, flush: 'post' }
+  () =>
+    [
+      activeSession.value?.messageContext.value.length,
+      isBusyByState.value
+    ] as const,
+  ([length, busy], prev) => {
+    if (busy) {
+      return
+    }
+    const prevLength = prev?.[0]
+    if (prevLength !== undefined && length === prevLength) {
+      return
+    }
+    flushActivateMarkdownBlocks()
+  }
 )
 
 /** 流式结束但 content 不再变化时，补渲染推迟的 mermaid/plantuml/vegalite/html 块 */
 watch(isBusyByState, (busy, wasBusy) => {
   if (!busy && wasBusy) {
+    const el = activeTailSegmentEl.value
+    const idx = activeAssistantVisibleIndex.value
+    if (el && idx >= 0) {
+      const message = visibleMessageContext.value[idx]
+      if (message?.content && message.role === 'assistant') {
+        const tail = splitStreamingSegments(message.content).at(-1)
+        if (tail?.text) {
+          scheduleUpdateStreamTailSegmentInPlace(el, tail.text, false, true)
+        }
+      }
+    }
     flushActivateMarkdownBlocks()
-  } else {
-    activateMarkdownBlocks()
   }
 })
 
@@ -1687,8 +1798,13 @@ const updateChatBottomInset = () => {
   if (!dockEl || !viewEl) {
     return
   }
+  const wrap = getScrollWrap()
+  if (wrap) {
+    lastScrollHeight = wrap.scrollHeight
+  }
   const height = Math.ceil(dockEl.getBoundingClientRect().height)
   viewEl.style.setProperty('--chat-bottom-inset', `${height}px`)
+  keepBottomAnchored()
 }
 
 /** 在 DOM 更新后重新测量底部悬浮层高度 */
@@ -1699,32 +1815,21 @@ const scheduleChatBottomInsetUpdate = () => {
 }
 
 watch(inputFocused, () => {
-  if (props.isMobile) {
-    syncMobileInputHeight()
-    return
-  }
-  nextTick(() => {
-    chatInputRef.value?.resizeTextarea?.()
-    scheduleChatBottomInsetUpdate()
-  })
+  syncChatInputHeight()
 })
 
-/** 宽屏 → 窄屏时收起输入框，避免仍停留在桌面展开态 */
+/** 宽屏 → 窄屏时收起输入框，避免仍停留在展开态 */
 watch(
   () => props.isMobile,
   (mobile, wasMobile) => {
     if (mobile && wasMobile === false) {
       inputFocused.value = false
       getChatTextareaEl()?.blur()
-      syncMobileInputHeight()
+      syncChatInputHeight()
       return
     }
     if (!mobile && wasMobile === true) {
-      nextTick(() => {
-        clearChatTextareaInlineSize()
-        chatInputRef.value?.resizeTextarea?.()
-        scheduleChatBottomInsetUpdate()
-      })
+      syncChatInputHeight()
     }
   }
 )
@@ -1970,7 +2075,6 @@ defineExpose({
     }
 
     .message-list {
-      --chat-message-gap: 28px;
       padding: 16px 0;
 
       .message-row {
@@ -2022,56 +2126,16 @@ defineExpose({
       padding: 4px 10px;
     }
 
-    /* 窄屏：平时矮框，聚焦加高；与桌面共用 inset 变量 */
+    /* 窄屏：仅覆盖 inset，高度规则见全局 .input-area */
     .input-area {
       --chat-input-inset-x: 14px;
       --chat-input-inset-y: 12px;
-    }
-
-    .input-area .el-textarea.chat-input {
-      :deep(.el-textarea__inner) {
-        line-height: 1.5;
-        font-size: var(--n-font-size-2);
-        transition: min-height 0.2s ease,
-        height 0.2s ease,
-        max-height 0.2s ease;
-      }
-
-      :deep(.el-textarea__inner::placeholder) {
-        line-height: 1.5;
-        color: var(--n-color-text-placeholder);
-      }
-    }
-
-    .input-area:not(.is-input-editing) .el-textarea.chat-input {
-      :deep(.el-textarea__inner) {
-        min-height: 82px;
-        height: 82px !important;
-        max-height: 82px;
-        overflow-y: hidden;
-      }
-    }
-
-    .input-area:not(.is-input-editing) {
-      --chat-input-pad-bottom: calc(
-        var(--chat-input-inset-y) + var(--chat-input-action-size) + 2px
-      );
-    }
-
-    .input-area.is-input-editing .el-textarea.chat-input {
-      --chat-input-inset-y: 14px;
-
-      :deep(.el-textarea__inner) {
-        min-height: 148px;
-        height: 148px !important;
-        max-height: 148px;
-        overflow-y: auto;
-      }
     }
   }
 
   .chat-view {
     --chat-bottom-inset: 200px;
+    --chat-bottom-scroll-gap: 30px;
     --chat-scrollbar-right-offset: calc(-2 * var(--n-padding-basic) + 2px);
     --chat-scrollbar-thumb: color-mix(
       in srgb,
@@ -2095,7 +2159,7 @@ defineExpose({
       overflow: visible;
 
       :deep(.el-scrollbar__view) {
-        padding-bottom: calc(var(--chat-bottom-inset, 200px) + 12px);
+        padding-bottom: calc(var(--chat-bottom-inset, 200px) + var(--chat-bottom-scroll-gap, 24px));
       }
 
       :deep(.el-scrollbar__bar.is-vertical) {
@@ -2263,7 +2327,7 @@ defineExpose({
   --chat-message-avatar-col: calc(
     var(--chat-message-avatar-size) + 2 * var(--chat-message-avatar-margin)
   );
-  --chat-message-gap: 28px;
+  --chat-message-gap: 36px;
   --chat-attachment-gallery-max: 320px;
   --chat-attachment-thumb-size: 96px;
   --chat-attachment-gap: 6px;
@@ -2651,6 +2715,32 @@ defineExpose({
     var(--chat-input-inset-y) + var(--chat-input-action-size) + 2px
   );
 
+  &:not(.is-input-editing) {
+    --chat-input-pad-bottom: calc(
+      var(--chat-input-inset-y) + var(--chat-input-action-size) + 2px
+    );
+  }
+
+  &:not(.is-input-editing) .el-textarea.chat-input {
+    :deep(.el-textarea__inner) {
+      min-height: 82px;
+      height: 82px !important;
+      max-height: 82px;
+      overflow-y: hidden;
+    }
+  }
+
+  &.is-input-editing .el-textarea.chat-input {
+    --chat-input-inset-y: 14px;
+
+    :deep(.el-textarea__inner) {
+      min-height: 148px;
+      height: 148px !important;
+      max-height: 148px;
+      overflow-y: auto;
+    }
+  }
+
   &.is-drag-over {
     outline: 2px dashed var(--el-color-primary);
     outline-offset: 2px;
@@ -2772,7 +2862,10 @@ defineExpose({
         border: none !important;
         outline: none;
         box-shadow: 0 0 12px rgba(0, 0, 0, 0.08);
-        transition: box-shadow 0.2s ease;
+        transition: box-shadow 0.2s ease,
+          min-height 0.2s ease,
+          height 0.2s ease,
+          max-height 0.2s ease;
       }
 
       :deep(.el-textarea__inner::placeholder) {
@@ -2944,7 +3037,7 @@ defineExpose({
 .chat-view .scroll-to-bottom-button {
   position: absolute;
   bottom: calc(
-    var(--chat-bottom-inset, 200px) + 12px + var(--chat-side-gutter, 20px)
+    var(--chat-bottom-inset, 200px) + var(--chat-bottom-scroll-gap, 24px) + var(--chat-side-gutter, 20px)
   );
   left: 50%;
   z-index: 11;
