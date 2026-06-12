@@ -22,6 +22,7 @@ import {
   XYCHART_HORIZONTAL_MIN_CATEGORIES
 } from './diagramSourceNormalize'
 import {
+  DiagramRenderWorkerError,
   registerDiagramRenderFallback,
   renderDiagramInWorker,
   resetDiagramRenderWorker,
@@ -84,9 +85,18 @@ const HTML_PREVIEW_MAX_MEASURE_NODES = 200
 const MARKDOWN_FIT_WIDTH_ATTR = 'data-md-fit-width'
 /** 流式尾段 markdown-it 最小更新间隔（ms），与 rAF 合并使用 */
 const STREAM_TAIL_MIN_INTERVAL_MS = 80
+/** 窗口 resize 全局 refit 防抖（ms） */
+const DIAGRAM_WINDOW_RESIZE_DEBOUNCE_MS = 180
+/** 单帧 refit 预算，避免多图同帧阻塞主线程 */
+const REFIT_BUDGET_PER_FRAME = 8
+/** HTML 预览 iframe 高度测量防抖（ms） */
+const HTML_PREVIEW_FIT_DEBOUNCE_MS = 150
+/** abort/detached 后重扫 pending 块防抖（ms） */
+const DIAGRAM_BLOCK_RETRY_DEBOUNCE_MS = 50
 
 const markdownHtmlCache = new Map<string, string>()
 const pendingRefitBodies = new Set<HTMLElement>()
+const diagramFitInProgress = new WeakSet<HTMLElement>()
 let batchRefitRafId = 0
 let renderMarkdownBlocksChain: Promise<void> = Promise.resolve()
 
@@ -98,7 +108,15 @@ const diagramFitThrottleTimers = new WeakMap<
 >()
 const DIAGRAM_REFIT_THROTTLE_MS = 100
 let diagramWindowResizeBound = false
-let diagramWindowResizeRaf = 0
+let diagramWindowResizeDebounceTimer = 0
+let globalResizeInProgress = false
+let diagramBlockRetryTimer = 0
+let diagramBlockRetryRoot: Element | null = null
+const deferredHtmlPreviewIframes = new Set<HTMLIFrameElement>()
+const htmlPreviewFitTimers = new WeakMap<
+  HTMLIFrameElement,
+  ReturnType<typeof setTimeout>
+>()
 let diagramMaxHeightCache = 0
 let htmlPreviewMaxHeightCache = 0
 
@@ -237,6 +255,15 @@ const fitDiagramSvgInBody = (body: HTMLElement) => {
     return
   }
 
+  diagramFitInProgress.add(body)
+  try {
+    fitDiagramSvgInBodyInner(body, svg)
+  } finally {
+    diagramFitInProgress.delete(body)
+  }
+}
+
+const fitDiagramSvgInBodyInner = (body: HTMLElement, svg: SVGElement) => {
   const block = body.closest('.md-diagram') as HTMLElement | null
   const maxBodyHeight = getMarkdownDiagramMaxHeight()
   const contentMaxHeight = getDiagramContentMaxHeight()
@@ -303,6 +330,9 @@ const fitDiagramSvgInBody = (body: HTMLElement) => {
 
 /** 合并滚动/resize 期间的重复 refit，避免主线程被 ResizeObserver 打满 */
 const scheduleFitDiagramSvgReflowThrottled = (body: HTMLElement) => {
+  if (diagramFitInProgress.has(body)) {
+    return
+  }
   if (diagramFitThrottleTimers.has(body)) {
     return
   }
@@ -317,9 +347,63 @@ const flushBatchDiagramRefit = () => {
   batchRefitRafId = 0
   const bodies = [...pendingRefitBodies]
   pendingRefitBodies.clear()
-  bodies.forEach((body) => {
+  const chunk = bodies.slice(0, REFIT_BUDGET_PER_FRAME)
+  chunk.forEach((body) => {
     fitDiagramSvgInBody(body)
   })
+  for (const body of bodies.slice(REFIT_BUDGET_PER_FRAME)) {
+    pendingRefitBodies.add(body)
+  }
+  if (pendingRefitBodies.size > 0) {
+    batchRefitRafId = requestAnimationFrame(flushBatchDiagramRefit)
+  }
+}
+
+const isBodyInReflowViewport = (body: HTMLElement, marginPx: number) => {
+  const rect = body.getBoundingClientRect()
+  const vh = window.innerHeight
+  const vw = window.innerWidth
+  return (
+    rect.bottom >= -marginPx &&
+    rect.top <= vh + marginPx &&
+    rect.right >= 0 &&
+    rect.left <= vw
+  )
+}
+
+const flushDeferredHtmlPreviewFits = () => {
+  if (deferredHtmlPreviewIframes.size === 0) {
+    return
+  }
+  const iframes = [...deferredHtmlPreviewIframes]
+  deferredHtmlPreviewIframes.clear()
+  iframes.forEach((iframe) => scheduleHtmlPreviewFit(iframe))
+}
+
+const scheduleGlobalDiagramReflow = () => {
+  globalResizeInProgress = true
+  invalidateDiagramMaxHeightCache()
+  const marginPx = Math.max(2400, window.innerHeight * 2.5)
+  const visible: HTMLElement[] = []
+  const offscreen: HTMLElement[] = []
+  document.querySelectorAll<HTMLElement>('.md-diagram-body').forEach((body) => {
+    if (isBodyInReflowViewport(body, marginPx)) {
+      visible.push(body)
+    } else {
+      offscreen.push(body)
+    }
+  })
+  visible.forEach((body) => scheduleFitDiagramSvgReflow(body))
+  if (offscreen.length > 0) {
+    scheduleIdle(() => {
+      offscreen.forEach((body) => scheduleFitDiagramSvgReflow(body))
+      globalResizeInProgress = false
+      flushDeferredHtmlPreviewFits()
+    })
+  } else {
+    globalResizeInProgress = false
+    flushDeferredHtmlPreviewFits()
+  }
 }
 
 /** 批量 refit，合并同一帧内的多次 ResizeObserver 触发 */
@@ -338,15 +422,13 @@ const bindDiagramWindowResize = () => {
   }
   diagramWindowResizeBound = true
   window.addEventListener('resize', () => {
-    invalidateDiagramMaxHeightCache()
-    cancelAnimationFrame(diagramWindowResizeRaf)
-    diagramWindowResizeRaf = requestAnimationFrame(() => {
-      document
-        .querySelectorAll<HTMLElement>('.md-diagram-body')
-        .forEach((el) => {
-          scheduleFitDiagramSvgReflow(el)
-        })
-    })
+    if (diagramWindowResizeDebounceTimer) {
+      clearTimeout(diagramWindowResizeDebounceTimer)
+    }
+    diagramWindowResizeDebounceTimer = window.setTimeout(() => {
+      diagramWindowResizeDebounceTimer = 0
+      scheduleGlobalDiagramReflow()
+    }, DIAGRAM_WINDOW_RESIZE_DEBOUNCE_MS)
   })
 }
 
@@ -1537,8 +1619,44 @@ const beginBlockRender = (block: Element): AbortSignal => {
 
 const isRenderAborted = (error: unknown, signal: AbortSignal) =>
   signal.aborted ||
-  (error instanceof Error && error.name === 'DiagramRenderWorkerError' &&
+  (error instanceof DiagramRenderWorkerError &&
     error.message === 'Diagram render aborted')
+
+const assertBlockConnected = (block: Element) => {
+  if (!block.isConnected) {
+    throw new DiagramRenderWorkerError('Diagram block detached')
+  }
+}
+
+const isRetryableRenderError = (error: unknown, signal: AbortSignal) => {
+  if (isRenderAborted(error, signal)) {
+    return true
+  }
+  if (error instanceof DiagramRenderWorkerError) {
+    return (
+      error.message === 'Diagram block detached' ||
+      error.message === 'Diagram worker render timeout'
+    )
+  }
+  return false
+}
+
+const scheduleDiagramBlockRetry = (root?: Element | null) => {
+  if (root) {
+    diagramBlockRetryRoot = root
+  }
+  if (diagramBlockRetryTimer || typeof window === 'undefined') {
+    return
+  }
+  diagramBlockRetryTimer = window.setTimeout(() => {
+    diagramBlockRetryTimer = 0
+    const scope = diagramBlockRetryRoot
+    diagramBlockRetryRoot = null
+    if (scope?.isConnected) {
+      void renderMarkdownBlocks(scope)
+    }
+  }, DIAGRAM_BLOCK_RETRY_DEBOUNCE_MS)
+}
 
 const setBlockError = (block: Element, error: unknown) => {
   const body = block.querySelector<HTMLElement>('.md-diagram-body')
@@ -1657,7 +1775,9 @@ const renderMermaidBlock = async (block: Element, signal: AbortSignal) => {
 
   const source = normalizeMermaidSource(rawSource)
   applyXychartDiagramPresentation(block, body, source)
+  assertBlockConnected(block)
   const svg = await renderDiagramInWorker('mermaid', source, signal)
+  assertBlockConnected(block)
   body.innerHTML = svg
   const renderedSvg = body.querySelector('svg')
   if (renderedSvg instanceof SVGElement && isXychartSource(source)) {
@@ -1706,7 +1826,9 @@ const renderPlantUmlBlock = async (block: Element, signal: AbortSignal) => {
     return
   }
 
+  assertBlockConnected(block)
   const markup = await renderDiagramInWorker('plantuml', source, signal)
+  assertBlockConnected(block)
   body.innerHTML = markup
   scheduleFitDiagramSvg(body)
 }
@@ -1732,7 +1854,9 @@ const renderVegaLiteBlock = async (block: Element, signal: AbortSignal) => {
     return
   }
 
+  assertBlockConnected(block)
   const markup = await renderDiagramInWorker('vegalite', rawSource, signal)
+  assertBlockConnected(block)
   mountDiagramMarkup(body, markup)
   scheduleFitDiagramSvg(body)
 }
@@ -1993,14 +2117,28 @@ const bindHtmlPreviewContentResize = (
 }
 
 const scheduleHtmlPreviewFit = (iframe: HTMLIFrameElement) => {
-  const run = () => {
-    resizeHtmlPreview(iframe)
+  if (globalResizeInProgress) {
+    deferredHtmlPreviewIframes.add(iframe)
+    return
   }
-  run()
-  requestAnimationFrame(() => {
+
+  const existing = htmlPreviewFitTimers.get(iframe)
+  if (existing) {
+    clearTimeout(existing)
+  }
+
+  const timer = setTimeout(() => {
+    htmlPreviewFitTimers.delete(iframe)
+    const run = () => {
+      resizeHtmlPreview(iframe)
+    }
     run()
-    bindHtmlPreviewContentResize(iframe, run)
-  })
+    requestAnimationFrame(() => {
+      run()
+      bindHtmlPreviewContentResize(iframe, run)
+    })
+  }, HTML_PREVIEW_FIT_DEBOUNCE_MS)
+  htmlPreviewFitTimers.set(iframe, timer)
 }
 
 const resolveExpandedHtmlPreviewContainerWidth = (iframe: HTMLIFrameElement) => {
@@ -2166,7 +2304,8 @@ const renderBlock = async (
     } else if (type === 'vegalite') {
       await renderVegaLiteBlock(block, signal)
     }
-    if (signal.aborted) {
+    if (!block.isConnected) {
+      scheduleDiagramBlockRetry(block.closest('.message-md'))
       return undefined
     }
     block.setAttribute(MARKDOWN_RENDERED_ATTR, 'true')
@@ -2174,7 +2313,8 @@ const renderBlock = async (
     blockAbortControllers.delete(block)
     return getDiagramBodyForRefit(block)
   } catch (error) {
-    if (isRenderAborted(error, signal)) {
+    if (isRetryableRenderError(error, signal)) {
+      scheduleDiagramBlockRetry(block.closest('.message-md'))
       return undefined
     }
     setBlockError(block, error)
@@ -2331,6 +2471,17 @@ export const resetMarkdownRendererForTest = () => {
     clearTimeout(streamTailThrottleTimer)
     streamTailThrottleTimer = 0
   }
+  if (diagramWindowResizeDebounceTimer) {
+    clearTimeout(diagramWindowResizeDebounceTimer)
+    diagramWindowResizeDebounceTimer = 0
+  }
+  if (diagramBlockRetryTimer) {
+    clearTimeout(diagramBlockRetryTimer)
+    diagramBlockRetryTimer = 0
+  }
+  diagramBlockRetryRoot = null
+  deferredHtmlPreviewIframes.clear()
+  globalResizeInProgress = false
   streamTailLastRunAt = 0
   pendingStreamTailUpdate = null
   resetDiagramRenderWorker()
