@@ -594,7 +594,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped lang="scss">
-@use '@/styles/platform' as *;
+@use '@ai-system/common/styles/dialog-overlays' as *;
 
 .md-viewer-wrapper {
 	position: fixed;
@@ -627,9 +627,8 @@ onUnmounted(() => {
 	flex-direction: column;
 	min-width: 0;
 	overflow: hidden;
-	border-radius: 16px;
-	@include n-glass-surface(3);
-	border: 1px solid var(--n-glass-border-2);
+	border-radius: var(--n-radius-quadruple);
+	box-shadow: var(--n-shadow-elevation-3);
 }
 
 .md-viewer-header {
@@ -638,8 +637,10 @@ onUnmounted(() => {
 	grid-template-columns: auto minmax(0, 1fr) auto;
 	align-items: center;
 	gap: 10px;
-	padding: 14px 14px 12px;
-	border-bottom: 1px solid var(--n-glass-border-1);
+	padding: 16px 20px 12px;
+	@include n-overlay-glass;
+	border-radius: var(--n-radius-quadruple) var(--n-radius-quadruple) 0 0;
+	border-bottom: 1px solid var(--n-color-border-soft);
 
 	&--single {
 		grid-template-columns: minmax(0, 1fr) auto;
@@ -653,7 +654,7 @@ onUnmounted(() => {
 	padding: 2px;
 	border-radius: 999px;
 	background: var(--n-color-bg-glass-weak);
-	border: 1px solid var(--n-glass-border-1);
+	border: 1px solid var(--n-color-border-soft);
 }
 
 .md-viewer-nav-btn {
@@ -714,9 +715,12 @@ onUnmounted(() => {
 	align-items: center;
 	gap: 6px;
 	padding: 6px 10px;
-	border: 1px solid var(--n-glass-border-2);
+	border: none;
 	border-radius: 999px;
 	background: var(--n-color-bg-glass-weak);
+	box-shadow: var(--n-shadow-elevation-1);
+	backdrop-filter: blur(var(--n-glass-blur-1)) saturate(var(--n-glass-saturate));
+	-webkit-backdrop-filter: blur(var(--n-glass-blur-1)) saturate(var(--n-glass-saturate));
 	color: var(--n-color-text-primary);
 	font-size: 12px;
 	line-height: 1.4;
@@ -747,6 +751,7 @@ onUnmounted(() => {
 	min-height: 0;
 	overflow: auto;
 	padding: 14px 16px 20px;
+	background: var(--n-color-bg-primary, #fff);
 	-webkit-overflow-scrolling: touch;
 }
 
@@ -757,6 +762,7 @@ onUnmounted(() => {
 	justify-content: center;
 	gap: 10px;
 	padding: 24px;
+	background: var(--n-color-bg-primary, #fff);
 	color: var(--n-color-text-muted);
 	font-size: 14px;
 }
