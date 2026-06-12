@@ -328,8 +328,26 @@ const fitDiagramSvgInBodyInner = (body: HTMLElement, svg: SVGElement) => {
   }
 }
 
+/** keep-alive 隐藏或 display:none 的图表不参与 window resize refit */
+const isDiagramBodyReflowEligible = (body: HTMLElement): boolean => {
+  if (!body.isConnected) {
+    return false
+  }
+  if (typeof body.checkVisibility === 'function') {
+    return body.checkVisibility({
+      checkOpacity: true,
+      checkVisibilityCSS: true
+    })
+  }
+  const rect = body.getBoundingClientRect()
+  return rect.width > 0 && rect.height > 0
+}
+
 /** 合并滚动/resize 期间的重复 refit，避免主线程被 ResizeObserver 打满 */
 const scheduleFitDiagramSvgReflowThrottled = (body: HTMLElement) => {
+  if (!isDiagramBodyReflowEligible(body)) {
+    return
+  }
   if (diagramFitInProgress.has(body)) {
     return
   }
@@ -387,6 +405,9 @@ const scheduleGlobalDiagramReflow = () => {
   const visible: HTMLElement[] = []
   const offscreen: HTMLElement[] = []
   document.querySelectorAll<HTMLElement>('.md-diagram-body').forEach((body) => {
+    if (!isDiagramBodyReflowEligible(body)) {
+      return
+    }
     if (isBodyInReflowViewport(body, marginPx)) {
       visible.push(body)
     } else {
@@ -408,6 +429,9 @@ const scheduleGlobalDiagramReflow = () => {
 
 /** 批量 refit，合并同一帧内的多次 ResizeObserver 触发 */
 const scheduleFitDiagramSvgReflow = (body: HTMLElement) => {
+  if (!isDiagramBodyReflowEligible(body)) {
+    return
+  }
   pendingRefitBodies.add(body)
   if (batchRefitRafId) {
     return
@@ -2445,8 +2469,55 @@ export const renderMarkdownBlocks = (
 /** 对 root 内已渲染图表按当前宽度重新适配外框高度 */
 export const refitDiagramBlocksInRoot = (root: ParentNode | Element) => {
   root.querySelectorAll<HTMLElement>('.md-diagram-body').forEach((body) => {
+    if (!isDiagramBodyReflowEligible(body)) {
+      return
+    }
     scheduleFitDiagramSvgReflow(body)
   })
+}
+
+/** keep-alive 切走：断开 root 下图表 ResizeObserver 并清 pending refit */
+export const pauseDiagramReflowInRoot = (root: Element | null | undefined) => {
+  if (!root) {
+    return
+  }
+  root.querySelectorAll<HTMLElement>('.md-diagram-body').forEach((body) => {
+    disconnectDiagramFitObserver(body)
+    const throttleTimer = diagramFitThrottleTimers.get(body)
+    if (throttleTimer) {
+      clearTimeout(throttleTimer)
+      diagramFitThrottleTimers.delete(body)
+    }
+    pendingRefitBodies.delete(body)
+    diagramFitInProgress.delete(body)
+  })
+}
+
+/** keep-alive 切走或会话隐藏时：清空排队中的 Markdown/图表任务，避免在不可见 DOM 上继续渲染 */
+export const cancelPendingMarkdownRenderWork = (scope?: Element | null) => {
+  renderMarkdownBlocksChain = Promise.resolve()
+  if (streamTailUpdateRafId) {
+    cancelAnimationFrame(streamTailUpdateRafId)
+    streamTailUpdateRafId = 0
+  }
+  if (streamTailThrottleTimer) {
+    clearTimeout(streamTailThrottleTimer)
+    streamTailThrottleTimer = 0
+  }
+  if (diagramBlockRetryTimer) {
+    clearTimeout(diagramBlockRetryTimer)
+    diagramBlockRetryTimer = 0
+  }
+  diagramBlockRetryRoot = null
+  pendingStreamTailUpdate = null
+  if (scope) {
+    scope
+      .querySelectorAll<Element>(`[${MARKDOWN_RENDERING_ATTR}="true"]`)
+      .forEach((block) => {
+        abortBlockRender(block)
+        block.removeAttribute(MARKDOWN_RENDERING_ATTR)
+      })
+  }
 }
 
 export const resetMarkdownRendererForTest = () => {

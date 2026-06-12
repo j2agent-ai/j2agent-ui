@@ -49,6 +49,17 @@ const isMobile = ref(false)
 const canAccessChat = computed(() => hasRoleAccess(ROLE_USER))
 const canAccessAdmin = computed(() => hasRoleAccess(ROLE_ADMIN))
 
+const onWindowResize = debounce(() => {
+	resize()
+	handleMobileSafariHeight()
+}, 10)
+
+const onOrientationChange = () => {
+	setTimeout(() => {
+		handleMobileSafariHeight()
+	}, 100)
+}
+
 const resize = () => {
 	const width =
 		window.innerWidth ||
@@ -91,26 +102,13 @@ onMounted(() => {
 	getNewContextId()
 	resize()
 	handleMobileSafariHeight()
-	window.addEventListener(
-		'resize',
-		debounce(() => {
-			resize()
-			// 移动端每次 resize 时重新设置高度
-			handleMobileSafariHeight()
-		}, 10)
-	)
-
-	// 监听屏幕方向变化
-	window.addEventListener('orientationchange', () => {
-		setTimeout(() => {
-			handleMobileSafariHeight()
-		}, 100)
-	})
+	window.addEventListener('resize', onWindowResize)
+	window.addEventListener('orientationchange', onOrientationChange)
 })
 
 onUnmounted(() => {
-	window.removeEventListener('resize', resize)
-	window.removeEventListener('orientationchange', handleMobileSafariHeight)
+	window.removeEventListener('resize', onWindowResize)
+	window.removeEventListener('orientationchange', onOrientationChange)
 })
 </script>
 <style lang="scss" scoped>
