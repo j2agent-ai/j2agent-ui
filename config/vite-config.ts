@@ -246,6 +246,16 @@ export function viteConfig(
 				}
 			}
 		],
+		worker: {
+			format: 'es',
+			rollupOptions: {
+				output: {
+					format: 'es',
+					entryFileNames: 'workers/[name]-[hash].js',
+					chunkFileNames: 'workers/chunks/[name]-[hash].js'
+				}
+			}
+		},
 		build: {
 			outDir: env.VITE_OUT_DIR,
 			emptyOutDir: isProductionBuild,
