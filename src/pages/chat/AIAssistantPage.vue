@@ -34,7 +34,7 @@ export default {
 </script>
 <script setup lang="ts">
 import ChatView from './components/ChatView.vue'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onActivated, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { debounce } from '@ai-system/lib'
 import topBar from '@/pages/components/topBar.vue'
@@ -83,6 +83,17 @@ const handleChatManage = () => {
 	view.showChatManage = !view.showChatManage
 }
 
+const onWindowResize = debounce(() => {
+	resize()
+	handleMobileSafariHeight()
+}, 10)
+
+const onOrientationChange = () => {
+	setTimeout(() => {
+		handleMobileSafariHeight()
+	}, 100)
+}
+
 const resize = () => {
 	const width =
 		window.innerWidth ||
@@ -125,27 +136,19 @@ onMounted(() => {
 	void ensureAgentNamesLoaded()
 	resize()
 	handleMobileSafariHeight()
+	window.addEventListener('resize', onWindowResize)
+	window.addEventListener('orientationchange', onOrientationChange)
+})
 
-	window.addEventListener(
-		'resize',
-		debounce(() => {
-			resize()
-			// 移动端每次 resize 时重新设置高度
-			handleMobileSafariHeight()
-		}, 10)
-	)
-
-	// 监听屏幕方向变化
-	window.addEventListener('orientationchange', () => {
-		setTimeout(() => {
-			handleMobileSafariHeight()
-		}, 100)
-	})
+/** keep-alive 从首页等切回：恢复聊天页布局（HomePage 会改写 body.minWidth） */
+onActivated(() => {
+	resize()
+	handleMobileSafariHeight()
 })
 
 onUnmounted(() => {
-	window.removeEventListener('resize', resize)
-	window.removeEventListener('orientationchange', handleMobileSafariHeight)
+	window.removeEventListener('resize', onWindowResize)
+	window.removeEventListener('orientationchange', onOrientationChange)
 })
 </script>
 <style lang="scss" scoped>

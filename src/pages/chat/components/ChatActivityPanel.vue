@@ -108,7 +108,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { t } from '@ai-system/lib'
+import { debounce, t } from '@ai-system/lib'
 import {
 	agentNameMap,
 	hasAgentDisplayName,
@@ -349,8 +349,12 @@ const shellStyle = computed(() => {
 	}
 })
 
+/** 面板展开时才解析任务详情；收起时仅 badge 展示 activeCount，避免首页每 token 扫描消息 */
 const entryDisplays = computed(() => {
 	chatActivityStore.activeKeySet.value
+	if (!panelOpen.value) {
+		return []
+	}
 	agentNameMap.value
 	const entries = sortedEntries.value
 	for (const entry of entries) {
@@ -656,7 +660,7 @@ function onHeaderPointerDown(event: PointerEvent) {
 	startDrag(event, 'header', event.currentTarget as HTMLElement | null)
 }
 
-function onWindowResize() {
+function onWindowResizeImmediate() {
 	if (isDragging.value) {
 		clampPosition()
 		return
@@ -672,6 +676,8 @@ function onWindowResize() {
 	viewportTick.value++
 	savePosToSession()
 }
+
+const onWindowResize = debounce(onWindowResizeImmediate, 120)
 
 watch(isQuadrantLocked, (locked) => {
 	if (!locked) {

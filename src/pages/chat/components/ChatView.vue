@@ -62,10 +62,11 @@
           @click="handleMessageMediaClick"
         >
           <div
-            v-for="(message, index) in visibleMessageContext"
-            :key="index"
+            v-for="message in visibleMessageContext"
+            :key="`${contextId}-${message.index}`"
             class="message-row"
             :class="[message.role]"
+            :data-message-index="message.index"
           >
             <template v-if="message.role === 'assistant'">
               <div class="avatar-wrap">
@@ -78,28 +79,28 @@
                 class="message-bubble-wrap"
                 :class="{
 									'thinking-bubble':
-										isActiveAssistantTurn(index) && isActiveContextStreaming
+										isActiveAssistantTurn(message.index) && isActiveContextStreaming
 								}"
               >
                 <div class="message-content">
                   <AgentThinkingBlock
                     v-if="message.reasoningContent?.trim()"
                     :content="message.reasoningContent"
-                    :active="isActiveAssistantTurn(index) && isBusyByState"
+                    :active="isActiveAssistantTurn(message.index) && isBusyByState"
                   />
                   <div
                     v-if="message.content"
-                    :key="`assistant-md-${index}-${MARKDOWN_RENDERER_REVISION}`"
+                    :key="`assistant-md-${message.index}-${MARKDOWN_RENDERER_REVISION}`"
                     class="assistant-answer message-md"
                   >
                     <div
                       v-for="(seg, segIdx) in assistantRenderedSegments.get(
-                        index
+                        message.index
                       ) ?? []"
                       :key="segIdx"
                       class="assistant-stream-segment"
                       :data-md-stream-tail="
-												isActiveAssistantTurn(index) &&
+												isActiveAssistantTurn(message.index) &&
 												!seg.complete &&
 												isBusyByState
 													? ''
@@ -108,7 +109,7 @@
                     >
                       <div
                         v-if="
-                          isActiveAssistantTurn(index) &&
+                          isActiveAssistantTurn(message.index) &&
                           !seg.complete &&
                           isBusyByState
                         "
@@ -153,9 +154,9 @@
                   <AgentTurnTimeline
                     v-if="message.turnSteps?.length"
                     :steps="message.turnSteps"
-                    :active="isActiveAssistantTurn(index)"
+                    :active="isActiveAssistantTurn(message.index)"
                     :current-state="
-											isActiveAssistantTurn(index) ? currentAgentState : null
+											isActiveAssistantTurn(message.index) ? currentAgentState : null
 										"
                   />
                   <div v-show="message?.content" class="message-actions">
@@ -229,7 +230,7 @@
                 <div
                   v-if="message.content"
                   class="message-md"
-                  v-html="userMessageHtmlMap.get(index) ?? ''"
+                  v-html="userMessageHtmlMap.get(message.index) ?? ''"
                 ></div>
                 <div v-show="message?.content" class="message-actions">
                   <el-button
@@ -415,6 +416,7 @@ import {
   onMounted,
   onUnmounted,
   ref,
+  shallowRef,
   watch
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -460,6 +462,7 @@ import { chatSessionRegistry } from '../ts/session/registry'
 import { startTurn, stopTurn } from '../ts/stream/service'
 import { useActiveChatSessionBindings } from '../ts/session/bindings'
 import type { PendingChatImage } from '../ts/session/types'
+import { buildSessionKey } from '../ts/session/types'
 import { buildSessionTitle } from '../ts/history/title'
 import {
   buildChatAttachmentContentUrl,
@@ -478,6 +481,8 @@ import {
   hasPendingMarkdownBlocks,
   renderMarkdownCached,
   renderMarkdownBlocks,
+  cancelPendingMarkdownRenderWork,
+  pauseDiagramReflowInRoot,
   scheduleUpdateStreamTailSegmentInPlace
 } from '@/utils/markdownRenderer'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
@@ -503,6 +508,8 @@ const {
 } = useActiveChatSessionBindings()
 const scrollbarRef = ref()
 const messageListRef = ref<HTMLElement>()
+/** keep-alive 可见时允许流式 Markdown / 滚动 UI；切走后冻结快照，后台流不中断 */
+const isChatViewActive = ref(true)
 /** 「回到底部」按钮隐藏（即处于贴底自动跟随区域）时为 true；完全由滚动位置决定 */
 const isAtBottom = ref<boolean>(true)
 /** 用户正在主动滚动（滚轮 / 触摸）期间为 true：此时一律不自动下滚，避免与用户操作打架 */
@@ -749,22 +756,22 @@ const closeMdViewer = () => {
   mdViewerSources.value = []
 }
 
-/** 非终态 busy 时当前轮 assistant 在可见列表中的下标。 */
-const activeAssistantVisibleIndex = computed(() => {
+/** 非终态 busy 时当前轮 assistant 消息的 index（非可见列表下标）。 */
+const activeAssistantMessageIndex = computed(() => {
   if (!isBusyByState.value) {
     return -1
   }
   const list = visibleMessageContext.value
   for (let i = list.length - 1; i >= 0; i--) {
     if (list[i].role === 'assistant') {
-      return i
+      return list[i].index
     }
   }
   return -1
 })
 
-const isActiveAssistantTurn = (index: number) =>
-  index === activeAssistantVisibleIndex.value
+const isActiveAssistantTurn = (messageIndex: number) =>
+  messageIndex === activeAssistantMessageIndex.value
 
 const props = defineProps({
   isFullscreen: {
@@ -1054,6 +1061,9 @@ const getScrollWrap = (): HTMLElement | null => {
  * 内容高度变化时按 scrollHeight 增量同步补偿 scrollTop，让最后一个气泡底边保持在原屏幕位置。
  */
 const keepBottomAnchored = () => {
+  if (!isChatViewActive.value) {
+    return
+  }
   const wrap = getScrollWrap()
   if (!wrap) {
     return
@@ -1081,6 +1091,9 @@ const keepBottomAnchored = () => {
  * 所有触发合并进单个 rAF，DOM 更新（nextTick 的微任务）后、绘制前执行，能读到最新 scrollHeight。
  */
 const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
+  if (!isChatViewActive.value) {
+    return
+  }
   if (scrollRafId !== null) {
     cancelAnimationFrame(scrollRafId)
   }
@@ -1187,17 +1200,58 @@ const splitStreamingSegmentsForActiveStream = (
 
 type RenderedStreamSegment = StreamSegment & { html: string }
 
-/** 非流式 assistant 消息段缓存（content 不变则跳过分段与 markdown-it） */
-const stableAssistantSegmentCache = new Map<
-  number,
-  { content: string; segments: RenderedStreamSegment[] }
->()
+type SegmentCacheEntry = {
+  content: string
+  segments: RenderedStreamSegment[]
+}
 
-/** 用户消息 HTML 缓存 */
-const stableUserHtmlCache = new Map<
-  number,
-  { content: string; html: string }
+type UserHtmlCacheEntry = {
+  content: string
+  html: string
+}
+
+/** 按会话 key 隔离 Markdown 段缓存，切换对话时不全量失效 */
+const assistantSegmentCacheBySession = new Map<
+  string,
+  Map<number, SegmentCacheEntry>
 >()
+const userHtmlCacheBySession = new Map<string, Map<number, UserHtmlCacheEntry>>()
+
+const getActiveSessionKey = () => activeSession.value?.key ?? ''
+
+const getAssistantSegmentCache = () => {
+  const sessionKey = getActiveSessionKey()
+  if (!sessionKey) {
+    return new Map<number, SegmentCacheEntry>()
+  }
+  let cache = assistantSegmentCacheBySession.get(sessionKey)
+  if (!cache) {
+    cache = new Map()
+    assistantSegmentCacheBySession.set(sessionKey, cache)
+  }
+  return cache
+}
+
+const getUserHtmlCache = () => {
+  const sessionKey = getActiveSessionKey()
+  if (!sessionKey) {
+    return new Map<number, UserHtmlCacheEntry>()
+  }
+  let cache = userHtmlCacheBySession.get(sessionKey)
+  if (!cache) {
+    cache = new Map()
+    userHtmlCacheBySession.set(sessionKey, cache)
+  }
+  return cache
+}
+
+const evictSessionRenderCache = (sessionKey: string) => {
+  assistantSegmentCacheBySession.delete(sessionKey)
+  userHtmlCacheBySession.delete(sessionKey)
+}
+
+const findVisibleMessageByIndex = (messageIndex: number) =>
+  visibleMessageContext.value.find((message) => message.index === messageIndex)
 
 const buildRenderedSegments = (
   content: string,
@@ -1272,51 +1326,80 @@ const buildRenderedSegmentsForActiveStream = (
 }
 
 const buildStableAssistantSegments = (
-  index: number,
+  messageIndex: number,
   content: string
 ): RenderedStreamSegment[] => {
-  const hit = stableAssistantSegmentCache.get(index)
+  const cache = getAssistantSegmentCache()
+  const hit = cache.get(messageIndex)
   if (hit?.content === content) {
     return hit.segments
   }
   const segments = buildRenderedSegments(content, false)
-  stableAssistantSegmentCache.set(index, { content, segments })
+  cache.set(messageIndex, { content, segments })
   return segments
 }
 
-const getStableUserHtml = (index: number, content: string): string => {
-  const hit = stableUserHtmlCache.get(index)
+const getStableUserHtml = (messageIndex: number, content: string): string => {
+  const cache = getUserHtmlCache()
+  const hit = cache.get(messageIndex)
   if (hit?.content === content) {
     return hit.html
   }
   const html = renderMarkdownCached(content)
-  stableUserHtmlCache.set(index, { content, html })
+  cache.set(messageIndex, { content, html })
   return html
 }
 
-/** 预解析 assistant 消息段；流式期间仅重算当前轮，历史消息走稳定段缓存 */
-const assistantRenderedSegments = computed(() => {
+const buildAssistantRenderedSegmentsMap = (): Map<
+  number,
+  RenderedStreamSegment[]
+> => {
   const map = new Map<number, RenderedStreamSegment[]>()
-  const streamingIdx = isBusyByState.value
-    ? activeAssistantVisibleIndex.value
+  const streamingMsgIndex = isBusyByState.value
+    ? activeAssistantMessageIndex.value
     : -1
-  visibleMessageContext.value.forEach((message, index) => {
+  visibleMessageContext.value.forEach((message) => {
     if (message.role === 'assistant' && message.content) {
-      if (isBusyByState.value && index === streamingIdx) {
-        map.set(index, buildRenderedSegmentsForActiveStream(message.content))
+      if (
+        isChatViewActive.value &&
+        isBusyByState.value &&
+        message.index === streamingMsgIndex
+      ) {
+        map.set(message.index, buildRenderedSegmentsForActiveStream(message.content))
       } else {
-        map.set(index, buildStableAssistantSegments(index, message.content))
+        map.set(
+          message.index,
+          buildStableAssistantSegments(message.index, message.content)
+        )
       }
     }
   })
+  return map
+}
+
+const frozenAssistantRenderedSegments = shallowRef(
+  new Map<number, RenderedStreamSegment[]>()
+)
+/** 活跃期间最近一次 segments 快照，切走时 O(1) 冻结，避免 onDeactivated 全量 markdown-it */
+const lastActiveRenderedSegments = shallowRef(
+  new Map<number, RenderedStreamSegment[]>()
+)
+
+/** 预解析 assistant 消息段；流式期间仅重算当前轮，历史消息走稳定段缓存 */
+const assistantRenderedSegments = computed(() => {
+  if (!isChatViewActive.value) {
+    return frozenAssistantRenderedSegments.value
+  }
+  const map = buildAssistantRenderedSegmentsMap()
+  lastActiveRenderedSegments.value = map
   return map
 })
 
 const userMessageHtmlMap = computed(() => {
   const map = new Map<number, string>()
-  visibleMessageContext.value.forEach((message, index) => {
+  visibleMessageContext.value.forEach((message) => {
     if (message.role === 'user' && message.content) {
-      map.set(index, getStableUserHtml(index, message.content))
+      map.set(message.index, getStableUserHtml(message.index, message.content))
     }
   })
   return map
@@ -1324,14 +1407,14 @@ const userMessageHtmlMap = computed(() => {
 
 /** 当前流式 assistant 尾段原文（围栏未闭合部分），非流式时为 null */
 const activeAssistantTailText = computed(() => {
-  if (!isBusyByState.value) {
+  if (!isChatViewActive.value || !isBusyByState.value) {
     return null
   }
-  const idx = activeAssistantVisibleIndex.value
+  const idx = activeAssistantMessageIndex.value
   if (idx < 0) {
     return null
   }
-  const message = visibleMessageContext.value[idx]
+  const message = findVisibleMessageByIndex(idx)
   if (!message?.content || message.role !== 'assistant') {
     return null
   }
@@ -1352,6 +1435,8 @@ const bindActiveTailSegmentRef = (el: unknown) => {
 
 const MARKDOWN_BLOCKS_DEBOUNCE_MS = 100
 let markdownBlocksDebounceTimer: ReturnType<typeof setTimeout> | null = null
+/** 是否曾 deactivate（区分首次 mount 的 onActivated 与从首页切回） */
+let chatViewWasDeactivated = false
 
 /** 流式输出时仅扫描当前轮 assistant 消息子树，避免全列表 querySelector */
 const getMarkdownBlocksScope = (): Element | null => {
@@ -1359,11 +1444,13 @@ const getMarkdownBlocksScope = (): Element | null => {
   if (!listRoot || !isBusyByState.value) {
     return listRoot
   }
-  const idx = activeAssistantVisibleIndex.value
-  if (idx < 0) {
+  const msgIndex = activeAssistantMessageIndex.value
+  if (msgIndex < 0) {
     return listRoot
   }
-  const row = listRoot.querySelectorAll('.message-row').item(idx)
+  const row = listRoot.querySelector(
+    `[data-message-index="${msgIndex}"]`
+  )
   if (!(row instanceof Element)) {
     return listRoot
   }
@@ -1371,6 +1458,9 @@ const getMarkdownBlocksScope = (): Element | null => {
 }
 
 const runMarkdownBlocks = () => {
+  if (!isChatViewActive.value) {
+    return
+  }
   nextTick(() => {
     const listRoot = messageListRef.value
     if (!listRoot) {
@@ -1399,6 +1489,9 @@ const runMarkdownBlocks = () => {
 }
 
 const activateMarkdownBlocks = () => {
+  if (!isChatViewActive.value) {
+    return
+  }
   if (markdownBlocksDebounceTimer !== null) {
     clearTimeout(markdownBlocksDebounceTimer)
   }
@@ -1410,6 +1503,9 @@ const activateMarkdownBlocks = () => {
 
 /** 流式结束或会话切换时立即渲染，不等待 debounce */
 const flushActivateMarkdownBlocks = () => {
+  if (!isChatViewActive.value) {
+    return
+  }
   if (markdownBlocksDebounceTimer !== null) {
     clearTimeout(markdownBlocksDebounceTimer)
     markdownBlocksDebounceTimer = null
@@ -1828,7 +1924,7 @@ watch(scrollbarRef, () => {
 watch(
   [activeAssistantTailText, activeTailSegmentEl],
   ([text, el]) => {
-    if (!text || !el) {
+    if (!isChatViewActive.value || !text || !el) {
       return
     }
     scheduleUpdateStreamTailSegmentInPlace(el, text, true)
@@ -1839,14 +1935,14 @@ watch(
 /** 围栏闭合产生新稳定段时再触发图表渲染，避免每个 token 都 scan DOM */
 watch(
   () => {
-    if (!isBusyByState.value) {
+    if (!isChatViewActive.value || !isBusyByState.value) {
       return 0
     }
-    const idx = activeAssistantVisibleIndex.value
+    const idx = activeAssistantMessageIndex.value
     if (idx < 0) {
       return 0
     }
-    const message = visibleMessageContext.value[idx]
+    const message = findVisibleMessageByIndex(idx)
     if (!message?.content) {
       return 0
     }
@@ -1855,11 +1951,12 @@ watch(
     ).length
   },
   (count, prev) => {
-    if (count > (prev ?? 0)) {
-      nextTick(() => {
-        flushActivateMarkdownBlocks()
-      })
+    if (!isChatViewActive.value || count <= (prev ?? 0)) {
+      return
     }
+    nextTick(() => {
+      flushActivateMarkdownBlocks()
+    })
   }
 )
 
@@ -1871,7 +1968,7 @@ watch(
       isBusyByState.value
     ] as const,
   ([length, busy], prev) => {
-    if (busy) {
+    if (!isChatViewActive.value || busy) {
       return
     }
     const prevLength = prev?.[0]
@@ -1884,28 +1981,30 @@ watch(
 
 /** 流式结束但 content 不再变化时，补渲染推迟的 mermaid/plantuml/vegalite/html 块 */
 watch(isBusyByState, (busy, wasBusy) => {
-  if (!busy && wasBusy) {
-    resetActiveStreamSplitCache()
-    const el = activeTailSegmentEl.value
-    const idx = activeAssistantVisibleIndex.value
-    if (el && idx >= 0) {
-      const message = visibleMessageContext.value[idx]
-      if (message?.content && message.role === 'assistant') {
-        const tail = splitStreamingSegments(message.content).at(-1)
-        if (tail?.text) {
-          scheduleUpdateStreamTailSegmentInPlace(el, tail.text, false, true)
-        }
+  if (!isChatViewActive.value || busy || !wasBusy) {
+    return
+  }
+  resetActiveStreamSplitCache()
+  resetActiveStreamRenderedCache()
+  const el = activeTailSegmentEl.value
+  const idx = activeAssistantMessageIndex.value
+  if (el && idx >= 0) {
+    const message = findVisibleMessageByIndex(idx)
+    if (message?.content && message.role === 'assistant') {
+      const tail = splitStreamingSegments(message.content).at(-1)
+      if (tail?.text) {
+        scheduleUpdateStreamTailSegmentInPlace(el, tail.text, false, true)
       }
     }
-    flushActivateMarkdownBlocks()
   }
+  flushActivateMarkdownBlocks()
 })
 
 /** 后台会话流式更新时，活跃会话 pendingScroll 由 ChatView 消费 */
 watch(
   () => activeSession.value?.pendingScroll.value,
   (pending) => {
-    if (!pending) {
+    if (!pending || !isChatViewActive.value) {
       return
     }
     if (shouldAutoScroll()) {
@@ -1921,23 +2020,29 @@ watch(
 watch(
   () => chatSessionRegistry.activeSessionKey.value,
   () => {
-    stableAssistantSegmentCache.clear()
-    stableUserHtmlCache.clear()
     resetActiveStreamSplitCache()
-    nextTick(() => {
-      scrollToBottom()
-      flushActivateMarkdownBlocks()
-      bindUserScrollIntent()
-    })
+    resetActiveStreamRenderedCache()
+    activeTailSegmentEl.value = null
+    if (markdownBlocksDebounceTimer !== null) {
+      clearTimeout(markdownBlocksDebounceTimer)
+      markdownBlocksDebounceTimer = null
+    }
   }
 )
 
-const historyChat = async (historyId: string) => {
-  const session = chatSessionRegistry.activateSession(props.agentId, historyId)
+/** 与侧边栏点历史同路：激活会话、按需拉取、滚底、debounced 图表渲染 */
+const showSessionView = async (targetContextId: string) => {
+  const session = chatSessionRegistry.activateSession(
+    props.agentId,
+    targetContextId
+  )
   isAtBottom.value = true
-  if (!session.loadedFromServer.value && session.messageContext.value.length === 0) {
+  if (
+    !session.loadedFromServer.value &&
+    session.messageContext.value.length === 0
+  ) {
     try {
-      const res = await getHistoryContext(historyId, props.agentId)
+      const res = await getHistoryContext(targetContextId, props.agentId)
       session.messageContext.value = res.data.messages ?? []
       normalizeMessageAttachmentUrls(session.messageContext.value)
       session.loadedFromServer.value = true
@@ -1945,8 +2050,15 @@ const historyChat = async (historyId: string) => {
       ElMessage.error(t('ai.assistant.service.unavailable'))
     }
   }
+  if (activeSession.value?.pendingScroll.value) {
+    activeSession.value.pendingScroll.value = false
+  }
   scrollToBottom()
-  flushActivateMarkdownBlocks()
+  activateMarkdownBlocks()
+}
+
+const historyChat = async (historyId: string) => {
+  await showSessionView(historyId)
 }
 
 // 中止当前活跃会话正在进行的对话
@@ -1978,6 +2090,7 @@ watch(
 )
 
 onMounted(async () => {
+  isChatViewActive.value = true
   schedulePreloadDiagramRuntimes()
   await bootstrapAgentSession(route.query['new-chat'] === '1')
   nextTick(() => {
@@ -1986,34 +2099,15 @@ onMounted(async () => {
   })
 })
 
-onActivated(() => {
-  nextTick(() => {
-    bindUserScrollIntent()
-    reconnectMessageListResizeObserver()
-    if (activeSession.value?.pendingScroll.value && shouldAutoScroll()) {
-      scrollToBottom()
-      activeSession.value.pendingScroll.value = false
-    }
-    flushActivateMarkdownBlocks()
-  })
-})
-
-/** keep-alive 切走：暂停 UI 监听，不中断 WebSocket 流式 */
-onDeactivated(() => {
-  unbindUserScrollIntent()
-  if (userScrollIdleTimer !== null) {
-    clearTimeout(userScrollIdleTimer)
-    userScrollIdleTimer = null
+/** keep-alive 切走：冻结 UI 快照并暂停重渲染，不中断 WebSocket 流式 */
+const suspendChatViewUi = () => {
+  if (!isChatViewActive.value) {
+    return
   }
-  messageListResizeObserver?.disconnect()
-  messageListResizeObserver = undefined
-  if (scrollRafId !== null) {
-    cancelAnimationFrame(scrollRafId)
-    scrollRafId = null
-  }
-})
-
-onUnmounted(() => {
+  cancelPendingMarkdownRenderWork(messageListRef.value ?? null)
+  pauseDiagramReflowInRoot(messageListRef.value ?? null)
+  frozenAssistantRenderedSegments.value = lastActiveRenderedSegments.value
+  isChatViewActive.value = false
   activeTailSegmentEl.value = null
   if (markdownBlocksDebounceTimer !== null) {
     clearTimeout(markdownBlocksDebounceTimer)
@@ -2030,6 +2124,32 @@ onUnmounted(() => {
     cancelAnimationFrame(scrollRafId)
     scrollRafId = null
   }
+}
+
+onActivated(() => {
+  isChatViewActive.value = true
+  resetActiveStreamSplitCache()
+  activeTailSegmentEl.value = null
+  bindUserScrollIntent()
+  reconnectMessageListResizeObserver()
+  if (!chatViewWasDeactivated) {
+    return
+  }
+  chatViewWasDeactivated = false
+  const cid = contextId.value
+  if (cid) {
+    void showSessionView(cid)
+  }
+})
+
+/** keep-alive 切走：暂停 UI 监听，不中断 WebSocket 流式 */
+onDeactivated(() => {
+  chatViewWasDeactivated = true
+  suspendChatViewUi()
+})
+
+onUnmounted(() => {
+  suspendChatViewUi()
   closeDiagramPreview()
   closeImagePreview()
   closeHtmlPreview()
@@ -2042,8 +2162,10 @@ defineExpose({
   getHistoryListData: () => chatManageRef.value?.getHistoryListData(),
   newChat,
   historyChat,
-  removeSession: (contextId: string) =>
+  removeSession: (contextId: string) => {
+    evictSessionRenderCache(buildSessionKey(props.agentId, contextId))
     chatSessionRegistry.removeSession(props.agentId, contextId)
+  }
 })
 </script>
 <style scoped lang="scss">
