@@ -19,16 +19,23 @@
 	</SidebarPageLayout>
 </template>
 <script setup lang="ts">
-import { ref, shallowRef } from 'vue'
+import { defineAsyncComponent, ref, shallowRef, type Component } from 'vue'
 import { ElMenuItem } from 'element-plus'
-import KnowledgeBaseList from '@/pages/kb/pages/KnowledgeBaseList.vue'
 import { t } from '@ai-system/lib'
 import SidebarPageLayout from '@/pages/components/SidebarPageLayout.vue'
-import HitTest from '@/pages/kb/pages/HitTest.vue'
-import RagSettings from '@/pages/kb/pages/RagSettings.vue'
+
+const KnowledgeBaseList = defineAsyncComponent(
+	() => import('@/pages/kb/pages/KnowledgeBaseList.vue')
+)
+const HitTest = defineAsyncComponent(
+	() => import('@/pages/kb/pages/HitTest.vue')
+)
+const RagSettings = defineAsyncComponent(
+	() => import('@/pages/kb/pages/RagSettings.vue')
+)
 
 const activeMenuItem = ref('1')
-const currentComponent = shallowRef(KnowledgeBaseList)
+const currentComponent = shallowRef<Component>(KnowledgeBaseList)
 
 const handleMenuSelect = (key: string) => {
 	activeMenuItem.value = key

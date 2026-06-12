@@ -1,9 +1,13 @@
 import { loadEnv, UserConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import legacy from '@vitejs/plugin-legacy'
 import path from 'path'
 import DefineOptions from 'unplugin-vue-define-options/vite'
 import VueJsx from '@vitejs/plugin-vue-jsx'
+import AutoImport from 'unplugin-auto-import/vite'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
+import ElementPlus from 'unplugin-element-plus/vite'
+import { visualizer } from 'rollup-plugin-visualizer'
 import fs from 'fs'
 import { faviconUrl, primaryColor, primaryColorRgb } from '../src/oem.js'
 
@@ -30,9 +34,66 @@ interface ProxyServer {
 	headers?: { [header: string]: string }
 }
 
+/**
+ * 将 node_modules 按功能合并为少量 chunk，避免按包名拆出数百个空 chunk
+ * （d3、vega 等子包）导致 Rollup 在 CI 上 OOM。
+ */
+function resolveVendorChunk(id: string): string | undefined {
+	if (!id.includes('node_modules')) {
+		return undefined
+	}
+	const inNodeModules = id.split('node_modules/')[1]
+	if (!inNodeModules) {
+		return undefined
+	}
+
+	if (inNodeModules.startsWith('@')) {
+		const scoped = inNodeModules.split('/').slice(0, 2).join('/')
+		if (scoped === '@plantuml/core') {
+			return 'plantuml-core'
+		}
+		if (scoped.startsWith('@vue/') || scoped === '@vue/reactivity') {
+			return 'vue-vendor'
+		}
+		if (scoped.startsWith('@element-plus/')) {
+			return 'element-plus'
+		}
+		return undefined
+	}
+
+	const pkg = inNodeModules.split('/')[0]
+	if (pkg === 'vue' || pkg === 'vue-router' || pkg === 'pinia') {
+		return 'vue-vendor'
+	}
+	if (pkg === 'element-plus') {
+		return 'element-plus'
+	}
+	// mermaid 与 d3 互依赖，合并避免 circular chunk 警告
+	if (
+		pkg === 'mermaid' ||
+		pkg === 'd3' ||
+		pkg.startsWith('d3-') ||
+		pkg === 'dagre' ||
+		pkg === 'dagre-d3' ||
+		pkg === 'cytoscape' ||
+		pkg === 'cytoscape-fcose' ||
+		pkg === 'katex'
+	) {
+		return 'mermaid'
+	}
+	if (pkg.startsWith('vega')) {
+		return 'vega-vendor'
+	}
+	if (pkg === 'lodash-es' || pkg === 'lodash' || pkg === 'lodash-unified') {
+		return 'lodash-vendor'
+	}
+	// 其余依赖交给 Rollup 默认拆分，避免 vendor 与 mermaid 循环引用
+	return undefined
+}
+
 export function viteConfig(
-	command,
-	mode,
+	command: string,
+	mode: string,
 	proxyServer: Array<ProxyServer> = [],
 	port: number = 3000,
 	host: string = '0.0.0.0',
@@ -41,8 +102,11 @@ export function viteConfig(
 	const env = loadEnv(mode, __dirname) || {}
 	env.command = command
 	env.mode = mode
+	const isProductionBuild = command === 'build' && mode === 'production'
+	const analyzeBundle = process.env.BUILD_ANALYZE === 'true'
+
 	// 处理全局变量
-	const defines = {}
+	const defines: Record<string, string> = {}
 	Object.keys(env).forEach((key) => {
 		const envKey = '__' + key.toLocaleUpperCase() + '__'
 		const envValue = JSON.stringify(env[key])
@@ -50,7 +114,7 @@ export function viteConfig(
 		console.log(`全局变量：[${envKey}] => [${envValue}]`)
 	})
 	// 处理开发代理服务转发
-	const proxyServers = {}
+	const proxyServers: Record<string, unknown> = {}
 	proxyServer.forEach((server) => {
 		const secure = server.secure ?? false
 		if (server.ws) {
@@ -67,7 +131,7 @@ export function viteConfig(
 				target: server.target,
 				changeOrigin: true,
 				secure,
-				rewrite: (url) => {
+				rewrite: (url: string) => {
 					const regex = new RegExp(`^${server.path}/`)
 					const target = url.replace(regex, '')
 					console.log(`Proxy [${new Date()}]`, target)
@@ -87,12 +151,16 @@ export function viteConfig(
 		base: viteBase,
 		cacheDir: './node_modules/.vite',
 		optimizeDeps: {
-			include: ['vue', 'vue-router'] // 预构建核心依赖
+			include: ['vue', 'vue-router']
+		},
+		esbuild: {
+			drop: isProductionBuild ? (['console', 'debugger'] as const) : []
 		},
 		css: {
 			preprocessorOptions: {
 				scss: {
 					additionalData: `@use "sass:color";`,
+					api: 'modern-compiler' as const,
 					charset: false
 				}
 			},
@@ -101,7 +169,7 @@ export function viteConfig(
 					{
 						postcssPlugin: 'internal:charset-removal',
 						AtRule: {
-							charset: (atRule) => {
+							charset: (atRule: { name: string; remove: () => void }) => {
 								if (atRule.name === 'charset') {
 									atRule.remove()
 								}
@@ -127,15 +195,29 @@ export function viteConfig(
 					)
 				}
 			},
+			AutoImport({
+				resolvers: [ElementPlusResolver({ importStyle: 'sass' })]
+			}),
+			Components({
+				resolvers: [ElementPlusResolver({ importStyle: 'sass' })]
+			}),
+			ElementPlus({
+				useSource: true
+			}),
 			VueJsx(),
 			DefineOptions(),
-			vue({
-				refTransform: true
-			}),
-			legacy({
-				targets: ['ie >= 11'],
-				additionalLegacyPolyfills: ['regenerator-runtime/runtime']
-			}),
+			vue(),
+			...(analyzeBundle
+				? [
+						visualizer({
+							open: false,
+							gzipSize: true,
+							brotliSize: true,
+							filename: 'dist/report.html',
+							template: 'treemap'
+						})
+					]
+				: []),
 			{
 				name: 'copy-index-html-plugin',
 				closeBundle() {
@@ -163,61 +245,29 @@ export function viteConfig(
 					)
 				}
 			}
-			// visualizer({
-			// 	open: false,
-			// 	gzipSize: true,
-			// 	brotliSize: true,
-			// 	filename: 'report.html',
-			// 	template: 'treemap'
-			// }),
-			// compression({
-			// 	algorithm: "gzip", // 指定压缩算法为gzip,[ 'gzip' , 'brotliCompress' ,'deflate' , 'deflateRaw']
-			// 	ext: ".gz", // 指定压缩后的文件扩展名为.gz
-			// 	threshold: 10240, // 仅对文件大小大于threshold的文件进行压缩，默认为10KB
-			// 	deleteOriginFile: true, // 是否删除原始文件，默认为false
-			// 	filter: /\.(js|css|json|html|ico|svg)(\?.*)?$/i, // 匹配要压缩的文件的正则表达式，默认为匹配.js、.css、.json、.html、.ico和.svg文件
-			// 	compressionOptions: { level: 9 }, // 指定gzip压缩级别，默认为9（最高级别）
-			// 	verbose: true, // 是否在控制台输出压缩结果
-			// 	disable: false, // 是否禁用插件
-			// }),
 		],
 		build: {
 			outDir: env.VITE_OUT_DIR,
-			emptyOutDir: false,
+			emptyOutDir: isProductionBuild,
 			assetsDir: './assets/',
-			minify: 'terser',
-			terserOptions: {
-				ecma: 2018,
-				safari10: true,
-				compress: {
-					drop_console: true,
-					drop_debugger: true
-				},
-				format: { comments: false }
-			},
+			minify: 'esbuild' as const,
+			reportCompressedSize: false,
+			cssCodeSplit: true,
 			sourcemap: mode === 'development',
-			target: 'es2018',
+			target: 'es2020',
 			rollupOptions: {
 				input: {
 					index: path.join(rootDir, 'index.html')
 				},
 				output: {
-					// 最小化拆分包
 					manualChunks(id) {
-						if (id.includes('node_modules')) {
-							// 通过拆分包的方式将所有来自node_modules的模块打包到单独的chunk中
-							return id
-								.toString()
-								.split('node_modules/')[1]
-								.split('/')[0]
-								.toString()
-						}
+						return resolveVendorChunk(id)
 					},
-					dir: 'dist', // 输出目录
-					format: 'es', // 输出格式
-					entryFileNames: `[name]-[hash].js`, // 根据入口文件名称生成输出文件名
-					chunkFileNames: `chunks/[name]-[hash].js`, // 动态导入的代码块文件名模式
-					assetFileNames: `assets/[name]-[hash].[ext]` // 资源文件（如CSS、图片等）的文件名模式
+					dir: 'dist',
+					format: 'es' as const,
+					entryFileNames: `[name]-[hash].js`,
+					chunkFileNames: `chunks/[name]-[hash].js`,
+					assetFileNames: `assets/[name]-[hash].[ext]`
 				},
 				plugins: []
 			}
@@ -234,10 +284,8 @@ export function viteConfig(
 			port: port,
 			host: host,
 			open: true,
-			// https: isHttps,
 			proxy: proxyServers
 		},
-		// 全局变量
 		define: {
 			...defines,
 			VITE_APP_NAME: JSON.stringify(`main`)
@@ -253,12 +301,10 @@ export function viteConfig(
 					...config.define,
 					VITE_APP_NAME: JSON.stringify(`${moduleName}`)
 				},
-				// 指定项目根目录，默认为当前工作目录
 				root: `./src/pages/${moduleName}`,
 				build: {
 					...config.build,
 					...{
-						// https://cn.vitejs.dev/guide/build.html
 						rollupOptions: {
 							input: path.join(rootDir, `src/pages/${moduleName}/index.html`),
 							output: {

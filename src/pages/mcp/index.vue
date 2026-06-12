@@ -17,15 +17,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef } from 'vue'
+import { defineAsyncComponent, ref, shallowRef, type Component } from 'vue'
 import { ElMenuItem } from 'element-plus'
 import { t } from '@ai-system/lib'
 import SidebarPageLayout from '@/pages/components/SidebarPageLayout.vue'
-import McpServerStatus from '@/pages/mcp/pages/McpServerStatus.vue'
-import McpServerConfig from '@/pages/mcp/pages/McpServerConfig.vue'
+
+const McpServerStatus = defineAsyncComponent(
+	() => import('@/pages/mcp/pages/McpServerStatus.vue')
+)
+const McpServerConfig = defineAsyncComponent(
+	() => import('@/pages/mcp/pages/McpServerConfig.vue')
+)
 
 const activeMenuItem = ref('1')
-const currentComponent = shallowRef(McpServerStatus)
+const currentComponent = shallowRef<Component>(McpServerStatus)
 
 const handleMenuSelect = (key: string) => {
 	activeMenuItem.value = key
