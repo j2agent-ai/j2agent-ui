@@ -19,6 +19,7 @@ import {
   normalizeMermaidSource,
   normalizeXychartOrientation,
   parseVegaLiteSpec,
+  tryParseVegaLiteSpec,
   XYCHART_HORIZONTAL_MIN_CATEGORIES
 } from './diagramSourceNormalize'
 import {
@@ -47,23 +48,29 @@ type MermaidApi = {
 
 type PlantUmlRenderer = (source: string) => Promise<string>
 
+/** vega-embed 返回结果（仅用到可释放的 view 句柄） */
+type VegaEmbedResult = {
+  view?: { finalize: () => void }
+}
+
 /** vega-embed 嵌入函数类型 */
 type VegaEmbedFn = (
   element: HTMLElement,
   spec: Record<string, unknown>,
   options?: Record<string, unknown>
-) => Promise<unknown>
+) => Promise<VegaEmbedResult>
 
 const MARKDOWN_RENDER_ATTR = 'data-md-render'
 const MARKDOWN_RENDERED_ATTR = 'data-md-rendered'
 const MARKDOWN_RENDERING_ATTR = 'data-md-rendering'
 const MARKDOWN_REVISION_ATTR = 'data-md-revision'
+const MARKDOWN_FENCE_OPEN_ATTR = 'data-md-fence-open'
 const MARKDOWN_OFFSCREEN_ATTR = 'data-md-offscreen'
 /**
  * 图表后处理逻辑变更时递增，用于让历史气泡在 SPA 内重新渲染（非 Mermaid 缓存）。
  * 与 ChatView 中 v-html 的 :key 保持一致。
  */
-export const MARKDOWN_RENDERER_REVISION = '27'
+export const MARKDOWN_RENDERER_REVISION = '28'
 /** 与 markdown.scss 中 --md-diagram-max-height 回退值保持一致 */
 const MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK = 360
 /** 与 markdown.scss 中 --md-html-preview-max-height 回退值保持一致 */
@@ -99,6 +106,7 @@ const pendingRefitBodies = new Set<HTMLElement>()
 const diagramFitInProgress = new WeakSet<HTMLElement>()
 let batchRefitRafId = 0
 let renderMarkdownBlocksChain: Promise<void> = Promise.resolve()
+let markdownRenderGeneration = 0
 
 const diagramFitObservers = new WeakMap<HTMLElement, ResizeObserver>()
 const diagramFitRafIds = new WeakMap<HTMLElement, number>()
@@ -519,21 +527,24 @@ const clearDiagramBodyPending = (body: HTMLElement) => {
 
 const renderDiagramPlaceholder = (
   type: 'mermaid' | 'plantuml' | 'vegalite',
-  source: string
+  source: string,
+  fenceOpen = false
 ) => {
   const escapedSource = escapeHtml(source)
+  const fenceOpenAttr = fenceOpen ? ` ${MARKDOWN_FENCE_OPEN_ATTR}="true"` : ''
   return [
-    `<div class="md-diagram md-diagram-${type}" ${MARKDOWN_RENDER_ATTR}="${type}" ${MARKDOWN_REVISION_ATTR}="${MARKDOWN_RENDERER_REVISION}">`,
+    `<div class="md-diagram md-diagram-${type}" ${MARKDOWN_RENDER_ATTR}="${type}" ${MARKDOWN_REVISION_ATTR}="${MARKDOWN_RENDERER_REVISION}"${fenceOpenAttr}>`,
     `<pre class="md-diagram-source" hidden>${escapedSource}</pre>`,
     `<div class="md-diagram-body md-block-pending">${renderGeneratingHintHtml()}</div>`,
     '</div>'
   ].join('')
 }
 
-const renderHtmlPreviewPlaceholder = (source: string) => {
+const renderHtmlPreviewPlaceholder = (source: string, fenceOpen = false) => {
   const escapedSource = escapeHtml(source)
+  const fenceOpenAttr = fenceOpen ? ` ${MARKDOWN_FENCE_OPEN_ATTR}="true"` : ''
   return [
-    `<div class="md-html-block" ${MARKDOWN_RENDER_ATTR}="html">`,
+    `<div class="md-html-block" ${MARKDOWN_RENDER_ATTR}="html"${fenceOpenAttr}>`,
     `<pre class="md-diagram-source" hidden>${escapedSource}</pre>`,
     '<div class="md-html-preview-wrap md-block-pending" role="region" aria-label="HTML 预览">',
     '<iframe class="md-html-preview" sandbox="allow-same-origin allow-scripts allow-forms allow-popups" scrolling="no" title="HTML 预览"></iframe>',
@@ -639,8 +650,153 @@ md.renderer.rules.td_open = function() {
   return '<td class="md-td">'
 }
 
+/** 流式尾段中可由 renderMarkdownBlocks 异步渲染的围栏语言 */
+const ASYNC_DIAGRAM_FENCE_LANGS = new Set([
+  'mermaid',
+  'puml',
+  'plantuml',
+  'vegalite',
+  'vega-lite',
+  'html'
+])
+
+type OpenAsyncFenceScan = {
+  lang: string
+  /** opening fence 行结束后的 index（body 起点） */
+  bodyStart: number
+  /** opening fence 行起始 index（前缀终点） */
+  prefixEnd: number
+}
+
+/** 扫描尾段 markdown，定位未闭合的 async 图表/HTML 围栏 */
+const scanOpenAsyncDiagramFence = (text: string): OpenAsyncFenceScan | null => {
+  if (!text?.trim()) {
+    return null
+  }
+  let inFence = false
+  let openLen = 0
+  let openChar = ''
+  let lang = ''
+  let bodyStart = 0
+  let prefixEnd = 0
+  const lineRe = /^([ \t]*)(`{3,}|~{3,})(.*)$/gm
+  let match: RegExpExecArray | null
+  while ((match = lineRe.exec(text)) !== null) {
+    const marker = match[2]
+    const info = match[3].trim()
+    const char = marker[0]
+    const len = marker.length
+    if (!inFence) {
+      inFence = true
+      openChar = char
+      openLen = len
+      lang = info.split(/\s+/)[0]?.toLowerCase() || ''
+      prefixEnd = match.index
+      bodyStart = match.index + match[0].length
+      continue
+    }
+    if (char === openChar && len >= openLen && !info) {
+      inFence = false
+      lang = ''
+    }
+  }
+  if (!inFence || !ASYNC_DIAGRAM_FENCE_LANGS.has(lang)) {
+    return null
+  }
+  return { lang, bodyStart, prefixEnd }
+}
+
+/**
+ * 尾段是否仍含未闭合的异步图表/HTML 围栏（markdown-it 将未闭合围栏延伸至 EOF）。
+ */
+export const hasOpenAsyncDiagramFence = (text: string): boolean =>
+  scanOpenAsyncDiagramFence(text) !== null
+
+/** 未闭合 async 围栏体内的源码（不含 ``` 行）；无 open 围栏时返回 null */
+export const extractOpenAsyncFenceBody = (text: string): string | null => {
+  const scan = scanOpenAsyncDiagramFence(text)
+  if (!scan) {
+    return null
+  }
+  const raw = text.slice(scan.bodyStart)
+  return raw.startsWith('\n') ? raw.slice(1) : raw
+}
+
+const getOpenAsyncFencePrefix = (text: string): string | null => {
+  const scan = scanOpenAsyncDiagramFence(text)
+  if (!scan) {
+    return null
+  }
+  return text.slice(0, scan.prefixEnd)
+}
+
+const mapFenceLangToRenderType = (
+  lang: string
+): 'mermaid' | 'plantuml' | 'vegalite' | 'html' | null => {
+  switch (lang) {
+    case 'mermaid':
+      return 'mermaid'
+    case 'puml':
+    case 'plantuml':
+      return 'plantuml'
+    case 'vega-lite':
+    case 'vegalite':
+      return 'vegalite'
+    case 'html':
+      return 'html'
+    default:
+      return null
+  }
+}
+
+const buildOpenFencePlaceholderHtml = (
+  scan: OpenAsyncFenceScan,
+  body: string,
+  fenceOpen = true
+): string => {
+  const type = mapFenceLangToRenderType(scan.lang)
+  if (!type) {
+    return ''
+  }
+  if (type === 'html') {
+    return renderHtmlPreviewPlaceholder(body, fenceOpen)
+  }
+  return renderDiagramPlaceholder(type, body, fenceOpen)
+}
+
+const renderOpenFencePrefixHtml = (
+  markdown: string,
+  scan: OpenAsyncFenceScan
+): string => {
+  const prefix = markdown.slice(0, scan.prefixEnd)
+  return prefix.trim()
+    ? md.render(normalizeMarkdownRepoFileUrls(prefix))
+    : ''
+}
+
+const buildOpenFenceTailHtml = (
+  markdown: string,
+  scan: OpenAsyncFenceScan
+): string => {
+  const body = extractOpenAsyncFenceBody(markdown) ?? ''
+  return (
+    renderOpenFencePrefixHtml(markdown, scan) +
+    buildOpenFencePlaceholderHtml(scan, body, true)
+  )
+}
+
+/** 未闭合 async 围栏：仅 markdown-it 前缀，body 手工占位，避免全文 parse */
+const renderMarkdownWithOpenFenceSupport = (markdown: string): string => {
+  const normalized = normalizeMarkdownRepoFileUrls(markdown || '')
+  const scan = scanOpenAsyncDiagramFence(normalized)
+  if (!scan) {
+    return md.render(normalized)
+  }
+  return buildOpenFenceTailHtml(normalized, scan)
+}
+
 export const renderMarkdown = (markdown?: string) =>
-  md.render(normalizeMarkdownRepoFileUrls(markdown || ''))
+  renderMarkdownWithOpenFenceSupport(markdown || '')
 
 const buildMarkdownHtmlCacheKey = (markdown: string, cacheKey?: string) =>
   `${MARKDOWN_RENDERER_REVISION}:${cacheKey ?? markdown}`
@@ -656,7 +812,7 @@ export const renderMarkdownCached = (
   if (cached !== undefined) {
     return cached
   }
-  const html = md.render(normalized)
+  const html = renderMarkdownWithOpenFenceSupport(normalized)
   if (markdownHtmlCache.size >= MARKDOWN_HTML_CACHE_MAX_ENTRIES) {
     const oldest = markdownHtmlCache.keys().next().value
     if (oldest) {
@@ -671,48 +827,10 @@ export const clearMarkdownHtmlCache = () => {
   markdownHtmlCache.clear()
 }
 
-/** 流式尾段中可由 renderMarkdownBlocks 异步渲染的围栏语言 */
-const ASYNC_DIAGRAM_FENCE_LANGS = new Set([
-  'mermaid',
-  'puml',
-  'plantuml',
-  'vegalite',
-  'vega-lite',
-  'html'
-])
+export const getMarkdownRenderGeneration = () => markdownRenderGeneration
 
-/**
- * 尾段是否仍含未闭合的异步图表/HTML 围栏（markdown-it 将未闭合围栏延伸至 EOF）。
- */
-export const hasOpenAsyncDiagramFence = (text: string): boolean => {
-  if (!text?.trim()) {
-    return false
-  }
-  let inFence = false
-  let openLen = 0
-  let openChar = ''
-  let lang = ''
-  const lineRe = /^([ \t]*)(`{3,}|~{3,})(.*)$/gm
-  let match: RegExpExecArray | null
-  while ((match = lineRe.exec(text)) !== null) {
-    const marker = match[2]
-    const info = match[3].trim()
-    const char = marker[0]
-    const len = marker.length
-    if (!inFence) {
-      inFence = true
-      openChar = char
-      openLen = len
-      lang = info.split(/\s+/)[0]?.toLowerCase() || ''
-      continue
-    }
-    if (char === openChar && len >= openLen && !info) {
-      inFence = false
-      lang = ''
-    }
-  }
-  return inFence && ASYNC_DIAGRAM_FENCE_LANGS.has(lang)
-}
+const isMarkdownRenderGenerationCurrent = (generation: number) =>
+  generation === markdownRenderGeneration
 
 const isPendingAsyncMarkdownBlock = (block: Element): boolean => {
   const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
@@ -793,6 +911,38 @@ const replaceRootChildren = (root: HTMLElement, template: HTMLElement) => {
 /** 各流式尾段容器最近一次渲染的 markdown 原文，用于渲染前短路去重 */
 const lastStreamTailMarkdown = new WeakMap<HTMLElement, string>()
 
+const stripStreamTailEllipsis = (stored: string) =>
+  stored.endsWith('...') ? stored.slice(0, -3) : stored
+
+const syncBlockSourceText = (block: Element, source: string) => {
+  const targetSource = block.querySelector('.md-diagram-source')
+  if (targetSource) {
+    targetSource.textContent = source
+  }
+}
+
+/** 流式尾段 open fence：仅更新前缀 DOM + placeholder，不跑全文 markdown-it */
+const buildOpenFenceTailDom = (
+  root: HTMLElement,
+  markdown: string,
+  scan: OpenAsyncFenceScan,
+  oldPending: Element | null
+): void => {
+  const nextHtml = buildOpenFenceTailHtml(markdown, scan)
+  const template = document.createElement('div')
+  template.innerHTML = nextHtml
+  const newPending = findPendingAsyncMarkdownBlock(template)
+
+  if (oldPending && newPending) {
+    syncChildNodesBefore(root, oldPending, template, newPending)
+    syncBlockSource(oldPending, newPending)
+    removeChildNodesAfter(root, oldPending)
+    return
+  }
+
+  root.innerHTML = nextHtml
+}
+
 /**
  * 流式尾段就地更新：pending 图表/HTML 占位节点保留在文档中，仅同步前缀与 hidden source，
  * 避免 v-html 整段替换导致流光动画重启。
@@ -806,19 +956,50 @@ export const updateStreamTailSegmentInPlace = (
   markdown: string,
   appendEllipsis = false
 ): void => {
+  if (!root.isConnected) {
+    return
+  }
   const text = markdown + (appendEllipsis ? '...' : '')
   if (lastStreamTailMarkdown.get(root) === text) {
     return
   }
+
+  const scan = scanOpenAsyncDiagramFence(markdown)
+  if (scan) {
+    const oldPending = findPendingAsyncMarkdownBlock(root)
+    const body = extractOpenAsyncFenceBody(markdown)
+    const prevStored = lastStreamTailMarkdown.get(root)
+    const prevMarkdown = prevStored ? stripStreamTailEllipsis(prevStored) : null
+    const prevPrefix = prevMarkdown ? getOpenAsyncFencePrefix(prevMarkdown) : null
+    const prefix = getOpenAsyncFencePrefix(markdown)
+    if (
+      oldPending &&
+      body !== null &&
+      prevMarkdown !== null &&
+      prefix !== null &&
+      prevPrefix !== null &&
+      prefix === prevPrefix &&
+      markdown.startsWith(prevMarkdown)
+    ) {
+      syncBlockSourceText(oldPending, body)
+      lastStreamTailMarkdown.set(root, text)
+      return
+    }
+
+    buildOpenFenceTailDom(root, markdown, scan, oldPending)
+    lastStreamTailMarkdown.set(root, text)
+    return
+  }
+
+  const oldPending = findPendingAsyncMarkdownBlock(root)
   const nextHtml = renderMarkdown(text)
 
   const template = document.createElement('div')
   template.innerHTML = nextHtml
 
-  const oldPending = findPendingAsyncMarkdownBlock(root)
   const newPending = findPendingAsyncMarkdownBlock(template)
 
-  if (oldPending && newPending && hasOpenAsyncDiagramFence(markdown)) {
+  if (oldPending && newPending) {
     syncChildNodesBefore(root, oldPending, template, newPending)
     syncBlockSource(oldPending, newPending)
     removeChildNodesAfter(root, oldPending)
@@ -846,7 +1027,7 @@ const flushPendingStreamTailUpdate = () => {
   streamTailThrottleTimer = 0
   const pending = pendingStreamTailUpdate
   pendingStreamTailUpdate = null
-  if (!pending) {
+  if (!pending || !pending.root.isConnected) {
     return
   }
   streamTailLastRunAt = Date.now()
@@ -864,6 +1045,9 @@ export const scheduleUpdateStreamTailSegmentInPlace = (
   appendEllipsis = false,
   immediate = false
 ) => {
+  if (!root.isConnected) {
+    return
+  }
   pendingStreamTailUpdate = { root, markdown, appendEllipsis }
   if (immediate) {
     if (streamTailUpdateRafId) {
@@ -956,17 +1140,38 @@ const buildPendingBlocksSelector = () =>
   `[${MARKDOWN_RENDER_ATTR}]:not([${MARKDOWN_RENDERED_ATTR}="true"]), ` +
   `[${MARKDOWN_RENDER_ATTR}][${MARKDOWN_RENDERED_ATTR}="true"]:not([${MARKDOWN_REVISION_ATTR}="${MARKDOWN_RENDERER_REVISION}"])`
 
-export const hasPendingMarkdownBlocks = (root: ParentNode | Element): boolean =>
-  root.querySelector(buildPendingBlocksSelector()) !== null
+const collectCandidateMarkdownBlocks = (root: ParentNode | Element): Element[] =>
+  Array.from(root.querySelectorAll<Element>(buildPendingBlocksSelector()))
+
+export const hasPendingMarkdownBlocks = (
+  root: ParentNode | Element,
+  options?: RenderMarkdownBlocksOptions
+): boolean =>
+  collectCandidateMarkdownBlocks(root).some((block) =>
+    isBlockPendingRender(block, options)
+  )
 
 const isHeavyMarkdownBlock = (block: Element): boolean => {
   const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
   return type === 'html' || type === 'plantuml'
 }
 
-const isBlockPendingRender = (block: Element): boolean => {
+const isBlockPendingRender = (
+  block: Element,
+  options?: RenderMarkdownBlocksOptions
+): boolean => {
   if (block.getAttribute(MARKDOWN_RENDERING_ATTR) === 'true') {
     return true
+  }
+  const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
+  const isAsyncBlock =
+    type === 'mermaid' ||
+    type === 'plantuml' ||
+    type === 'vegalite' ||
+    type === 'html'
+  // 围栏未闭合 / 流式尾段 / 源码未就绪：占位块故意不渲染，不能算 pending（否则调度器死循环）
+  if (isAsyncBlock && !isAsyncDiagramBlockReady(block, options)) {
+    return false
   }
   const alreadyRendered = block.getAttribute(MARKDOWN_RENDERED_ATTR) === 'true'
   if (!alreadyRendered) {
@@ -1148,7 +1353,8 @@ const scheduleIdle = (fn: () => void) => {
 
 const renderWithViewportScheduling = async (
   blocks: Element[],
-  options: RenderMarkdownBlocksOptions
+  options: RenderMarkdownBlocksOptions,
+  renderGeneration = markdownRenderGeneration
 ): Promise<HTMLElement[]> => {
   const scrollRoot = options.scrollRoot ?? null
   const prefetchRootMargin =
@@ -1159,7 +1365,9 @@ const renderWithViewportScheduling = async (
   const maxBackgroundConcurrency =
     options.backgroundConcurrency ?? DEFAULT_BACKGROUND_RENDER_CONCURRENCY
 
-  const remaining = new Set(blocks)
+  const remaining = new Set(
+    blocks.filter((block) => isBlockPendingRender(block, options))
+  )
   const inFlight = new Set<Element>()
   let heavyInFlight = 0
   const maxHeavyConcurrent = 1
@@ -1170,7 +1378,7 @@ const renderWithViewportScheduling = async (
   })
 
   const getPendingBlocks = () =>
-    [...remaining].filter((block) => isBlockPendingRender(block))
+    [...remaining].filter((block) => isBlockPendingRender(block, options))
 
   const countInFlightVisible = () =>
     [...inFlight].filter(
@@ -1191,6 +1399,13 @@ const renderWithViewportScheduling = async (
   }
 
   const startBlock = (block: Element) => {
+    if (!isMarkdownRenderGenerationCurrent(renderGeneration)) {
+      return
+    }
+    if (!isBlockPendingRender(block, options)) {
+      remaining.delete(block)
+      return
+    }
     if (inFlight.has(block)) {
       return
     }
@@ -1201,12 +1416,15 @@ const renderWithViewportScheduling = async (
       heavyInFlight++
     }
     inFlight.add(block)
-    void renderBlock(block, options)
+    void renderBlock(block, options, renderGeneration)
       .then((body) => {
+        if (!isMarkdownRenderGenerationCurrent(renderGeneration)) {
+          return
+        }
         if (body) {
           bodiesToRefit.push(body)
         }
-        if (!isBlockPendingRender(block)) {
+        if (!isBlockPendingRender(block, options)) {
           remaining.delete(block)
           getPendingBlockSurface(block)?.removeAttribute(MARKDOWN_OFFSCREEN_ATTR)
           if (scrollRoot) {
@@ -1225,6 +1443,9 @@ const renderWithViewportScheduling = async (
   }
 
   const drainBackground = () => {
+    if (!isMarkdownRenderGenerationCurrent(renderGeneration)) {
+      return
+    }
     const pending = getPendingBlocks().filter((block) => !inFlight.has(block))
     const backgroundPending = pending.filter(
       (block) =>
@@ -1242,6 +1463,10 @@ const renderWithViewportScheduling = async (
   }
 
   const scheduleDrain = () => {
+    if (!isMarkdownRenderGenerationCurrent(renderGeneration)) {
+      resolveDone()
+      return
+    }
     for (const block of getPendingBlocks()) {
       const priority = getBlockViewportPriority(block, scrollRoot, prefetchPx)
       updateBlockOffscreenAttr(block, priority)
@@ -1745,20 +1970,24 @@ const renderVegaLiteMarkupFallback = async (source: string) => {
   host.className = 'md-vegalite-host-fallback'
   host.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none'
   document.body.appendChild(host)
+  let view: { finalize: () => void } | undefined
   try {
-    await embed(host, spec, {
+    const result = await embed(host, spec, {
       actions: false,
       renderer: 'svg',
       theme: 'quartz',
       config: getVegaLiteEmbedConfig(),
       tooltip: { theme: 'light' }
     })
+    view = result?.view
     const vegaSvg = host.querySelector('svg')
     if (!vegaSvg) {
       throw new Error('Vega-Lite 渲染未生成 SVG')
     }
     return vegaSvg.outerHTML
   } finally {
+    // 释放 Vega View，避免 fallback 路径同样泄漏 dataflow / timer
+    view?.finalize()
     host.remove()
   }
 }
@@ -2283,10 +2512,39 @@ const getDiagramBodyForRefit = (block: Element): HTMLElement | undefined => {
   return body ?? undefined
 }
 
-const renderBlock = async (
+/** 异步图表/HTML 块是否已具备渲染条件（围栏闭合 + 源码可解析） */
+const isAsyncDiagramBlockReady = (
   block: Element,
   options?: RenderMarkdownBlocksOptions
+): boolean => {
+  if (block.getAttribute(MARKDOWN_FENCE_OPEN_ATTR) === 'true') {
+    return false
+  }
+  if (options?.deferDiagrams && block.closest('[data-md-stream-tail]')) {
+    return false
+  }
+  const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
+  const source = getSourceFromBlock(block)
+  if (type === 'vegalite') {
+    return tryParseVegaLiteSpec(source) !== null
+  }
+  if (type === 'mermaid') {
+    return normalizeMermaidSource(source).trim().length > 0
+  }
+  if (type === 'plantuml' || type === 'html') {
+    return source.trim().length > 0
+  }
+  return true
+}
+
+const renderBlock = async (
+  block: Element,
+  options?: RenderMarkdownBlocksOptions,
+  renderGeneration = markdownRenderGeneration
 ): Promise<HTMLElement | undefined> => {
+  if (!isMarkdownRenderGenerationCurrent(renderGeneration)) {
+    return undefined
+  }
   if (block.getAttribute(MARKDOWN_RENDERING_ATTR) === 'true') {
     return undefined
   }
@@ -2306,13 +2564,7 @@ const renderBlock = async (
     type === 'plantuml' ||
     type === 'vegalite' ||
     type === 'html'
-  // 仅推迟“仍在流式输出（围栏未闭合）”的块——其所在容器带 data-md-stream-tail 标记。
-  // 已闭合的块即便整条消息还在继续输出，也立即就地渲染；因其所在 DOM 不再被重建，渲染结果保持稳定、不抽搐。
-  if (
-    isAsyncBlock &&
-    options?.deferDiagrams &&
-    (block as Element).closest?.('[data-md-stream-tail]')
-  ) {
+  if (isAsyncBlock && !isAsyncDiagramBlockReady(block, options)) {
     return undefined
   }
 
@@ -2328,7 +2580,10 @@ const renderBlock = async (
     } else if (type === 'vegalite') {
       await renderVegaLiteBlock(block, signal)
     }
-    if (!block.isConnected) {
+    if (
+      !block.isConnected ||
+      !isMarkdownRenderGenerationCurrent(renderGeneration)
+    ) {
       scheduleDiagramBlockRetry(block.closest('.message-md'))
       return undefined
     }
@@ -2430,25 +2685,43 @@ const executeRenderMarkdownBlocks = async (
   root: ParentNode | Element,
   options?: RenderMarkdownBlocksOptions
 ) => {
-  const blocks = Array.from(
-    root.querySelectorAll<Element>(buildPendingBlocksSelector())
+  const renderGeneration = markdownRenderGeneration
+  const blocks = collectCandidateMarkdownBlocks(root).filter((block) =>
+    isBlockPendingRender(block, options)
   )
+  if (!isMarkdownRenderGenerationCurrent(renderGeneration)) {
+    return
+  }
   let bodiesToRefit: HTMLElement[] = []
 
   if (blocks.length > 0) {
     const lazy = options?.lazy !== false
     if (lazy) {
-      bodiesToRefit = await renderWithViewportScheduling(blocks, options ?? {})
+      bodiesToRefit = await renderWithViewportScheduling(
+        blocks,
+        options ?? {},
+        renderGeneration
+      )
     } else {
       const concurrency =
         options?.concurrency ?? DEFAULT_DIAGRAM_RENDER_CONCURRENCY
       await mapWithConcurrency(blocks, concurrency, async (block) => {
-        const body = await renderBlock(block, options)
+        if (!isMarkdownRenderGenerationCurrent(renderGeneration)) {
+          return
+        }
+        if (!isBlockPendingRender(block, options)) {
+          return
+        }
+        const body = await renderBlock(block, options, renderGeneration)
         if (body) {
           bodiesToRefit.push(body)
         }
       })
     }
+  }
+
+  if (!isMarkdownRenderGenerationCurrent(renderGeneration)) {
+    return
   }
 
   refitDiagramBodies(bodiesToRefit)
@@ -2495,6 +2768,7 @@ export const pauseDiagramReflowInRoot = (root: Element | null | undefined) => {
 
 /** keep-alive 切走或会话隐藏时：清空排队中的 Markdown/图表任务，避免在不可见 DOM 上继续渲染 */
 export const cancelPendingMarkdownRenderWork = (scope?: Element | null) => {
+  markdownRenderGeneration++
   renderMarkdownBlocksChain = Promise.resolve()
   if (streamTailUpdateRafId) {
     cancelAnimationFrame(streamTailUpdateRafId)
@@ -2534,6 +2808,7 @@ export const resetMarkdownRendererForTest = () => {
     batchRefitRafId = 0
   }
   renderMarkdownBlocksChain = Promise.resolve()
+  markdownRenderGeneration = 0
   if (streamTailUpdateRafId) {
     cancelAnimationFrame(streamTailUpdateRafId)
     streamTailUpdateRafId = 0

@@ -419,7 +419,7 @@ import {
   shallowRef,
   watch
 } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { consumeForceNewChatFlag } from '@/routes'
 import {
   ElAvatar,
   ElButton,
@@ -1203,11 +1203,13 @@ type RenderedStreamSegment = StreamSegment & { html: string }
 type SegmentCacheEntry = {
   content: string
   segments: RenderedStreamSegment[]
+  revision: string
 }
 
 type UserHtmlCacheEntry = {
   content: string
   html: string
+  revision: string
 }
 
 /** 按会话 key 隔离 Markdown 段缓存，切换对话时不全量失效 */
@@ -1245,6 +1247,7 @@ const getUserHtmlCache = () => {
   return cache
 }
 
+/** 删除会话等显式失效时清空 Markdown 段缓存；routine 切会话勿调用 */
 const evictSessionRenderCache = (sessionKey: string) => {
   assistantSegmentCacheBySession.delete(sessionKey)
   userHtmlCacheBySession.delete(sessionKey)
@@ -1331,22 +1334,36 @@ const buildStableAssistantSegments = (
 ): RenderedStreamSegment[] => {
   const cache = getAssistantSegmentCache()
   const hit = cache.get(messageIndex)
-  if (hit?.content === content) {
+  if (
+    hit?.content === content &&
+    hit.revision === MARKDOWN_RENDERER_REVISION
+  ) {
     return hit.segments
   }
   const segments = buildRenderedSegments(content, false)
-  cache.set(messageIndex, { content, segments })
+  cache.set(messageIndex, {
+    content,
+    segments,
+    revision: MARKDOWN_RENDERER_REVISION
+  })
   return segments
 }
 
 const getStableUserHtml = (messageIndex: number, content: string): string => {
   const cache = getUserHtmlCache()
   const hit = cache.get(messageIndex)
-  if (hit?.content === content) {
+  if (
+    hit?.content === content &&
+    hit.revision === MARKDOWN_RENDERER_REVISION
+  ) {
     return hit.html
   }
   const html = renderMarkdownCached(content)
-  cache.set(messageIndex, { content, html })
+  cache.set(messageIndex, {
+    content,
+    html,
+    revision: MARKDOWN_RENDERER_REVISION
+  })
   return html
 }
 
@@ -1467,16 +1484,11 @@ const runMarkdownBlocks = () => {
       return
     }
     const scopeRoot = getMarkdownBlocksScope() ?? listRoot
-    if (!hasPendingMarkdownBlocks(scopeRoot)) {
+    const renderOptions = buildMarkdownBlocksRenderOptions()
+    if (!hasPendingMarkdownBlocks(scopeRoot, renderOptions)) {
       return
     }
-    const scrollRoot =
-      (scrollbarRef.value?.wrapRef as HTMLElement | undefined) ?? null
-    renderMarkdownBlocks(scopeRoot, {
-      deferDiagrams: isBusyByState.value,
-      scrollRoot,
-      prefetchRootMargin: buildMarkdownPrefetchRootMargin(scrollRoot)
-    })
+    renderMarkdownBlocks(scopeRoot, renderOptions)
       .then(() => {
         if (shouldAutoScroll()) {
           scrollToBottom()
@@ -1511,6 +1523,34 @@ const flushActivateMarkdownBlocks = () => {
     markdownBlocksDebounceTimer = null
   }
   runMarkdownBlocks()
+}
+
+const buildMarkdownBlocksRenderOptions = () => {
+  const scrollRoot =
+    (scrollbarRef.value?.wrapRef as HTMLElement | undefined) ?? null
+  return {
+    deferDiagrams: isBusyByState.value,
+    scrollRoot,
+    prefetchRootMargin: buildMarkdownPrefetchRootMargin(scrollRoot)
+  }
+}
+
+/** 切回会话：复用 HTML 占位缓存，仅 flush 图表 DOM（不重算 markdown-it / 不 bulk evict） */
+const restoreSessionDiagrams = async () => {
+  if (!isChatViewActive.value) {
+    return
+  }
+  await nextTick()
+  flushActivateMarkdownBlocks()
+  await nextTick()
+  const listRoot = messageListRef.value
+  if (!listRoot) {
+    return
+  }
+  const scopeRoot = getMarkdownBlocksScope() ?? listRoot
+  if (hasPendingMarkdownBlocks(scopeRoot, buildMarkdownBlocksRenderOptions())) {
+    flushActivateMarkdownBlocks()
+  }
 }
 
 const schedulePreloadDiagramRuntimes = () => {
@@ -1847,23 +1887,10 @@ const copyMessage = async (content?: string) => {
   }
 }
 
-const route = useRoute()
-const router = useRouter()
-
-const stripNewChatQuery = () => {
-  if (route.query['new-chat'] !== '1') {
-    return
-  }
-  const query = { ...route.query }
-  delete query['new-chat']
-  router.replace({ path: route.path, query })
-}
-
-/** 进入智能体：智能体列表带 new-chat=1 时强制新建；否则预激活会话保留，未预激活则新建 */
+/** 进入智能体：列表页 forceNewChat flag 时强制新建；否则预激活会话保留，未预激活则新建 */
 const bootstrapAgentSession = async (forceNew = false) => {
-  if (forceNew || route.query['new-chat'] === '1') {
+  if (forceNew || consumeForceNewChatFlag(props.agentId)) {
     await chatSessionRegistry.createNewSession(props.agentId)
-    stripNewChatQuery()
   } else {
     await chatSessionRegistry.enterAgent(props.agentId)
   }
@@ -1889,7 +1916,7 @@ watch(
     if (oldAgentId === undefined) {
       return
     }
-    await bootstrapAgentSession(route.query['new-chat'] === '1')
+    await bootstrapAgentSession()
   }
 )
 
@@ -2020,6 +2047,7 @@ watch(
 watch(
   () => chatSessionRegistry.activeSessionKey.value,
   () => {
+    cancelPendingMarkdownRenderWork(messageListRef.value ?? null)
     resetActiveStreamSplitCache()
     resetActiveStreamRenderedCache()
     activeTailSegmentEl.value = null
@@ -2030,13 +2058,20 @@ watch(
   }
 )
 
-/** 与侧边栏点历史同路：激活会话、按需拉取、滚底、debounced 图表渲染 */
+/** 与侧边栏点历史同路：激活会话、按需拉取、滚底、恢复图表 DOM */
 const showSessionView = async (targetContextId: string) => {
+  cancelPendingMarkdownRenderWork(messageListRef.value ?? null)
+  if (markdownBlocksDebounceTimer !== null) {
+    clearTimeout(markdownBlocksDebounceTimer)
+    markdownBlocksDebounceTimer = null
+  }
+
   const session = chatSessionRegistry.activateSession(
     props.agentId,
     targetContextId
   )
   isAtBottom.value = true
+
   if (
     !session.loadedFromServer.value &&
     session.messageContext.value.length === 0
@@ -2050,11 +2085,12 @@ const showSessionView = async (targetContextId: string) => {
       ElMessage.error(t('ai.assistant.service.unavailable'))
     }
   }
+
   if (activeSession.value?.pendingScroll.value) {
     activeSession.value.pendingScroll.value = false
   }
   scrollToBottom()
-  activateMarkdownBlocks()
+  await restoreSessionDiagrams()
 }
 
 const historyChat = async (historyId: string) => {
@@ -2092,7 +2128,7 @@ watch(
 onMounted(async () => {
   isChatViewActive.value = true
   schedulePreloadDiagramRuntimes()
-  await bootstrapAgentSession(route.query['new-chat'] === '1')
+  await bootstrapAgentSession()
   nextTick(() => {
     chatManageRef.value?.getHistoryListData()
     bindUserScrollIntent()

@@ -23,6 +23,13 @@ type MermaidApi = {
   ) => Promise<{ svg: string }>
 }
 
+/** Vega View 最小化类型：仅用到 runAsync / toSVG / finalize */
+type VegaView = {
+  runAsync: () => Promise<unknown>
+  toSVG: () => Promise<string>
+  finalize: () => void
+}
+
 type PlantUmlRenderer = (source: string) => Promise<string>
 
 type WorkerRenderRequest = {
@@ -123,8 +130,15 @@ const renderVegaLiteMarkup = async (source: string) => {
   const vega = await import('vega')
   const compiled = compile(spec, { config })
   const runtime = vega.parse(compiled.spec)
-  const view = new vega.View(runtime, { renderer: 'svg' })
-  return view.toSVG()
+  // 必须 finalize：Vega View 内部 dataflow / scenegraph / timer 不释放会随每个图表泄漏，
+  // 批量渲染时累积击穿 Worker 堆，进而拖垮整个渲染进程。
+  const view = new vega.View(runtime, { renderer: 'svg' }) as unknown as VegaView
+  try {
+    await view.runAsync()
+    return await view.toSVG()
+  } finally {
+    view.finalize()
+  }
 }
 
 const renderDiagram = async (type: DiagramRenderType, source: string) => {

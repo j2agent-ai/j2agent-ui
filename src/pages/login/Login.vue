@@ -102,7 +102,6 @@
 <script setup lang="ts">
 import axios from 'axios'
 import { onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import {
 	ElForm,
 	ElFormItem,
@@ -119,9 +118,21 @@ import { loadRegisterEnabled, useRegisterEnabled } from '@/composables/useRegist
 import { useLoginCaptcha } from '@/composables/useLoginCaptcha'
 
 import { t } from '@ai-system/lib'
+import { goTo, NAV_POST_LOGIN_PATH_KEY } from '@/routes'
 import { hasRoleAccess, ROLE_ADMIN, setSessionInfo } from '@/utils/role'
 
-const router = useRouter()
+const resolvePostLoginPath = (): string => {
+	try {
+		const saved = sessionStorage.getItem(NAV_POST_LOGIN_PATH_KEY)
+		sessionStorage.removeItem(NAV_POST_LOGIN_PATH_KEY)
+		if (saved && saved !== '/login' && saved !== '/logout') {
+			return saved
+		}
+	} catch {
+		/* ignore */
+	}
+	return hasRoleAccess(ROLE_ADMIN) ? '/' : '/agents'
+}
 const loginForm = ref<FormInstance>()
 const loading = ref<boolean>(false)
 const { registerEnabled } = useRegisterEnabled()
@@ -196,14 +207,10 @@ async function submitLogin() {
 		try {
 			const sessionResponse = await getSessionInfo()
 			setSessionInfo(sessionResponse.data)
-			if (hasRoleAccess(ROLE_ADMIN)) {
-				router.push('/')
-			} else {
-				router.push('/agents')
-			}
+			void goTo(resolvePostLoginPath())
 		} catch (error) {
 			setSessionInfo(null)
-			router.push('/')
+			void goTo('/')
 		}
 	} catch (e: unknown) {
 		console.log(e)

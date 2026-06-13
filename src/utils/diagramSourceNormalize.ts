@@ -444,6 +444,17 @@ export const enhanceVegaLiteSpec = (spec: Record<string, unknown>) => {
   }
 }
 
+/** 非抛错解析 Vega-Lite；源码未就绪（流式/非法 JSON）时返回 null。 */
+export const tryParseVegaLiteSpec = (
+  source: string
+): Record<string, unknown> | null => {
+  try {
+    return parseVegaLiteSpec(source)
+  } catch {
+    return null
+  }
+}
+
 /** 将代码块内容解析为 Vega-Lite 规格对象。 */
 export const parseVegaLiteSpec = (source: string): Record<string, unknown> => {
   const text = normalizeVegaLiteSource(source)
