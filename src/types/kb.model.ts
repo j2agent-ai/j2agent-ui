@@ -6,10 +6,65 @@ export interface KnowledgeCollectionListDto {
 	data?: string[]
 }
 
-/** 知识库目录增量同步结果 */
+/** 知识库目录同步提交结果 */
 export interface KnowledgeSyncResult {
 	success?: boolean
 	message?: string
+}
+
+export type KnowledgeSyncTaskType =
+	| 'IDLE'
+	| 'INITIALIZING'
+	| 'PROBING'
+	| 'INCREMENTAL_SYNC'
+	| 'FULL_REBUILD'
+	| 'FAILED'
+
+export type KnowledgeSyncPhase =
+	| 'IDLE'
+	| 'PREPARING'
+	| 'SCANNING'
+	| 'DELETING'
+	| 'UPSERTING'
+	| 'COMPLETED'
+
+export type KnowledgeSyncFileChangeType = 'ADDED' | 'MODIFIED' | 'DELETED'
+
+export type KnowledgeSyncFileStatus =
+	| 'PENDING'
+	| 'IN_PROGRESS'
+	| 'SYNCED'
+	| 'DELETED'
+	| 'SKIPPED'
+	| 'FAILED'
+
+export interface KnowledgeSyncFileStatusDto {
+	filePath?: string
+	changeType?: KnowledgeSyncFileChangeType
+	status?: KnowledgeSyncFileStatus
+	collection?: string
+	knowledgeCount?: number
+	errorMessage?: string
+}
+
+export interface KnowledgeSyncStatusDto {
+	ready?: boolean
+	dimension?: number | null
+	modelName?: string | null
+	providerType?: string | null
+	embeddingBatchSize?: number | null
+	lastProbeTime?: number | null
+	probeError?: string | null
+	taskType?: KnowledgeSyncTaskType
+	maintenanceActive?: boolean
+	fullRebuildRunning?: boolean
+	exclusiveSyncActive?: boolean
+	lastFailureMessage?: string
+	phase?: KnowledgeSyncPhase
+	totalCount?: number
+	processedCount?: number
+	currentFilePath?: string
+	files?: KnowledgeSyncFileStatusDto[]
 }
 
 export interface KnowledgeDto {

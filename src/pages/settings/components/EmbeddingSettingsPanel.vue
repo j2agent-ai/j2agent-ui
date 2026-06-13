@@ -1,6 +1,6 @@
 <template>
 	<div class="embedding-settings">
-		<EmbeddingRuntimeStatus ref="runtimeRef" />
+		<KnowledgeMaintenanceStatusPanel ref="maintenanceStatusRef" show-probe-action />
 		<ModelConfigListPanel
 			ref="listRef"
 			api-type="embedding"
@@ -14,14 +14,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { t } from '@ai-system/lib'
-import EmbeddingRuntimeStatus from './EmbeddingRuntimeStatus.vue'
+import KnowledgeMaintenanceStatusPanel from '@/pages/kb/components/KnowledgeMaintenanceStatusPanel.vue'
 import ModelConfigListPanel from './ModelConfigListPanel.vue'
 
-const runtimeRef = ref<InstanceType<typeof EmbeddingRuntimeStatus> | null>(null)
+const maintenanceStatusRef = ref<InstanceType<typeof KnowledgeMaintenanceStatusPanel> | null>(null)
 const listRef = ref<InstanceType<typeof ModelConfigListPanel> | null>(null)
 
 const onEmbeddingChanged = async () => {
-	await runtimeRef.value?.refresh()
+	await maintenanceStatusRef.value?.refresh()
 }
 </script>
 

@@ -23,8 +23,8 @@
 					<el-button type="primary" :icon="Refresh" @click="loadKnowledge">
 						{{ t('common.refresh') }}
 					</el-button>
-					<el-button type="warning" :loading="syncing" @click="handleRebuild">
-						{{ t('kb.knowledge.rebuild') }}
+					<el-button type="warning" @click="handleRebuild">
+						{{ rebuildButtonLabel }}
 					</el-button>
 				</div>
 			</div>
@@ -42,6 +42,11 @@
 				</el-button>
 			</div>
 		</div>
+		<KnowledgeMaintenanceStatusPanel
+			ref="maintenanceStatusRef"
+			@completed="handleSyncCompleted"
+			@maintenance-change="syncMaintenanceActive = $event"
+		/>
 		<div class="table-wrapper">
 			<el-table
 				ref="tableRef"
@@ -238,11 +243,13 @@ import { getKnowledge, getKnowledgeCollections, syncKnowledge } from '@/api/kb/k
 import type { KnowledgeSyncResult } from '@/types/kb.model'
 import { formatDateTime, getOutlineDisplay, isTableCellEmpty, t } from '@ai-system/lib'
 import { KnowledgeDto } from '@/types/kb.model'
+import KnowledgeMaintenanceStatusPanel from '@/pages/kb/components/KnowledgeMaintenanceStatusPanel.vue'
 
 // 状态定义
 const knowledgeList = ref<KnowledgeDto[]>([])
 const loading = ref(false)
-const syncing = ref(false)
+const maintenanceStatusRef = ref<InstanceType<typeof KnowledgeMaintenanceStatusPanel> | null>(null)
+const syncMaintenanceActive = ref(false)
 const collectionLoading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -258,6 +265,13 @@ const FULL_REBUILD_CONFIRM_TEXT = '完全重建'
 const emptyTableMessage = computed(() =>
 	selectedCollection.value ? '暂无数据' : '请先选择 Collection'
 )
+
+const rebuildButtonLabel = computed(() => {
+	if (syncMaintenanceActive.value) {
+		return t('kb.sync.running.button')
+	}
+	return t('kb.knowledge.rebuild')
+})
 
 // 加载 collection 列表
 const loadCollections = async () => {
@@ -360,22 +374,24 @@ const confirmRebuild = async () => {
 	const fullRebuild = fullRebuildEnabled.value
 	closeRebuildDialog()
 	try {
-		syncing.value = true
 		const res = await syncKnowledge(fullRebuild)
 		const result: KnowledgeSyncResult = res.data ?? { success: false }
 		if (result.success) {
-			ElMessage.success(t('kb.knowledge.rebuild.success'))
-			await loadCollections()
-			await loadKnowledge()
+			ElMessage.success(result.message || t('kb.knowledge.rebuild.queued'))
+			await maintenanceStatusRef.value?.refresh()
 		} else {
 			ElMessage.error(result.message || t('kb.knowledge.rebuild.failed'))
 		}
 	} catch (err: unknown) {
 		const data = (err as { response?: { data?: KnowledgeSyncResult } })?.response?.data
 		ElMessage.error(data?.message || t('kb.knowledge.rebuild.failed'))
-	} finally {
-		syncing.value = false
 	}
+}
+
+const handleSyncCompleted = async () => {
+	ElMessage.success(t('kb.knowledge.rebuild.success'))
+	await loadCollections()
+	await loadKnowledge()
 }
 
 onMounted(() => {
