@@ -35,7 +35,7 @@ import { debounce, t } from '@ai-system/lib'
 import { ElMessage } from 'element-plus'
 import topBar from '@/pages/components/topBar.vue'
 import { getAgentList } from '@/api/ai.api'
-import { goTo } from '@/routes'
+import { goTo, setForceNewChatFlag } from '@/routes'
 import type { AgentInfoDto } from '@/types/ai.types'
 
 const route = useRoute()
@@ -68,11 +68,8 @@ const fetchAgents = () => {
  * 进入指定智能体的聊天页，通过 query 传入 agent-id。
  */
 const openChat = (agentId: string) => {
-	goTo(
-		'/chat/assistant?agent-id=' +
-			encodeURIComponent(agentId) +
-			'&new-chat=1'
-	)
+	setForceNewChatFlag(agentId)
+	goTo('/chat/assistant?agent-id=' + encodeURIComponent(agentId))
 }
 
 const resize = () => {

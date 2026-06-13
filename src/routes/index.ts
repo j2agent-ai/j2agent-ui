@@ -47,15 +47,34 @@ const routes = [
 
 export default routes
 
-/** 应用内导航：优先走 vue-router，避免直接写 location.hash 与 hash history 不同步引发整页刷新 */
-export const goTo = (path: string) => {
-	const normalized = path.startsWith('/') ? path : `/${path}`
-	const router = getAppRouter()
-	if (router) {
-		void router.push(normalized)
-		return
+/** 登录成功后回跳路径（auth guard 写入，Login 读取后清除） */
+export const NAV_POST_LOGIN_PATH_KEY = 'j2agent:postLoginPath'
+/** 智能体列表进入聊天时强制新建会话（AgentListPage 写入，ChatView 读取后清除） */
+export const NAV_FORCE_NEW_CHAT_KEY = 'j2agent:forceNewChat'
+
+export const setForceNewChatFlag = (agentId: string) => {
+	sessionStorage.setItem(NAV_FORCE_NEW_CHAT_KEY, agentId)
+}
+
+/** 若 flag 与当前 agentId 匹配则消费并返回 true */
+export const consumeForceNewChatFlag = (agentId: string): boolean => {
+	const flagged = sessionStorage.getItem(NAV_FORCE_NEW_CHAT_KEY)
+	if (flagged === agentId) {
+		sessionStorage.removeItem(NAV_FORCE_NEW_CHAT_KEY)
+		return true
 	}
-	location.hash = normalized
+	return false
+}
+
+/** 应用内 SPA 导航：只允许 router.push，禁止 replace / location / redirect */
+export const goTo = (path: string) => {
+	const router = getAppRouter()
+	if (!router) {
+		console.error('[nav] router not bound, navigation blocked:', path)
+		return Promise.reject(new Error('router not ready'))
+	}
+	const normalized = path.startsWith('/') ? path : `/${path}`
+	return router.push(normalized)
 }
 
 /** 退出登录：有进行中任务时先警告，确认后停止所有任务再跳转。 */

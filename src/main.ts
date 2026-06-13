@@ -56,7 +56,7 @@ async function APP() {
 		Number(sessionStorage.getItem('j2agent-app-boot-count') || 0) + 1
 	sessionStorage.setItem('j2agent-app-boot-count', String(bootCount))
 	if (bootCount > 1) {
-		console.warn(
+		console.error(
 			'[j2agent] document reload detected — in-memory chat sessions were reset (boot #%d)',
 			bootCount
 		)

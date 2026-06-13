@@ -123,7 +123,7 @@
 
 <script setup lang="ts">
 import { onUnmounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { goTo } from '@/routes'
 import {
 	ElButton,
 	ElDialog,
@@ -141,7 +141,6 @@ import { withDraggableMessageBoxOptions } from '@ai-system/common/elementPlusDia
 import { extractApiErrorMessage, useLoginCaptcha } from '@/composables/useLoginCaptcha'
 import { t } from '@ai-system/lib'
 
-const router = useRouter()
 const forgotForm = ref<FormInstance>()
 const SEND_CODE_COOLDOWN_SEC = 60
 
@@ -286,7 +285,7 @@ async function handleSubmit() {
 			code: formData.code.trim()
 		})
 		ElMessage.success(t('user.resetPassword.success'))
-		router.push('/login')
+		void goTo('/login')
 	} catch (e: unknown) {
 		await showErrorAlert(extractApiErrorMessage(e, t('user.resetPassword.failed')))
 	} finally {

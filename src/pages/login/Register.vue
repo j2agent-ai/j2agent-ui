@@ -115,7 +115,6 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import {
 	ElButton,
 	ElDialog,
@@ -133,8 +132,8 @@ import { loadRegisterEnabled } from '@/composables/useRegisterEnabled'
 import { withDraggableMessageBoxOptions } from '@ai-system/common/elementPlusDialog'
 import { extractApiErrorMessage, useLoginCaptcha } from '@/composables/useLoginCaptcha'
 import { t } from '@ai-system/lib'
+import { goTo } from '@/routes'
 
-const router = useRouter()
 const registerForm = ref<FormInstance>()
 const SEND_CODE_COOLDOWN_SEC = 60
 
@@ -230,7 +229,7 @@ onMounted(async () => {
 	const enabled = await loadRegisterEnabled()
 	if (!enabled) {
 		ElMessage.warning(t('user.emailRegister.disabled'))
-		router.replace('/login')
+		void goTo('/login')
 	}
 })
 
@@ -278,7 +277,7 @@ async function handleRegister() {
 			code: formData.code.trim()
 		})
 		ElMessage.success(t('user.emailRegister.success'))
-		router.push('/login')
+		void goTo('/login')
 	} catch (e: unknown) {
 		await showRegisterErrorAlert(extractApiErrorMessage(e, t('user.emailRegister.failed')))
 	} finally {

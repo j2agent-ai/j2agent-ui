@@ -123,8 +123,14 @@ const ensureWorker = (): Worker | undefined => {
   return worker
 }
 
+/**
+ * 可安全回收的时机：在途与 pending 均清空即可，**不再要求队列也为空**。
+ * 旧逻辑要求 `queue.length === 0`，导致一次性排入大量图表时 Worker 在整批渲染完前
+ * 永不回收，泄漏（如 Vega View）与运行时碎片持续累积，最终击穿渲染进程内存。
+ * 现在达阈值后会在「两批之间」回收：暂停派发 → 在途排空 → terminate → 重建继续队列。
+ */
 const canRecycleWorkerNow = () =>
-  inFlightCount === 0 && pendingById.size === 0 && queue.length === 0
+  inFlightCount === 0 && pendingById.size === 0
 
 const requestWorkerRecycle = () => {
   if (!canRecycleWorkerNow()) {
@@ -283,6 +289,15 @@ const dispatchToWorker = (task: PendingTask) => {
 }
 
 const drainQueue = () => {
+  // 已达回收阈值：暂停派发新任务，等在途任务排空后回收 Worker，避免整批渲染期间堆积。
+  if (recyclePending) {
+    if (canRecycleWorkerNow()) {
+      recyclePending = false
+      recycleWorker()
+    } else {
+      return
+    }
+  }
   while (inFlightCount < DEFAULT_CONCURRENCY && queue.length > 0) {
     const task = queue.shift()
     if (!task) {
