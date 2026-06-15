@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { goTo } from '@/routes'
+import { redirectToLogin } from '@/utils/auth'
 
 const http = axios.create({
 	baseURL: '/',
@@ -19,7 +19,7 @@ http.interceptors.response.use(
 		const requestUrl = error.config?.url ?? ''
 		const isPublicAuthApi = requestUrl.includes('/auth/')
 		if ((status === 401 || status === 403) && !isPublicAuthApi) {
-			goTo('/login')
+			redirectToLogin()
 		}
 
 		// 业务错误由调用方统一展示，避免拦截器与页面 catch 重复弹出提示。

@@ -6,8 +6,9 @@ import { nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { t } from '@ai-system/lib'
 import { chatWebsocketClientApi } from '@/api/ai.api'
+import { getSessionInfo } from '@/api/login.api'
 import type { AgentUiEventEnvelope, ChatRequestDto } from '@/types/ai.types'
-import { goTo } from '@/routes/index'
+import { redirectToLogin } from '@/utils/auth'
 import { chatActivityStore } from '../activity/store'
 import type { ChatSessionRuntime } from '../session/types'
 
@@ -56,6 +57,20 @@ const onTurnClose = (session: ChatSessionRuntime) => {
 	})
 }
 
+const probeSessionAfterHandshakeFailure = async () => {
+	try {
+		await getSessionInfo()
+		ElMessage.error(t('ai.assistant.service.unavailable'))
+	} catch (error) {
+		const status = (error as { response?: { status?: number } })?.response?.status
+		if (status === 401 || status === 403) {
+			redirectToLogin()
+		} else {
+			ElMessage.error(t('ai.assistant.service.unavailable'))
+		}
+	}
+}
+
 /** 用户主动停止或删除会话时中断该会话的流式连接 */
 export const stopTurn = (session: ChatSessionRuntime) => {
 	// 先断开 WS，避免 recordTerminalState 之后仍有晚到消息把状态写回 busy
@@ -91,8 +106,10 @@ export const startTurn = (
 
 	const ws = chatWebsocketClientApi(chatRequestDto.contextId, session.agentId)
 	session.ws = ws
+	let opened = false
 
 	ws.onopen = () => {
+		opened = true
 		ws.send(JSON.stringify(chatRequestDto))
 		session.isNewLlmResponse.value = false
 		session.pendingScroll.value = true
@@ -117,15 +134,7 @@ export const startTurn = (
 	}
 
 	ws.onerror = (error: unknown) => {
-		const err = error as { responseCode?: number }
-		if (err.responseCode === 401) {
-			void goTo('/login')
-			return
-		}
 		console.error(error)
-		if (err.responseCode !== 0) {
-			ElMessage.error(t('ai.assistant.service.unavailable'))
-		}
 		session.isNewLlmResponse.value = true
 		if (!session.dispatcher.isTerminalState.value) {
 			session.dispatcher.recordTerminalState('FAILED')
@@ -134,6 +143,9 @@ export const startTurn = (
 	}
 
 	ws.onclose = () => {
+		if (!opened) {
+			void probeSessionAfterHandshakeFailure()
+		}
 		onTurnClose(session)
 	}
 }
