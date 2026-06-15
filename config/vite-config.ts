@@ -39,6 +39,10 @@ interface ProxyServer {
  * （d3、vega 等子包）导致 Rollup 在 CI 上 OOM。
  */
 function resolveVendorChunk(id: string): string | undefined {
+	// preload-helper 必须独立 chunk，否则会与 mermaid vendor 合并导致 index 静态依赖 3MB+
+	if (id.includes('vite/preload-helper') || id.includes('\0vite/')) {
+		return 'vite-preload'
+	}
 	if (!id.includes('node_modules')) {
 		return undefined
 	}
@@ -51,6 +55,9 @@ function resolveVendorChunk(id: string): string | undefined {
 		const scoped = inNodeModules.split('/').slice(0, 2).join('/')
 		if (scoped === '@plantuml/core') {
 			return 'plantuml-core'
+		}
+		if (scoped === '@mermaid-js/parser') {
+			return 'mermaid'
 		}
 		if (scoped.startsWith('@vue/') || scoped === '@vue/reactivity') {
 			return 'vue-vendor'
@@ -86,6 +93,9 @@ function resolveVendorChunk(id: string): string | undefined {
 	}
 	if (pkg === 'lodash-es' || pkg === 'lodash' || pkg === 'lodash-unified') {
 		return 'lodash-vendor'
+	}
+	if (pkg === 'crypto-js') {
+		return 'crypto-vendor'
 	}
 	// 其余依赖交给 Rollup 默认拆分，避免 vendor 与 mermaid 循环引用
 	return undefined
@@ -265,6 +275,17 @@ export function viteConfig(
 			cssCodeSplit: true,
 			sourcemap: mode === 'development',
 			target: 'es2020',
+			modulePreload: {
+				resolveDependencies(_filename, deps) {
+					return deps.filter(
+						(dep) =>
+							!dep.includes('mermaid') &&
+							!dep.includes('plantuml-core') &&
+							!dep.includes('vega-vendor') &&
+							!dep.includes('crypto-vendor')
+					)
+				}
+			},
 			rollupOptions: {
 				input: {
 					index: path.join(rootDir, 'index.html')

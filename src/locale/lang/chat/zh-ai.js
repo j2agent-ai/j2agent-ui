@@ -57,6 +57,7 @@ export default {
 	'ai.hi.assistant': `${aiIntroducePrefixZh}「{name}」`,
 	'ai.already.latest.chat': '已是最新对话',
 	'ai.source': '引用来源：',
+	'ai.chat.diagramRuntime.loading': '图表引擎加载中',
 	'mdViewer.loading': '加载中…',
 	'mdViewer.loadFailed': '无法加载文档',
 	'mdViewer.download': '下载',

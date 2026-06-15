@@ -1,65 +1,19 @@
 import MarkdownIt from 'markdown-it'
 import { normalizeMarkdownRepoFileUrls, normalizeRepoFileUrl } from './repoFileUrl'
-import {
-  DIAGRAM_COLOR_PALETTE,
-  DIAGRAM_FONT_FAMILY,
-  getMermaidThemeCss,
-  getMermaidThemeVariables,
-  getVegaLiteEmbedConfig,
-  injectPlantUmlTheme
-} from './diagramTheme'
+import { DIAGRAM_COLOR_PALETTE, DIAGRAM_FONT_FAMILY } from './diagramTheme'
 import {
   countXychartBarValues,
   countXychartCategories,
   getXychartCategoryCount,
   getXychartDeclarationLine,
-  isMermaidErrorSvg,
   isXychartHorizontal,
   isXychartSource,
   normalizeMermaidSource,
   normalizeXychartOrientation,
-  parseVegaLiteSpec,
   tryParseVegaLiteSpec,
   XYCHART_HORIZONTAL_MIN_CATEGORIES
 } from './diagramSourceNormalize'
-import {
-  cancelDiagramRenderWorkerTasks,
-  DiagramRenderWorkerError,
-  registerDiagramRenderFallback,
-  renderDiagramInWorker,
-  resetDiagramRenderWorker,
-  warmupDiagramRenderWorker
-} from './diagramRenderWorkerClient'
-
-type MermaidModule = {
-  default?: MermaidApi
-} & MermaidApi
-
-type MermaidApi = {
-  initialize: (config: Record<string, unknown>) => void
-  parse: (
-    text: string,
-    options?: { suppressErrors?: boolean }
-  ) => Promise<unknown>
-  render: (
-    id: string,
-    text: string
-  ) => Promise<{ svg: string; bindFunctions?: (element: Element) => void }>
-}
-
-type PlantUmlRenderer = (source: string) => Promise<string>
-
-/** vega-embed 返回结果（仅用到可释放的 view 句柄） */
-type VegaEmbedResult = {
-  view?: { finalize: () => void }
-}
-
-/** vega-embed 嵌入函数类型 */
-type VegaEmbedFn = (
-  element: HTMLElement,
-  spec: Record<string, unknown>,
-  options?: Record<string, unknown>
-) => Promise<VegaEmbedResult>
+import { DiagramRenderWorkerError } from './diagramRenderWorkerClient'
 
 const MARKDOWN_RENDER_ATTR = 'data-md-render'
 const MARKDOWN_RENDERED_ATTR = 'data-md-rendered'
@@ -499,11 +453,17 @@ const scheduleFitDiagramSvg = (body: HTMLElement) => {
   })
 }
 
-let mermaidApi: MermaidApi | undefined
-let mermaidSeq = 0
-let plantUmlRenderer: PlantUmlRenderer | undefined
-let plantUmlModuleLoad: Promise<PlantUmlRenderer> | undefined
-let vegaEmbedFn: VegaEmbedFn | undefined
+let diagramRuntimeLoad:
+  | Promise<typeof import('./diagramMarkdownRuntime')>
+  | undefined
+
+const getDiagramRuntime = () => {
+  if (!diagramRuntimeLoad) {
+    diagramRuntimeLoad = import('./diagramMarkdownRuntime')
+  }
+  return diagramRuntimeLoad
+}
+
 const blockAbortControllers = new WeakMap<Element, AbortController>()
 
 const md = new MarkdownIt({
@@ -1177,10 +1137,8 @@ export const scheduleUpdateStreamTailSegmentInPlace = (
 
 /** 聊天页 idle 预加载图表 Worker 运行时，降低首图冷启动延迟 */
 export const preloadDiagramRuntimes = () => {
-  warmupDiagramRenderWorker()
+  void getDiagramRuntime().then((runtime) => runtime.preloadDiagramRuntimes())
 }
-
-export { cancelDiagramRenderWorkerTasks, resetDiagramRenderWorker } from './diagramRenderWorkerClient'
 
 /** 异步渲染 Markdown 图表块时的选项 */
 export type RenderMarkdownBlocksOptions = {
@@ -2029,84 +1987,6 @@ const setBlockError = (block: Element, error: unknown) => {
   }
 }
 
-const getMermaidApi = async () => {
-  if (!mermaidApi) {
-    const mod = (await import('mermaid')) as unknown as MermaidModule
-    mermaidApi = mod.default || mod
-    mermaidApi.initialize({
-      startOnLoad: false,
-      securityLevel: 'strict',
-      theme: 'default',
-      themeVariables: getMermaidThemeVariables() as unknown as Record<
-        string,
-        unknown
-      >,
-      themeCSS: getMermaidThemeCss(),
-      // 解析失败时抛错，避免默认「炸弹」错误 SVG 插入 DOM
-      suppressErrorRendering: true
-    })
-  }
-  return mermaidApi
-}
-
-const renderMermaidMarkupFallback = async (source: string) => {
-  const normalized = normalizeMermaidSource(source)
-  const mermaid = await getMermaidApi()
-  const id = `md-mermaid-${Date.now()}-${++mermaidSeq}`
-  const { svg } = await mermaid.render(id, normalized)
-  if (isMermaidErrorSvg(svg)) {
-    throw new Error('Mermaid 图表语法无效')
-  }
-  return svg
-}
-
-const renderPlantUmlMarkupFallback = async (source: string) => {
-  const renderer = await getPlantUmlRenderer()
-  return renderer(injectPlantUmlTheme(source))
-}
-
-const renderVegaLiteMarkupFallback = async (source: string) => {
-  const spec = parseVegaLiteSpec(source)
-  const embed = await getVegaEmbed()
-  const host = document.createElement('div')
-  host.className = 'md-vegalite-host-fallback'
-  host.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none'
-  document.body.appendChild(host)
-  let view: { finalize: () => void } | undefined
-  try {
-    const result = await embed(host, spec, {
-      actions: false,
-      renderer: 'svg',
-      theme: 'quartz',
-      config: getVegaLiteEmbedConfig(),
-      tooltip: { theme: 'light' }
-    })
-    view = result?.view
-    const vegaSvg = host.querySelector('svg')
-    if (!vegaSvg) {
-      throw new Error('Vega-Lite 渲染未生成 SVG')
-    }
-    return vegaSvg.outerHTML
-  } finally {
-    // 释放 Vega View，避免 fallback 路径同样泄漏 dataflow / timer
-    view?.finalize()
-    host.remove()
-  }
-}
-
-registerDiagramRenderFallback(async (type, source) => {
-  switch (type) {
-    case 'mermaid':
-      return renderMermaidMarkupFallback(source)
-    case 'plantuml':
-      return renderPlantUmlMarkupFallback(source)
-    case 'vegalite':
-      return renderVegaLiteMarkupFallback(source)
-    default:
-      throw new Error(`Unsupported diagram type: ${type satisfies never}`)
-  }
-})
-
 const mountDiagramMarkup = (body: HTMLElement, markup: string) => {
   const trimmed = markup.trim()
   if (trimmed.startsWith('<svg')) {
@@ -2217,6 +2097,7 @@ const renderMermaidBlock = async (block: Element, signal: AbortSignal) => {
   const source = normalizeMermaidSource(rawSource)
   applyXychartDiagramPresentation(block, body, source)
   assertBlockConnected(block)
+  const { renderDiagramInWorker } = await getDiagramRuntime()
   const svg = await renderDiagramInWorker('mermaid', source, signal)
   assertBlockConnected(block)
   body.innerHTML = svg
@@ -2230,30 +2111,6 @@ const renderMermaidBlock = async (block: Element, signal: AbortSignal) => {
   finishMermaidDiagramLayout(block, body, rawSource)
 }
 
-const loadPlantUmlModule = () => {
-  if (!plantUmlModuleLoad) {
-    plantUmlModuleLoad = (async () => {
-      await import('@plantuml/core/viz-global.js')
-      const { renderToString } = await import('@plantuml/core')
-      return (source: string) =>
-        new Promise<string>((resolve, reject) => {
-          const lines = source.split(/\r\n|\r|\n/)
-          renderToString(lines, resolve, (message: string) =>
-            reject(new Error(message))
-          )
-        })
-    })()
-  }
-  return plantUmlModuleLoad
-}
-
-const getPlantUmlRenderer = async () => {
-  if (!plantUmlRenderer) {
-    plantUmlRenderer = await loadPlantUmlModule()
-  }
-  return plantUmlRenderer
-}
-
 const renderPlantUmlBlock = async (block: Element, signal: AbortSignal) => {
   const source = getSourceFromBlock(block)
   const body = block.querySelector<HTMLElement>('.md-diagram-body')
@@ -2262,23 +2119,11 @@ const renderPlantUmlBlock = async (block: Element, signal: AbortSignal) => {
   }
 
   assertBlockConnected(block)
+  const { renderDiagramInWorker } = await getDiagramRuntime()
   const markup = await renderDiagramInWorker('plantuml', source, signal)
   assertBlockConnected(block)
   body.innerHTML = markup
   scheduleFitDiagramSvg(body)
-}
-
-/** 懒加载 vega-embed，仅在 Worker fallback 渲染 Vega-Lite 块时拉取 */
-const getVegaEmbed = async (): Promise<VegaEmbedFn> => {
-  if (!vegaEmbedFn) {
-    const mod = await import('vega-embed')
-    const embed = mod.default
-    if (typeof embed !== 'function') {
-      throw new Error('vega-embed 模块未导出默认嵌入函数')
-    }
-    vegaEmbedFn = embed as VegaEmbedFn
-  }
-  return vegaEmbedFn
 }
 
 /** 渲染 Vega-Lite 代码块为 SVG，并接入图表缩放逻辑 */
@@ -2290,6 +2135,7 @@ const renderVegaLiteBlock = async (block: Element, signal: AbortSignal) => {
   }
 
   assertBlockConnected(block)
+  const { renderDiagramInWorker } = await getDiagramRuntime()
   const markup = await renderDiagramInWorker('vegalite', rawSource, signal)
   assertBlockConnected(block)
   mountDiagramMarkup(body, markup)
@@ -2959,7 +2805,9 @@ export const pauseDiagramReflowInRoot = (root: Element | null | undefined) => {
 export const cancelPendingMarkdownRenderWork = (scope?: Element | null) => {
   markdownRenderGeneration++
   renderMarkdownBlocksChain = Promise.resolve()
-  cancelDiagramRenderWorkerTasks()
+  void getDiagramRuntime().then((runtime) =>
+    runtime.cancelDiagramRenderWorkerTasks()
+  )
   if (batchRefitRafId) {
     cancelAnimationFrame(batchRefitRafId)
     batchRefitRafId = 0
@@ -2988,11 +2836,9 @@ export const cancelPendingMarkdownRenderWork = (scope?: Element | null) => {
 }
 
 export const resetMarkdownRendererForTest = () => {
-  mermaidApi = undefined
-  mermaidSeq = 0
-  plantUmlRenderer = undefined
-  plantUmlModuleLoad = undefined
-  vegaEmbedFn = undefined
+  void getDiagramRuntime().then((runtime) =>
+    runtime.resetDiagramMarkdownRuntimeForTest()
+  )
   invalidateDiagramMaxHeightCache()
   clearMarkdownHtmlCache()
   diagramMarkupCache.clear()
@@ -3025,7 +2871,6 @@ export const resetMarkdownRendererForTest = () => {
   globalResizeInProgress = false
   streamTailLastRunAt = 0
   pendingStreamTailUpdate = null
-  resetDiagramRenderWorker()
 }
 
 /** 单测用：xychart 横向修正与类目计数 */

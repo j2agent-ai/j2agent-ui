@@ -58,6 +58,7 @@ export default {
 	'ai.hi.assistant': `${aiIntroducePrefixEn} '{name}'`,
 	'ai.already.latest.chat': 'It is the latest conversation',
 	'ai.source': 'Source:',
+	'ai.chat.diagramRuntime.loading': 'Loading diagram engine',
 	'mdViewer.loading': 'Loading…',
 	'mdViewer.loadFailed': 'Failed to load document',
 	'mdViewer.download': 'Download',

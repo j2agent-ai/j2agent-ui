@@ -14,9 +14,10 @@
 <script lang="ts" setup>
 import { ElConfigProvider } from 'element-plus'
 import { useElementLocale } from '@ai-system/hooks'
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { t } from '@ai-system/lib'
+import { scheduleDiagramPrefetch } from '@/utils/scheduleDiagramPrefetch'
 
 const ChatActivityPanel = defineAsyncComponent(
 	() => import('@/pages/chat/components/ChatActivityPanel.vue')
@@ -30,6 +31,10 @@ document.getElementsByTagName('title')[0].innerHTML = t('ai.title')
 const { elLocale } = useElementLocale()
 
 const route = useRoute()
+
+onMounted(() => {
+	scheduleDiagramPrefetch()
+})
 
 const AUTH_ROUTE_PATHS = new Set(['/login', '/logout', '/register', '/forgot-password'])
 

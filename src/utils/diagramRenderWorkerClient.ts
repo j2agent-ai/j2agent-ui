@@ -18,6 +18,7 @@ type PendingTask = {
 const WORKER_RECYCLE_AFTER = 18
 const DEFAULT_CONCURRENCY = 2
 const WORKER_REQUEST_TIMEOUT_MS = 120_000
+const WORKER_WARMUP_TIMEOUT_MS = 120_000
 
 let worker: Worker | undefined
 let workerDisabled = false
@@ -26,7 +27,34 @@ let inFlightCount = 0
 let taskSeq = 0
 let fallbackRenderer: DiagramRenderFallback | undefined
 let warmupSent = false
+let warmupCompleted = false
+let warmupWaiters: Array<() => void> = []
+let warmupTimeoutId: ReturnType<typeof setTimeout> | undefined
 let recyclePending = false
+
+const resetWarmupWaitState = () => {
+  warmupCompleted = false
+  warmupWaiters = []
+  if (warmupTimeoutId) {
+    clearTimeout(warmupTimeoutId)
+    warmupTimeoutId = undefined
+  }
+}
+
+const notifyWarmupDone = () => {
+  if (warmupCompleted) {
+    return
+  }
+  warmupCompleted = true
+  if (warmupTimeoutId) {
+    clearTimeout(warmupTimeoutId)
+    warmupTimeoutId = undefined
+  }
+  for (const resolve of warmupWaiters) {
+    resolve()
+  }
+  warmupWaiters = []
+}
 
 const queue: PendingTask[] = []
 const pendingById = new Map<string, PendingTask>()
@@ -166,6 +194,7 @@ const handleWorkerMessage = (event: MessageEvent) => {
   }
 
   if (data.kind === 'warmup-done') {
+    notifyWarmupDone()
     return
   }
 
@@ -208,6 +237,7 @@ const recycleWorker = (fromError = false) => {
   }
   completedRenderCount = 0
   warmupSent = false
+  resetWarmupWaitState()
   if (fromError) {
     workerDisabled = false
   }
@@ -325,6 +355,25 @@ export const warmupDiagramRenderWorker = () => {
   }
   warmupSent = true
   activeWorker.postMessage({ kind: 'warmup' })
+}
+
+/** 等待 Worker 内 mermaid/plantuml/vega 预热完成；已预热或 Worker 不可用时立即 resolve */
+export const waitForDiagramRenderWorkerWarmup = (): Promise<void> => {
+  if (warmupCompleted) {
+    return Promise.resolve()
+  }
+  if (typeof Worker === 'undefined' || workerDisabled) {
+    return Promise.resolve()
+  }
+  warmupDiagramRenderWorker()
+  return new Promise((resolve) => {
+    warmupWaiters.push(resolve)
+    if (!warmupTimeoutId) {
+      warmupTimeoutId = setTimeout(() => {
+        notifyWarmupDone()
+      }, WORKER_WARMUP_TIMEOUT_MS)
+    }
+  })
 }
 
 export const getActiveDiagramRenderCount = () => inFlightCount + queue.length
