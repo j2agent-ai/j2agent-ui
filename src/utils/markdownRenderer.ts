@@ -1100,7 +1100,7 @@ export type RenderMarkdownBlocksOptions = {
   deferDiagrams?: boolean
   /** 并发渲染图表块上限，默认 2 */
   concurrency?: number
-  /** 视口外后台渲染并发上限，默认 1 */
+  /** 视口外后台渲染并发上限，默认 2 */
   backgroundConcurrency?: number
   /** 滚动容器，用于视口优先调度（ChatView / MdViewer 传入） */
   scrollRoot?: Element | null
@@ -1108,26 +1108,51 @@ export type RenderMarkdownBlocksOptions = {
   prefetchRootMargin?: string
   /** 为 false 时按 DOM 顺序全量渲染（便于测试/回退），默认 true */
   lazy?: boolean
+  /**
+   * 为 true 时在 idle 阶段继续渲染远离视口的图表；默认 false，仅在其滚入预取区时渲染。
+   */
+  renderOffscreenBackground?: boolean
+  /** 单次恢复会话时自动渲染的图表块上限；视口内（priority 0）默认不受限 */
+  maxAutoRenderBlocks?: number
+  /** 为 true 时视口内（priority 0）图表也计入 maxAutoRenderBlocks，用于图表密集历史 */
+  capInViewportAutoRender?: boolean
+  /** 为 true 时首批近区图表渲染完成后仍保持 maxAutoRenderBlocks，不自动放开 */
+  keepAutoRenderLimit?: boolean
+  /** 为 true 时对滚出预取区的 Mermaid / Vega-Lite 图表降级为占位，释放 SVG 内存 */
+  evictOffscreenDiagrams?: boolean
 }
 
 const DEFAULT_DIAGRAM_RENDER_CONCURRENCY = 2
 const DEFAULT_BACKGROUND_RENDER_CONCURRENCY = 2
 const MARKDOWN_MIN_PREFETCH_PX = 2400
 const MARKDOWN_PREFETCH_VIEWPORT_MULTIPLIER = 2.5
+const CHAT_MIN_PREFETCH_PX = 1200
+const CHAT_PREFETCH_VIEWPORT_MULTIPLIER = 1.25
 const DEFAULT_PREFETCH_ROOT_MARGIN = `${MARKDOWN_MIN_PREFETCH_PX}px 0px`
 const IDLE_BACKGROUND_TIMEOUT_MS = 2000
+const EVICTABLE_DIAGRAM_RENDER_TYPES = new Set(['mermaid', 'vegalite'])
+
+const resolveViewportHeight = (scrollRoot: Element | null) =>
+  scrollRoot instanceof HTMLElement
+    ? scrollRoot.clientHeight
+    : typeof window !== 'undefined'
+      ? window.innerHeight
+      : 800
 
 /** 按容器高度计算 Markdown 异步块预取区（约 2.5 屏，至少 2400px） */
 export const buildMarkdownPrefetchRootMargin = (scrollRoot: Element | null) => {
-  const viewportHeight =
-    scrollRoot instanceof HTMLElement
-      ? scrollRoot.clientHeight
-      : typeof window !== 'undefined'
-        ? window.innerHeight
-        : 800
   const prefetchPx = Math.max(
     MARKDOWN_MIN_PREFETCH_PX,
-    Math.ceil(viewportHeight * MARKDOWN_PREFETCH_VIEWPORT_MULTIPLIER)
+    Math.ceil(resolveViewportHeight(scrollRoot) * MARKDOWN_PREFETCH_VIEWPORT_MULTIPLIER)
+  )
+  return `${prefetchPx}px 0px`
+}
+
+/** 聊天页图表预取区（约 1.25 屏，至少 1200px），降低首开时预取爆炸半径 */
+export const buildChatDiagramPrefetchRootMargin = (scrollRoot: Element | null) => {
+  const prefetchPx = Math.max(
+    CHAT_MIN_PREFETCH_PX,
+    Math.ceil(resolveViewportHeight(scrollRoot) * CHAT_PREFETCH_VIEWPORT_MULTIPLIER)
   )
   return `${prefetchPx}px 0px`
 }
@@ -1343,6 +1368,140 @@ const cleanupViewportScheduling = (
   }
 }
 
+type DiagramEvictionObserverState = {
+  observer: IntersectionObserver
+  blocks: Set<Element>
+  rootMargin: string
+  prefetchPx: number
+}
+
+const diagramEvictionObserverStates = new WeakMap<
+  Element,
+  DiagramEvictionObserverState
+>()
+
+const isEvictableDiagramBlock = (block: Element): boolean => {
+  const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
+  return !!type && EVICTABLE_DIAGRAM_RENDER_TYPES.has(type)
+}
+
+const requeueEvictedDiagramBlock = (
+  block: Element,
+  scrollRoot: Element,
+  prefetchRootMargin: string
+) => {
+  observeBlockForViewport(block, scrollRoot, prefetchRootMargin)
+  viewportDrainHandler?.()
+}
+
+const ensureDiagramEvictionObserver = (
+  scrollRoot: Element,
+  prefetchRootMargin: string,
+  prefetchPx: number
+): DiagramEvictionObserverState => {
+  let state = diagramEvictionObserverStates.get(scrollRoot)
+  if (state && state.rootMargin !== prefetchRootMargin) {
+    state.observer.disconnect()
+    diagramEvictionObserverStates.delete(scrollRoot)
+    state = undefined
+  }
+  if (state) {
+    return state
+  }
+  state = {
+    blocks: new Set(),
+    rootMargin: prefetchRootMargin,
+    prefetchPx,
+    observer: new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const block = entry.target
+          if (!(block instanceof Element)) {
+            continue
+          }
+          if (entry.isIntersecting) {
+            continue
+          }
+          if (block.getAttribute(MARKDOWN_RENDERING_ATTR) === 'true') {
+            continue
+          }
+          if (block.getAttribute(MARKDOWN_RENDERED_ATTR) !== 'true') {
+            continue
+          }
+          if (
+            getBlockViewportPriority(block, scrollRoot, prefetchPx) >= 3
+          ) {
+            resetStaleDiagramBlock(block)
+            unobserveDiagramEviction(block, scrollRoot)
+            requeueEvictedDiagramBlock(block, scrollRoot, prefetchRootMargin)
+          }
+        }
+      },
+      { root: scrollRoot, rootMargin: prefetchRootMargin, threshold: 0 }
+    )
+  }
+  diagramEvictionObserverStates.set(scrollRoot, state)
+  return state
+}
+
+const observeDiagramEviction = (
+  block: Element,
+  scrollRoot: Element,
+  prefetchRootMargin: string,
+  prefetchPx: number
+) => {
+  if (!isEvictableDiagramBlock(block)) {
+    return
+  }
+  const state = ensureDiagramEvictionObserver(
+    scrollRoot,
+    prefetchRootMargin,
+    prefetchPx
+  )
+  if (state.blocks.has(block)) {
+    return
+  }
+  state.blocks.add(block)
+  state.observer.observe(block)
+}
+
+const unobserveDiagramEviction = (block: Element, scrollRoot: Element) => {
+  const state = diagramEvictionObserverStates.get(scrollRoot)
+  if (!state || !state.blocks.has(block)) {
+    return
+  }
+  state.blocks.delete(block)
+  state.observer.unobserve(block)
+}
+
+/** 扫描已渲染图表并接入离屏降级观察（聊天页在批次渲染后调用） */
+export const scanDiagramEvictionCandidates = (
+  root: Element,
+  options?: Pick<
+    RenderMarkdownBlocksOptions,
+    'scrollRoot' | 'prefetchRootMargin' | 'evictOffscreenDiagrams'
+  >
+) => {
+  if (options?.evictOffscreenDiagrams === false) {
+    return
+  }
+  const scrollRoot = options?.scrollRoot ?? root
+  if (!(scrollRoot instanceof Element)) {
+    return
+  }
+  const prefetchRootMargin =
+    options?.prefetchRootMargin ?? DEFAULT_PREFETCH_ROOT_MARGIN
+  const prefetchPx = parsePrefetchMarginPx(prefetchRootMargin)
+  root
+    .querySelectorAll<Element>(
+      `[${MARKDOWN_RENDER_ATTR}="mermaid"][${MARKDOWN_RENDERED_ATTR}="true"], ` +
+        `[${MARKDOWN_RENDER_ATTR}="vegalite"][${MARKDOWN_RENDERED_ATTR}="true"]`
+    )
+    .forEach((block) => {
+      observeDiagramEviction(block, scrollRoot, prefetchRootMargin, prefetchPx)
+    })
+}
+
 const scheduleIdle = (fn: () => void) => {
   if (typeof requestIdleCallback === 'function') {
     requestIdleCallback(fn, { timeout: IDLE_BACKGROUND_TIMEOUT_MS })
@@ -1364,6 +1523,13 @@ const renderWithViewportScheduling = async (
     options.concurrency ?? DEFAULT_DIAGRAM_RENDER_CONCURRENCY
   const maxBackgroundConcurrency =
     options.backgroundConcurrency ?? DEFAULT_BACKGROUND_RENDER_CONCURRENCY
+  const renderOffscreenBackground = options.renderOffscreenBackground === true
+  const maxAutoRenderBlocks =
+    options.maxAutoRenderBlocks ?? Number.POSITIVE_INFINITY
+  const capInViewportAutoRender = options.capInViewportAutoRender === true
+  const keepAutoRenderLimit = options.keepAutoRenderLimit === true
+  let nearViewportAutoStarted = 0
+  let enforceAutoRenderLimit = Number.isFinite(maxAutoRenderBlocks)
 
   const remaining = new Set(
     blocks.filter((block) => isBlockPendingRender(block, options))
@@ -1380,22 +1546,58 @@ const renderWithViewportScheduling = async (
   const getPendingBlocks = () =>
     [...remaining].filter((block) => isBlockPendingRender(block, options))
 
+  const isNearViewportBlock = (block: Element) =>
+    getBlockViewportPriority(block, scrollRoot, prefetchPx) < 3
+
   const countInFlightVisible = () =>
-    [...inFlight].filter(
-      (block) =>
-        getBlockViewportPriority(block, scrollRoot, prefetchPx) < 3
-    ).length
+    [...inFlight].filter((block) => isNearViewportBlock(block)).length
 
   const countInFlightBackground = () =>
     [...inFlight].filter(
-      (block) =>
-        getBlockViewportPriority(block, scrollRoot, prefetchPx) >= 3
+      (block) => !isNearViewportBlock(block)
     ).length
 
-  const maybeFinish = () => {
+  const maybeCleanupScheduling = () => {
     if (getPendingBlocks().length === 0 && inFlight.size === 0) {
+      cleanupViewportScheduling(scrollRoot, blocks, scheduleDrain)
+    }
+  }
+
+  const maybeFinish = () => {
+    if (renderOffscreenBackground) {
+      if (getPendingBlocks().length === 0 && inFlight.size === 0) {
+        resolveDone()
+      }
+      return
+    }
+    const nearPending = getPendingBlocks().filter(isNearViewportBlock)
+    const nearInFlight = [...inFlight].filter(isNearViewportBlock)
+    if (nearPending.length === 0 && nearInFlight.length === 0) {
+      if (!keepAutoRenderLimit) {
+        enforceAutoRenderLimit = false
+      }
       resolveDone()
     }
+  }
+
+  const canStartNearViewportBlock = (block: Element) => {
+    if (!isNearViewportBlock(block)) {
+      return true
+    }
+    if (capInViewportAutoRender) {
+      return countInFlightVisible() < maxAutoRenderBlocks
+    }
+    if (!enforceAutoRenderLimit) {
+      return true
+    }
+    const priority = getBlockViewportPriority(block, scrollRoot, prefetchPx)
+    if (priority === 0) {
+      return true
+    }
+    if (nearViewportAutoStarted >= maxAutoRenderBlocks) {
+      return false
+    }
+    return true
   }
 
   const startBlock = (block: Element) => {
@@ -1409,11 +1611,20 @@ const renderWithViewportScheduling = async (
     if (inFlight.has(block)) {
       return
     }
+    if (isNearViewportBlock(block) && !canStartNearViewportBlock(block)) {
+      return
+    }
     if (isHeavyMarkdownBlock(block) && heavyInFlight >= maxHeavyConcurrent) {
       return
     }
     if (isHeavyMarkdownBlock(block)) {
       heavyInFlight++
+    }
+    if (isNearViewportBlock(block)) {
+      const priority = getBlockViewportPriority(block, scrollRoot, prefetchPx)
+      if (priority > 0) {
+        nearViewportAutoStarted++
+      }
     }
     inFlight.add(block)
     void renderBlock(block, options, renderGeneration)
@@ -1423,6 +1634,20 @@ const renderWithViewportScheduling = async (
         }
         if (body) {
           bodiesToRefit.push(body)
+          if (
+            scrollRoot instanceof Element &&
+            options.evictOffscreenDiagrams !== false
+          ) {
+            const diagramBlock = body.closest(`[${MARKDOWN_RENDER_ATTR}]`)
+            if (diagramBlock instanceof Element) {
+              observeDiagramEviction(
+                diagramBlock,
+                scrollRoot,
+                prefetchRootMargin,
+                prefetchPx
+              )
+            }
+          }
         }
         if (!isBlockPendingRender(block, options)) {
           remaining.delete(block)
@@ -1439,17 +1664,20 @@ const renderWithViewportScheduling = async (
         inFlight.delete(block)
         scheduleDrain()
         maybeFinish()
+        maybeCleanupScheduling()
       })
   }
 
   const drainBackground = () => {
+    if (!renderOffscreenBackground) {
+      return
+    }
     if (!isMarkdownRenderGenerationCurrent(renderGeneration)) {
       return
     }
     const pending = getPendingBlocks().filter((block) => !inFlight.has(block))
     const backgroundPending = pending.filter(
-      (block) =>
-        getBlockViewportPriority(block, scrollRoot, prefetchPx) >= 3
+      (block) => !isNearViewportBlock(block)
     )
     let runningBackground = countInFlightBackground()
     for (const block of backgroundPending) {
@@ -1494,20 +1722,19 @@ const renderWithViewportScheduling = async (
       if (runningVisible >= maxVisibleConcurrency) {
         break
       }
+      if (!canStartNearViewportBlock(block)) {
+        continue
+      }
       runningVisible++
       startBlock(block)
     }
 
-    const hasVisiblePending = pending.some(
-      (block) =>
-        getBlockViewportPriority(block, scrollRoot, prefetchPx) < 3
-    )
+    const hasVisiblePending = pending.some((block) => isNearViewportBlock(block))
     const hasBackgroundPending = pending.some(
-      (block) =>
-        getBlockViewportPriority(block, scrollRoot, prefetchPx) >= 3
+      (block) => !isNearViewportBlock(block)
     )
 
-    if (hasBackgroundPending) {
+    if (renderOffscreenBackground && hasBackgroundPending) {
       if (!hasVisiblePending) {
         drainBackground()
       } else if (runningVisible >= maxVisibleConcurrency) {
@@ -1527,7 +1754,11 @@ const renderWithViewportScheduling = async (
 
   scheduleDrain()
   await done
-  cleanupViewportScheduling(scrollRoot, blocks, scheduleDrain)
+  if (renderOffscreenBackground) {
+    cleanupViewportScheduling(scrollRoot, blocks, scheduleDrain)
+  } else {
+    maybeCleanupScheduling()
+  }
   return bodiesToRefit
 }
 
@@ -2440,15 +2671,19 @@ export const resizeMarkdownHtmlPreviewExpanded = (
   }
 }
 
-/** 监听 HTML 预览块宽度变化并重新适配高度 */
+const disconnectHtmlPreviewFitObserver = (block: HTMLElement) => {
+  const observer = htmlPreviewFitObservers.get(block)
+  if (observer) {
+    observer.disconnect()
+    htmlPreviewFitObservers.delete(block)
+  }
+}
+
 const observeHtmlPreviewResize = (
   block: HTMLElement,
   iframe: HTMLIFrameElement
 ) => {
-  const existing = htmlPreviewFitObservers.get(block)
-  if (existing) {
-    existing.disconnect()
-  }
+  disconnectHtmlPreviewFitObserver(block)
   if (typeof ResizeObserver === 'undefined') {
     return
   }
@@ -2764,12 +2999,68 @@ export const pauseDiagramReflowInRoot = (root: Element | null | undefined) => {
     pendingRefitBodies.delete(body)
     diagramFitInProgress.delete(body)
   })
+  root.querySelectorAll<HTMLElement>('.md-html-preview').forEach((block) => {
+    disconnectHtmlPreviewFitObserver(block)
+  })
 }
 
 /** keep-alive 切走或会话隐藏时：清空排队中的 Markdown/图表任务，避免在不可见 DOM 上继续渲染 */
+const cancelPendingRefitWork = () => {
+  pendingRefitBodies.clear()
+  if (batchRefitRafId) {
+    cancelAnimationFrame(batchRefitRafId)
+    batchRefitRafId = 0
+  }
+}
+
+const teardownDiagramObserversForScrollRoot = (
+  scrollRoot: Element | null | undefined
+) => {
+  if (scrollRoot) {
+    const viewportState = viewportObserverStates.get(scrollRoot)
+    if (viewportState) {
+      viewportState.observer.disconnect()
+      viewportObserverStates.delete(scrollRoot)
+    }
+    const evictionState = diagramEvictionObserverStates.get(scrollRoot)
+    if (evictionState) {
+      evictionState.observer.disconnect()
+      diagramEvictionObserverStates.delete(scrollRoot)
+    }
+  }
+  viewportDrainHandler = null
+}
+
+const cancelHtmlPreviewFitWork = (scope?: Element | null) => {
+  deferredHtmlPreviewIframes.clear()
+  if (!scope) {
+    return
+  }
+  scope.querySelectorAll<HTMLElement>('.md-html-preview').forEach((block) => {
+    disconnectHtmlPreviewFitObserver(block)
+  })
+  scope
+    .querySelectorAll<HTMLIFrameElement>('.md-html-preview iframe')
+    .forEach((iframe) => {
+      const timer = htmlPreviewFitTimers.get(iframe)
+      if (timer) {
+        clearTimeout(timer)
+        htmlPreviewFitTimers.delete(iframe)
+      }
+    })
+}
+
 export const cancelPendingMarkdownRenderWork = (scope?: Element | null) => {
   markdownRenderGeneration++
   renderMarkdownBlocksChain = Promise.resolve()
+  cancelPendingRefitWork()
+  resetDiagramRenderWorker()
+  globalResizeInProgress = false
+  if (diagramWindowResizeDebounceTimer) {
+    clearTimeout(diagramWindowResizeDebounceTimer)
+    diagramWindowResizeDebounceTimer = 0
+  }
+  cancelHtmlPreviewFitWork(scope)
   if (streamTailUpdateRafId) {
     cancelAnimationFrame(streamTailUpdateRafId)
     streamTailUpdateRafId = 0
@@ -2792,6 +3083,16 @@ export const cancelPendingMarkdownRenderWork = (scope?: Element | null) => {
         block.removeAttribute(MARKDOWN_RENDERING_ATTR)
       })
   }
+}
+
+/** 会话切换时中止 Markdown/图表渲染并回收 Worker 与视口观察器 */
+export const abortChatMarkdownRendering = (
+  scope?: Element | null,
+  scrollRoot?: Element | null
+) => {
+  pauseDiagramReflowInRoot(scope)
+  cancelPendingMarkdownRenderWork(scope)
+  teardownDiagramObserversForScrollRoot(scrollRoot)
 }
 
 export const resetMarkdownRendererForTest = () => {
