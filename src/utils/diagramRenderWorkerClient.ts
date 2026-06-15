@@ -329,6 +329,27 @@ export const warmupDiagramRenderWorker = () => {
 
 export const getActiveDiagramRenderCount = () => inFlightCount + queue.length
 
+/**
+ * 取消排队与 Worker 在途任务，但不 terminate Worker（避免反复冷启动）。
+ * 会话切换 / cancelPendingMarkdownRenderWork 时调用，防止算力空转与主线程 fallback 风暴。
+ */
+export const cancelDiagramRenderWorkerTasks = () => {
+  while (queue.length > 0) {
+    const task = queue.shift()
+    if (task) {
+      if (task.signal) {
+        task.signal.removeEventListener('abort', task.onAbort)
+      }
+      task.reject(new DiagramRenderWorkerError('Diagram render aborted'))
+    }
+  }
+  for (const task of [...pendingById.values()]) {
+    rejectTask(task, new DiagramRenderWorkerError('Diagram render aborted'))
+    inFlightCount = Math.max(0, inFlightCount - 1)
+  }
+  recyclePending = false
+}
+
 export const resetDiagramRenderWorker = () => {
   while (queue.length > 0) {
     const task = queue.shift()

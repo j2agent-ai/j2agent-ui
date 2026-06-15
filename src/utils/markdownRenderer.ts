@@ -23,6 +23,7 @@ import {
   XYCHART_HORIZONTAL_MIN_CATEGORIES
 } from './diagramSourceNormalize'
 import {
+  cancelDiagramRenderWorkerTasks,
   DiagramRenderWorkerError,
   registerDiagramRenderFallback,
   renderDiagramInWorker,
@@ -88,6 +89,10 @@ const XYCHART_LABEL_LINE_HEIGHT_RATIO = 1.25
 /** 换行后 viewBox / 容器底部预留（px） */
 const XYCHART_WRAPPED_LABEL_BOTTOM_PAD = 20
 const MARKDOWN_HTML_CACHE_MAX_ENTRIES = 200
+/** 全局已渲染图表 markup LRU 上限 */
+const DIAGRAM_MARKUP_CACHE_MAX_ENTRIES = 200
+/** 单会话已渲染图表 markup 上限 */
+const DIAGRAM_MARKUP_CACHE_MAX_PER_SESSION = 50
 const HTML_PREVIEW_MAX_MEASURE_NODES = 200
 const MARKDOWN_FIT_WIDTH_ATTR = 'data-md-fit-width'
 /** 流式尾段 markdown-it 最小更新间隔（ms），与 rAF 合并使用 */
@@ -102,6 +107,9 @@ const HTML_PREVIEW_FIT_DEBOUNCE_MS = 150
 const DIAGRAM_BLOCK_RETRY_DEBOUNCE_MS = 50
 
 const markdownHtmlCache = new Map<string, string>()
+/** 会话级已渲染图表 markup：切回历史会话时跳过 Worker */
+const diagramMarkupCache = new Map<string, string>()
+const diagramMarkupCacheSessionCounts = new Map<string, number>()
 const pendingRefitBodies = new Set<HTMLElement>()
 const diagramFitInProgress = new WeakSet<HTMLElement>()
 let batchRefitRafId = 0
@@ -827,6 +835,89 @@ export const clearMarkdownHtmlCache = () => {
   markdownHtmlCache.clear()
 }
 
+const hashDiagramSource = (source: string) => {
+  let h = 2166136261
+  for (let i = 0; i < source.length; i++) {
+    h ^= source.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return (h >>> 0).toString(36)
+}
+
+const normalizeDiagramSourceForCache = (type: string, source: string) => {
+  if (type === 'mermaid') {
+    return normalizeMermaidSource(source)
+  }
+  return source.trim()
+}
+
+const buildDiagramMarkupCacheKey = (
+  scope: string,
+  type: string,
+  source: string
+) =>
+  `${scope}:${MARKDOWN_RENDERER_REVISION}:${type}:${hashDiagramSource(
+    normalizeDiagramSourceForCache(type, source)
+  )}`
+
+const getDiagramMarkupCache = (
+  scope: string,
+  type: string,
+  source: string
+): string | undefined => {
+  return diagramMarkupCache.get(buildDiagramMarkupCacheKey(scope, type, source))
+}
+
+const touchDiagramMarkupCacheEntry = (key: string, markup: string) => {
+  if (diagramMarkupCache.has(key)) {
+    diagramMarkupCache.delete(key)
+  }
+  diagramMarkupCache.set(key, markup)
+  while (diagramMarkupCache.size > DIAGRAM_MARKUP_CACHE_MAX_ENTRIES) {
+    const oldest = diagramMarkupCache.keys().next().value
+    if (!oldest) {
+      break
+    }
+    diagramMarkupCache.delete(oldest)
+    const sessionKey = oldest.split(':')[0]
+    const count = diagramMarkupCacheSessionCounts.get(sessionKey)
+    if (count !== undefined) {
+      if (count <= 1) {
+        diagramMarkupCacheSessionCounts.delete(sessionKey)
+      } else {
+        diagramMarkupCacheSessionCounts.set(sessionKey, count - 1)
+      }
+    }
+  }
+}
+
+const setDiagramMarkupCache = (
+  scope: string,
+  type: string,
+  source: string,
+  markup: string
+) => {
+  const key = buildDiagramMarkupCacheKey(scope, type, source)
+  const sessionCount = diagramMarkupCacheSessionCounts.get(scope) ?? 0
+  if (!diagramMarkupCache.has(key) && sessionCount >= DIAGRAM_MARKUP_CACHE_MAX_PER_SESSION) {
+    return
+  }
+  if (!diagramMarkupCache.has(key)) {
+    diagramMarkupCacheSessionCounts.set(scope, sessionCount + 1)
+  }
+  touchDiagramMarkupCacheEntry(key, markup)
+}
+
+/** 移除会话时清理由该会话写入的图表 markup 缓存 */
+export const clearDiagramMarkupCacheForSession = (scope: string) => {
+  diagramMarkupCacheSessionCounts.delete(scope)
+  for (const key of [...diagramMarkupCache.keys()]) {
+    if (key.startsWith(`${scope}:`)) {
+      diagramMarkupCache.delete(key)
+    }
+  }
+}
+
 export const getMarkdownRenderGeneration = () => markdownRenderGeneration
 
 const isMarkdownRenderGenerationCurrent = (generation: number) =>
@@ -1089,7 +1180,7 @@ export const preloadDiagramRuntimes = () => {
   warmupDiagramRenderWorker()
 }
 
-export { resetDiagramRenderWorker } from './diagramRenderWorkerClient'
+export { cancelDiagramRenderWorkerTasks, resetDiagramRenderWorker } from './diagramRenderWorkerClient'
 
 /** 异步渲染 Markdown 图表块时的选项 */
 export type RenderMarkdownBlocksOptions = {
@@ -1108,6 +1199,8 @@ export type RenderMarkdownBlocksOptions = {
   prefetchRootMargin?: string
   /** 为 false 时按 DOM 顺序全量渲染（便于测试/回退），默认 true */
   lazy?: boolean
+  /** 会话 key，启用已渲染图表 markup 缓存（ChatView 传入） */
+  diagramCacheScope?: string
 }
 
 const DEFAULT_DIAGRAM_RENDER_CONCURRENCY = 2
@@ -2019,6 +2112,92 @@ const mountDiagramMarkup = (body: HTMLElement, markup: string) => {
   body.innerHTML = markup
 }
 
+const finishMermaidDiagramLayout = (
+  block: Element,
+  body: HTMLElement,
+  rawSource: string
+) => {
+  const source = normalizeMermaidSource(rawSource)
+  applyXychartDiagramPresentation(block, body, source)
+  const renderedSvg = body.querySelector('svg')
+  if (renderedSvg instanceof SVGElement && isXychartSource(source)) {
+    if (!isXychartHorizontal(source)) {
+      fitDiagramSvgInBody(body)
+      clearDiagramBodyPending(body)
+      scheduleVerticalXychartLabelLayout(body, renderedSvg)
+    } else {
+      scheduleFitDiagramSvg(body)
+    }
+  } else {
+    scheduleFitDiagramSvg(body)
+  }
+}
+
+const tryMountDiagramFromCache = (
+  block: Element,
+  options?: RenderMarkdownBlocksOptions
+): boolean => {
+  const scope = options?.diagramCacheScope
+  const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
+  if (
+    !scope ||
+    !type ||
+    type === 'html' ||
+    (type !== 'mermaid' && type !== 'plantuml' && type !== 'vegalite')
+  ) {
+    return false
+  }
+  const source = getSourceFromBlock(block)
+  if (!source.trim()) {
+    return false
+  }
+  const cached = getDiagramMarkupCache(scope, type, source)
+  if (!cached) {
+    return false
+  }
+  const body = block.querySelector<HTMLElement>('.md-diagram-body')
+  if (!body) {
+    return false
+  }
+  mountDiagramMarkup(body, cached)
+  if (type === 'mermaid') {
+    finishMermaidDiagramLayout(block, body, source)
+  } else {
+    scheduleFitDiagramSvg(body)
+  }
+  return true
+}
+
+const storeDiagramMarkupCache = (
+  block: Element,
+  options?: RenderMarkdownBlocksOptions
+) => {
+  const scope = options?.diagramCacheScope
+  const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
+  if (
+    !scope ||
+    !type ||
+    type === 'html' ||
+    (type !== 'mermaid' && type !== 'plantuml' && type !== 'vegalite')
+  ) {
+    return
+  }
+  const source = getSourceFromBlock(block)
+  if (!source.trim()) {
+    return
+  }
+  const body = block.querySelector<HTMLElement>('.md-diagram-body')
+  if (!body) {
+    return
+  }
+  const svg = body.querySelector('svg')
+  const markup = svg instanceof SVGElement ? svg.outerHTML : body.innerHTML
+  if (!markup.trim()) {
+    return
+  }
+  setDiagramMarkupCache(scope, type, source, markup)
+}
+
 const renderMermaidBlock = async (block: Element, signal: AbortSignal) => {
   const rawSource = getSourceFromBlock(block)
   const body = block.querySelector<HTMLElement>('.md-diagram-body')
@@ -2037,15 +2216,9 @@ const renderMermaidBlock = async (block: Element, signal: AbortSignal) => {
     applyXychartBarColors(renderedSvg)
     if (!isXychartHorizontal(source)) {
       wrapXychartVerticalCategoryLabels(renderedSvg)
-      fitDiagramSvgInBody(body)
-      clearDiagramBodyPending(body)
-      scheduleVerticalXychartLabelLayout(body, renderedSvg)
-    } else {
-      scheduleFitDiagramSvg(body)
     }
-  } else {
-    scheduleFitDiagramSvg(body)
   }
+  finishMermaidDiagramLayout(block, body, rawSource)
 }
 
 const loadPlantUmlModule = () => {
@@ -2574,11 +2747,17 @@ const renderBlock = async (
     if (type === 'html') {
       renderHtmlPreviewBlock(block)
     } else if (type === 'mermaid') {
-      await renderMermaidBlock(block, signal)
+      if (!tryMountDiagramFromCache(block, options)) {
+        await renderMermaidBlock(block, signal)
+      }
     } else if (type === 'plantuml') {
-      await renderPlantUmlBlock(block, signal)
+      if (!tryMountDiagramFromCache(block, options)) {
+        await renderPlantUmlBlock(block, signal)
+      }
     } else if (type === 'vegalite') {
-      await renderVegaLiteBlock(block, signal)
+      if (!tryMountDiagramFromCache(block, options)) {
+        await renderVegaLiteBlock(block, signal)
+      }
     }
     if (
       !block.isConnected ||
@@ -2590,6 +2769,7 @@ const renderBlock = async (
     block.setAttribute(MARKDOWN_RENDERED_ATTR, 'true')
     block.setAttribute(MARKDOWN_REVISION_ATTR, MARKDOWN_RENDERER_REVISION)
     blockAbortControllers.delete(block)
+    storeDiagramMarkupCache(block, options)
     return getDiagramBodyForRefit(block)
   } catch (error) {
     if (isRetryableRenderError(error, signal)) {
@@ -2770,6 +2950,12 @@ export const pauseDiagramReflowInRoot = (root: Element | null | undefined) => {
 export const cancelPendingMarkdownRenderWork = (scope?: Element | null) => {
   markdownRenderGeneration++
   renderMarkdownBlocksChain = Promise.resolve()
+  cancelDiagramRenderWorkerTasks()
+  if (batchRefitRafId) {
+    cancelAnimationFrame(batchRefitRafId)
+    batchRefitRafId = 0
+  }
+  pendingRefitBodies.clear()
   if (streamTailUpdateRafId) {
     cancelAnimationFrame(streamTailUpdateRafId)
     streamTailUpdateRafId = 0
@@ -2802,6 +2988,8 @@ export const resetMarkdownRendererForTest = () => {
   vegaEmbedFn = undefined
   invalidateDiagramMaxHeightCache()
   clearMarkdownHtmlCache()
+  diagramMarkupCache.clear()
+  diagramMarkupCacheSessionCounts.clear()
   pendingRefitBodies.clear()
   if (batchRefitRafId) {
     cancelAnimationFrame(batchRefitRafId)

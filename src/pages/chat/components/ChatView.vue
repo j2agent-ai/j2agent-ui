@@ -474,6 +474,7 @@ import { processChatImageFile } from '../ts/media/image'
 import { cloneSvgForPreview } from '@/utils/diagramPreview'
 import {
   buildMarkdownPrefetchRootMargin,
+  clearDiagramMarkupCacheForSession,
   getMarkdownCodeBlockText,
   getMarkdownHtmlBlockSource,
   MARKDOWN_RENDERER_REVISION,
@@ -485,6 +486,7 @@ import {
   pauseDiagramReflowInRoot,
   scheduleUpdateStreamTailSegmentInPlace
 } from '@/utils/markdownRenderer'
+import { registerSessionRenderCacheEvict } from '../ts/render/session-render-cache'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
 import { getAgentDisplayName, getAgentLogo, agentNameMap } from '../ts/agent/name-registry'
 
@@ -1251,6 +1253,7 @@ const getUserHtmlCache = () => {
 const evictSessionRenderCache = (sessionKey: string) => {
   assistantSegmentCacheBySession.delete(sessionKey)
   userHtmlCacheBySession.delete(sessionKey)
+  clearDiagramMarkupCacheForSession(sessionKey)
 }
 
 const findVisibleMessageByIndex = (messageIndex: number) =>
@@ -1451,9 +1454,23 @@ const bindActiveTailSegmentRef = (el: unknown) => {
 }
 
 const MARKDOWN_BLOCKS_DEBOUNCE_MS = 100
+/** 历史会话切换后图表恢复 debounce，避免连点叠加 flush */
+const SESSION_RESTORE_DEBOUNCE_MS = 200
+/** 切换后短暂限制后台预渲染，降低主线程峰值 */
+const SESSION_SWITCH_GUARD_MS = 500
+const SESSION_SWITCH_PREFETCH_MARGIN = '400px 0px'
 let markdownBlocksDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let restoreSessionDiagramsTimer: ReturnType<typeof setTimeout> | null = null
+let restoreSessionDiagramsToken = 0
+let sessionSwitchGuardUntil = 0
 /** 是否曾 deactivate（区分首次 mount 的 onActivated 与从首页切回） */
 let chatViewWasDeactivated = false
+
+const markSessionSwitchGuard = () => {
+  sessionSwitchGuardUntil = Date.now() + SESSION_SWITCH_GUARD_MS
+}
+
+const isInSessionSwitchGuard = () => Date.now() < sessionSwitchGuardUntil
 
 /** 流式输出时仅扫描当前轮 assistant 消息子树，避免全列表 querySelector */
 const getMarkdownBlocksScope = (): Element | null => {
@@ -1528,10 +1545,16 @@ const flushActivateMarkdownBlocks = () => {
 const buildMarkdownBlocksRenderOptions = () => {
   const scrollRoot =
     (scrollbarRef.value?.wrapRef as HTMLElement | undefined) ?? null
+  const inSwitchGuard = isInSessionSwitchGuard()
+  const sessionKey = getActiveSessionKey()
   return {
     deferDiagrams: isBusyByState.value,
     scrollRoot,
-    prefetchRootMargin: buildMarkdownPrefetchRootMargin(scrollRoot)
+    prefetchRootMargin: inSwitchGuard
+      ? SESSION_SWITCH_PREFETCH_MARGIN
+      : buildMarkdownPrefetchRootMargin(scrollRoot),
+    backgroundConcurrency: inSwitchGuard ? 0 : undefined,
+    diagramCacheScope: sessionKey || undefined
   }
 }
 
@@ -1550,6 +1573,28 @@ const restoreSessionDiagrams = async () => {
   const scopeRoot = getMarkdownBlocksScope() ?? listRoot
   if (hasPendingMarkdownBlocks(scopeRoot, buildMarkdownBlocksRenderOptions())) {
     flushActivateMarkdownBlocks()
+  }
+}
+
+const scheduleRestoreSessionDiagrams = () => {
+  const token = ++restoreSessionDiagramsToken
+  if (restoreSessionDiagramsTimer !== null) {
+    clearTimeout(restoreSessionDiagramsTimer)
+  }
+  restoreSessionDiagramsTimer = setTimeout(() => {
+    restoreSessionDiagramsTimer = null
+    if (token !== restoreSessionDiagramsToken) {
+      return
+    }
+    void restoreSessionDiagrams()
+  }, SESSION_RESTORE_DEBOUNCE_MS)
+}
+
+const cancelScheduledRestoreSessionDiagrams = () => {
+  restoreSessionDiagramsToken += 1
+  if (restoreSessionDiagramsTimer !== null) {
+    clearTimeout(restoreSessionDiagramsTimer)
+    restoreSessionDiagramsTimer = null
   }
 }
 
@@ -2047,6 +2092,8 @@ watch(
 watch(
   () => chatSessionRegistry.activeSessionKey.value,
   () => {
+    markSessionSwitchGuard()
+    cancelScheduledRestoreSessionDiagrams()
     cancelPendingMarkdownRenderWork(messageListRef.value ?? null)
     resetActiveStreamSplitCache()
     resetActiveStreamRenderedCache()
@@ -2060,6 +2107,8 @@ watch(
 
 /** 与侧边栏点历史同路：激活会话、按需拉取、滚底、恢复图表 DOM */
 const showSessionView = async (targetContextId: string) => {
+  markSessionSwitchGuard()
+  cancelScheduledRestoreSessionDiagrams()
   cancelPendingMarkdownRenderWork(messageListRef.value ?? null)
   if (markdownBlocksDebounceTimer !== null) {
     clearTimeout(markdownBlocksDebounceTimer)
@@ -2090,7 +2139,7 @@ const showSessionView = async (targetContextId: string) => {
     activeSession.value.pendingScroll.value = false
   }
   scrollToBottom()
-  await restoreSessionDiagrams()
+  scheduleRestoreSessionDiagrams()
 }
 
 const historyChat = async (historyId: string) => {
@@ -2126,6 +2175,7 @@ watch(
 )
 
 onMounted(async () => {
+  registerSessionRenderCacheEvict(evictSessionRenderCache)
   isChatViewActive.value = true
   schedulePreloadDiagramRuntimes()
   await bootstrapAgentSession()
@@ -2140,6 +2190,7 @@ const suspendChatViewUi = () => {
   if (!isChatViewActive.value) {
     return
   }
+  cancelScheduledRestoreSessionDiagrams()
   cancelPendingMarkdownRenderWork(messageListRef.value ?? null)
   pauseDiagramReflowInRoot(messageListRef.value ?? null)
   frozenAssistantRenderedSegments.value = lastActiveRenderedSegments.value
