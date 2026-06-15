@@ -1,0 +1,1 @@
+const i="__image_only__",n=["发送图片",i],s=64,o=t=>{const r=(t??"").trim();return n.includes(r)},_=(t,r=0)=>{const e=(t??"").trim();return e?e.slice(0,s):r>0?i:""},c=(t,r)=>{const e=(t??"").trim();return o(e)?r("ai.history.image.only"):e};export{_ as b,c as r};

@@ -1,0 +1,1 @@
+import{h as t,g as r,p as s}from"../index-BoHrc7wr.js";const a=()=>t.get(`/v1${r}rest/${s}/mcp/config`),e=p=>t.put(`/v1${r}rest/${s}/mcp/config`,p),o=()=>t.get(`/v1${r}rest/${s}/mcp/status`);export{a,o as g,e as p};
