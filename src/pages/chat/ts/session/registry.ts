@@ -17,6 +17,7 @@ import {
 	type ChatSessionRuntime,
 	type PendingChatImage
 } from './types'
+import { evictSessionRenderCaches } from '../render/session-render-cache'
 
 const revokeBlobUrl = (url?: string | null) => {
 	if (url?.startsWith('blob:')) {
@@ -197,6 +198,7 @@ class ChatSessionRegistry {
 		}
 		this.stopSessionStream(session)
 		revokeSessionBlobUrls(session)
+		evictSessionRenderCaches(key)
 		this.sessions.delete(key)
 		if (this.activeSessionKey.value === key) {
 			this.activeSessionKey.value = null
@@ -239,6 +241,7 @@ class ChatSessionRegistry {
 			}
 			this.stopSessionStream(session)
 			revokeSessionBlobUrls(session)
+			evictSessionRenderCaches(session.key)
 			this.sessions.delete(session.key)
 			toRemove -= 1
 		}

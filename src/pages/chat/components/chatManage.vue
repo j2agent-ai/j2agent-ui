@@ -175,10 +175,6 @@ const props = defineProps({
     default: () => {
     }
   },
-  historySwitching: {
-    type: Boolean,
-    default: false
-  },
   currContextId: {
     type: String,
     default: ''
@@ -260,20 +256,11 @@ const addNewChat = () => {
   props.newChat()
 }
 
-const HISTORY_CLICK_DEBOUNCE_MS = 400
-const goHistoryChatDebounced = debounce(
-  (contextId: string) => {
-    emit('showChatManage', false)
-    checkedHistoryId.value = contextId
-    props.historyChat(contextId)
-    searchKey.value = ''
-  },
-  HISTORY_CLICK_DEBOUNCE_MS,
-  { maxWait: 800 }
-)
-
 const goHistoryChat = (constextId: string) => {
-  goHistoryChatDebounced(constextId)
+  emit('showChatManage', false)
+  checkedHistoryId.value = constextId
+  props.historyChat(constextId)
+  searchKey.value = ''
 }
 
 const handleListItemClick = (item: HistoryContextItem) => {
