@@ -11,6 +11,7 @@ import { chatActivityStore } from '../activity/store'
 import { detachWebSocket } from '../stream/service'
 import { createAgentEventDispatcher } from '../stream/dispatcher'
 import { resolveTurnErrorDisplayText } from '../stream/agent-ui'
+import { redirectToLogin } from '@/utils/auth'
 import {
 	MAX_CHAT_SESSIONS,
 	buildSessionKey,
@@ -62,6 +63,10 @@ class ChatSessionRegistry {
 			resolveTurnErrorMessage: (errorCode, errorMessage) =>
 				resolveTurnErrorDisplayText(errorCode, errorMessage, t),
 			onTurnFailure: (displayMessage, raw) => {
+				if (raw?.errorCode === 'sessionMissing') {
+					redirectToLogin()
+					return
+				}
 				let msg = displayMessage
 				if (raw?.errorMessage?.trim()) {
 					msg = `${displayMessage}: ${raw.errorMessage.trim()}`
