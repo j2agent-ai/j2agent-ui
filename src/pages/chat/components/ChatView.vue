@@ -1463,11 +1463,26 @@ let markdownBlocksDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let restoreSessionDiagramsTimer: ReturnType<typeof setTimeout> | null = null
 let restoreSessionDiagramsToken = 0
 let sessionSwitchGuardUntil = 0
+let sessionSwitchGuardFollowupTimer: ReturnType<typeof setTimeout> | null = null
 /** 是否曾 deactivate（区分首次 mount 的 onActivated 与从首页切回） */
 let chatViewWasDeactivated = false
 
+const cancelSessionSwitchGuardFollowup = () => {
+  if (sessionSwitchGuardFollowupTimer !== null) {
+    clearTimeout(sessionSwitchGuardFollowupTimer)
+    sessionSwitchGuardFollowupTimer = null
+  }
+}
+
 const markSessionSwitchGuard = () => {
   sessionSwitchGuardUntil = Date.now() + SESSION_SWITCH_GUARD_MS
+  cancelSessionSwitchGuardFollowup()
+  sessionSwitchGuardFollowupTimer = setTimeout(() => {
+    sessionSwitchGuardFollowupTimer = null
+    if (isChatViewActive.value) {
+      flushActivateMarkdownBlocks()
+    }
+  }, SESSION_SWITCH_GUARD_MS + 50)
 }
 
 const isInSessionSwitchGuard = () => Date.now() < sessionSwitchGuardUntil
@@ -2092,9 +2107,7 @@ watch(
 watch(
   () => chatSessionRegistry.activeSessionKey.value,
   () => {
-    markSessionSwitchGuard()
     cancelScheduledRestoreSessionDiagrams()
-    cancelPendingMarkdownRenderWork(messageListRef.value ?? null)
     resetActiveStreamSplitCache()
     resetActiveStreamRenderedCache()
     activeTailSegmentEl.value = null
@@ -2107,8 +2120,8 @@ watch(
 
 /** 与侧边栏点历史同路：激活会话、按需拉取、滚底、恢复图表 DOM */
 const showSessionView = async (targetContextId: string) => {
-  markSessionSwitchGuard()
   cancelScheduledRestoreSessionDiagrams()
+  cancelSessionSwitchGuardFollowup()
   cancelPendingMarkdownRenderWork(messageListRef.value ?? null)
   if (markdownBlocksDebounceTimer !== null) {
     clearTimeout(markdownBlocksDebounceTimer)
@@ -2120,6 +2133,7 @@ const showSessionView = async (targetContextId: string) => {
     targetContextId
   )
   isAtBottom.value = true
+  markSessionSwitchGuard()
 
   if (
     !session.loadedFromServer.value &&
@@ -2191,6 +2205,7 @@ const suspendChatViewUi = () => {
     return
   }
   cancelScheduledRestoreSessionDiagrams()
+  cancelSessionSwitchGuardFollowup()
   cancelPendingMarkdownRenderWork(messageListRef.value ?? null)
   pauseDiagramReflowInRoot(messageListRef.value ?? null)
   frozenAssistantRenderedSegments.value = lastActiveRenderedSegments.value
