@@ -1,1 +1,0 @@
-import{d as t,e as r,p as s}from"../index-CvMnaWCY.js";const a=()=>t.get(`/v1${r}rest/${s}/mcp/config`),g=p=>t.put(`/v1${r}rest/${s}/mcp/config`,p),o=()=>t.get(`/v1${r}rest/${s}/mcp/status`);export{a,o as g,g as p};

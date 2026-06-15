@@ -1,0 +1,1 @@
+import{d as e,e as r,p as t}from"../index-BljPXBIW.js";const u=()=>e.get(`/v1${r}rest/${t}/users`),o=s=>e.post(`/v1${r}rest/${t}/users`,s),p=s=>e.delete(`/v1${r}rest/${t}/users`,{params:{"user-id":s}}),n=s=>e.put(`/v1${r}rest/${t}/users/role`,s),$=s=>e.put(`/v1${r}rest/${t}/users/password`,s);export{$ as a,o as c,p as d,u as g,n as u};
