@@ -1253,9 +1253,6 @@ const isBlockPendingRender = (
   block: Element,
   options?: RenderMarkdownBlocksOptions
 ): boolean => {
-  if (block.getAttribute(MARKDOWN_RENDERING_ATTR) === 'true') {
-    return true
-  }
   const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
   const isAsyncBlock =
     type === 'mermaid' ||
@@ -1486,7 +1483,19 @@ const renderWithViewportScheduling = async (
     ).length
 
   const maybeFinish = () => {
-    if (getPendingBlocks().length === 0 && inFlight.size === 0) {
+    if (inFlight.size > 0) {
+      return
+    }
+    const pending = getPendingBlocks()
+    if (pending.length === 0) {
+      resolveDone()
+      return
+    }
+    const hasVisiblePending = pending.some(
+      (block) => getBlockViewportPriority(block, scrollRoot, prefetchPx) < 3
+    )
+    // 可见/预取队列已排空且禁止后台渲染时，本 pass 结束，避免 await done 永久挂起
+    if (!hasVisiblePending && maxBackgroundConcurrency === 0) {
       resolveDone()
     }
   }
@@ -2971,12 +2980,10 @@ export const cancelPendingMarkdownRenderWork = (scope?: Element | null) => {
   diagramBlockRetryRoot = null
   pendingStreamTailUpdate = null
   if (scope) {
-    scope
-      .querySelectorAll<Element>(`[${MARKDOWN_RENDERING_ATTR}="true"]`)
-      .forEach((block) => {
-        abortBlockRender(block)
-        block.removeAttribute(MARKDOWN_RENDERING_ATTR)
-      })
+    scope.querySelectorAll<Element>(`[${MARKDOWN_RENDER_ATTR}]`).forEach((block) => {
+      abortBlockRender(block)
+      block.removeAttribute(MARKDOWN_RENDERING_ATTR)
+    })
   }
 }
 
