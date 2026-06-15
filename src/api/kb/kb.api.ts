@@ -4,7 +4,8 @@ import {
 	KnowledgeCollectionListDto,
 	KnowledgeGetListDto,
 	KnowledgeRetrieveResponseDto,
-	KnowledgeSyncResult
+	KnowledgeSyncResult,
+	KnowledgeSyncStatusDto
 } from '@/types/kb.model'
 import { globalUrlPrefix, programTag } from '../../oem.js'
 
@@ -34,16 +35,21 @@ export const getKnowledgeCollections = () => {
 }
 
 /**
- * 手动触发知识库目录增量同步
+ * 手动触发知识库目录增量同步（异步提交）
  */
 export const syncKnowledge = (fullRebuild = false) => {
 	return http.post<KnowledgeSyncResult>(
 		`/v1${globalUrlPrefix}rest/${programTag}/knowledge/sync`,
 		null,
 		{
-			params: { fullRebuild },
-			timeout: 10 * 60 * 1000
+			params: { fullRebuild }
 		}
+	)
+}
+
+export const getKnowledgeSyncStatus = () => {
+	return http.get<KnowledgeSyncStatusDto>(
+		`/v1${globalUrlPrefix}rest/${programTag}/knowledge/sync/status`
 	)
 }
 

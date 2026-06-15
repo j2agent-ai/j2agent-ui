@@ -148,13 +148,61 @@ const tryCompletePendingRecycle = () => {
   requestWorkerRecycle()
 }
 
+let fallbackInFlight = 0
+const MAX_FALLBACK_CONCURRENT = 1
+type FallbackJob = {
+  task: PendingTask
+  workerError?: string
+}
+const fallbackQueue: FallbackJob[] = []
+
+const drainFallbackQueue = () => {
+  while (fallbackInFlight < MAX_FALLBACK_CONCURRENT && fallbackQueue.length > 0) {
+    const job = fallbackQueue.shift()
+    if (!job) {
+      return
+    }
+    if (job.task.signal?.aborted) {
+      job.task.reject(new DiagramRenderWorkerError('Diagram render aborted'))
+      continue
+    }
+    void runFallbackJob(job)
+  }
+}
+
+const runFallbackJob = async (job: FallbackJob) => {
+  fallbackInFlight += 1
+  try {
+    await finishTaskWithFallback(job.task, job.workerError)
+  } finally {
+    fallbackInFlight = Math.max(0, fallbackInFlight - 1)
+    drainFallbackQueue()
+  }
+}
+
+const enqueueFallback = (task: PendingTask, workerError?: string) => {
+  if (task.signal?.aborted) {
+    rejectTask(task, new DiagramRenderWorkerError('Diagram render aborted'))
+    return
+  }
+  if (fallbackInFlight < MAX_FALLBACK_CONCURRENT) {
+    void runFallbackJob({ task, workerError })
+    return
+  }
+  fallbackQueue.push({ task, workerError })
+}
+
 const handleWorkerError = () => {
   const failedTasks = [...pendingById.values()]
   recycleWorker(true)
   recyclePending = false
   for (const task of failedTasks) {
     inFlightCount = Math.max(0, inFlightCount - 1)
-    void finishTaskWithFallback(task, 'Diagram worker crashed')
+    if (task.signal?.aborted) {
+      rejectTask(task, new DiagramRenderWorkerError('Diagram render aborted'))
+      continue
+    }
+    enqueueFallback(task, 'Diagram worker crashed')
   }
   drainQueue()
 }
@@ -184,12 +232,14 @@ const handleWorkerMessage = (event: MessageEvent) => {
   if (data.ok && typeof data.markup === 'string') {
     resolveTask(task, data.markup)
   } else {
-    void finishTaskWithFallback(
-      task,
-      typeof data.error === 'string' ? data.error : 'Diagram worker render failed'
-    ).finally(() => {
-      drainQueue()
-    })
+    if (task.signal?.aborted) {
+      rejectTask(task, new DiagramRenderWorkerError('Diagram render aborted'))
+    } else {
+      enqueueFallback(
+        task,
+        typeof data.error === 'string' ? data.error : 'Diagram worker render failed'
+      )
+    }
   }
 
   if (completedRenderCount >= WORKER_RECYCLE_AFTER) {
@@ -262,11 +312,7 @@ const finishTaskWithFallback = async (
 const dispatchToWorker = (task: PendingTask) => {
   const activeWorker = ensureWorker()
   if (!activeWorker) {
-    inFlightCount += 1
-    void finishTaskWithFallback(task, 'Diagram worker unavailable').finally(() => {
-      inFlightCount = Math.max(0, inFlightCount - 1)
-      drainQueue()
-    })
+    enqueueFallback(task, 'Diagram worker unavailable')
     return
   }
 
@@ -330,6 +376,12 @@ export const warmupDiagramRenderWorker = () => {
 export const getActiveDiagramRenderCount = () => inFlightCount + queue.length
 
 export const resetDiagramRenderWorker = () => {
+  while (fallbackQueue.length > 0) {
+    const job = fallbackQueue.shift()
+    if (job) {
+      rejectTask(job.task, new DiagramRenderWorkerError('Diagram worker reset'))
+    }
+  }
   while (queue.length > 0) {
     const task = queue.shift()
     if (task) {
@@ -340,6 +392,7 @@ export const resetDiagramRenderWorker = () => {
     rejectTask(task, new DiagramRenderWorkerError('Diagram worker reset'))
   }
   recyclePending = false
+  fallbackInFlight = 0
   recycleWorker()
   workerDisabled = false
 }

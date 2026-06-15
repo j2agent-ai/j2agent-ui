@@ -13,6 +13,7 @@
       ref="chatManageRef"
       :new-chat="newChat"
       :history-chat="historyChat"
+      :history-switching="isHistorySwitching"
       :curr-context-id="contextId"
       :message-context="messageContext"
       :agent-id="props.agentId"
@@ -56,13 +57,13 @@
           </div>
         </div>
         <div
-          v-if="visibleMessageContext.length"
+          v-if="displayedMessageContext.length"
           ref="messageListRef"
           class="message-list"
           @click="handleMessageMediaClick"
         >
           <div
-            v-for="message in visibleMessageContext"
+            v-for="message in displayedMessageContext"
             :key="`${contextId}-${message.index}`"
             class="message-row"
             :class="[message.role]"
@@ -473,7 +474,7 @@ import {
 import { processChatImageFile } from '../ts/media/image'
 import { cloneSvgForPreview } from '@/utils/diagramPreview'
 import {
-  buildMarkdownPrefetchRootMargin,
+  buildChatDiagramPrefetchRootMargin,
   getMarkdownCodeBlockText,
   getMarkdownHtmlBlockSource,
   MARKDOWN_RENDERER_REVISION,
@@ -481,10 +482,25 @@ import {
   hasPendingMarkdownBlocks,
   renderMarkdownCached,
   renderMarkdownBlocks,
-  cancelPendingMarkdownRenderWork,
-  pauseDiagramReflowInRoot,
+  abortChatMarkdownRendering,
+  getMarkdownRenderGeneration,
+  scanDiagramEvictionCandidates,
   scheduleUpdateStreamTailSegmentInPlace
 } from '@/utils/markdownRenderer'
+import {
+  computeScrollTopAfterPrepend,
+  countDiagramFences,
+  initialProgressiveHistoryLimit,
+  initialProgressiveSegmentLimit,
+  advanceProgressiveSegmentLimit,
+  mergeProgressiveSegmentLimit,
+  nextProgressiveHistoryLimit,
+  HISTORY_DIAGRAM_AUTO_RENDER_LIMIT,
+  HISTORY_SESSION_HEAVY_DIAGRAM_THRESHOLD,
+  shouldUseProgressiveHistoryRender,
+  shouldUseProgressiveSegmentRender,
+  sliceMessagesForProgressiveRender
+} from '@/utils/historyProgressiveRender'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
 import { getAgentDisplayName, getAgentLogo, agentNameMap } from '../ts/agent/name-registry'
 
@@ -525,6 +541,58 @@ const shouldAutoScroll = () => isAtBottom.value && !userScrolling
 const visibleMessageContext = computed(() =>
   messageContext.value.filter((m) => m.displayInChat !== false)
 )
+/** 渐进式历史恢复期间仅挂载最近 N 条消息，避免首开全量 markdown-it / DOM */
+const progressiveHistoryRenderLimit = ref<number | null>(null)
+const progressiveSegmentRenderLimit = ref<number | null>(null)
+const isHeavyDiagramSession = ref(false)
+let progressiveHistoryRenderCancelled = false
+let progressiveHistoryRenderRafId = 0
+let progressiveHistoryIdleId: number | null = null
+let sessionViewGeneration = 0
+let latestShowSessionTarget = ''
+let showSessionViewRunner: Promise<void> | null = null
+let historyFetchGeneration = 0
+const isHistorySwitching = ref(false)
+let lastHistoryChatId = ''
+const displayedMessageContext = computed(() =>
+  sliceMessagesForProgressiveRender(
+    visibleMessageContext.value,
+    progressiveHistoryRenderLimit.value
+  )
+)
+const isProgressiveHistoryRendering = computed(
+  () =>
+    progressiveHistoryRenderLimit.value !== null ||
+    progressiveSegmentRenderLimit.value !== null
+)
+
+const countCompleteSegmentsInContent = (content: string) =>
+  splitStreamingSegments(content).filter((segment) => segment.complete).length
+
+const maxCompleteSegmentsInDisplayed = () =>
+  displayedMessageContext.value.reduce((max, message) => {
+    if (message.role !== 'assistant' || !message.content) {
+      return max
+    }
+    return Math.max(max, countCompleteSegmentsInContent(message.content))
+  }, 0)
+
+const countSessionDiagramFences = (
+  messages: readonly { content?: string | null }[]
+) =>
+  messages.reduce(
+    (sum, message) => sum + (message.content ? countDiagramFences(message.content) : 0),
+    0
+  )
+
+const maxMessageDiagramFences = (
+  messages: readonly { content?: string | null }[]
+) =>
+  messages.reduce(
+    (max, message) =>
+      Math.max(max, message.content ? countDiagramFences(message.content) : 0),
+    0
+  )
 const imageInputRef = ref<HTMLInputElement>()
 const isDragOverImages = ref(false)
 let inputAreaDragDepth = 0
@@ -1258,14 +1326,22 @@ const findVisibleMessageByIndex = (messageIndex: number) =>
 
 const buildRenderedSegments = (
   content: string,
-  streamingTail = false
+  streamingTail = false,
+  segmentLimit: number | null = null
 ): RenderedStreamSegment[] => {
   const segments = streamingTail
     ? splitStreamingSegmentsForActiveStream(content)
     : splitStreamingSegments(content)
+  let completeSeen = 0
   return segments.map((seg, idx) => {
     const isTail = idx === segments.length - 1 && !seg.complete
-    const shouldRenderHtml = seg.complete || !isTail || !streamingTail
+    let shouldRenderHtml = seg.complete || !isTail || !streamingTail
+    if (segmentLimit !== null && seg.complete) {
+      if (completeSeen >= segmentLimit) {
+        shouldRenderHtml = false
+      }
+      completeSeen += 1
+    }
     return {
       ...seg,
       html: shouldRenderHtml ? renderMarkdownCached(seg.text) : ''
@@ -1332,7 +1408,21 @@ const buildStableAssistantSegments = (
   messageIndex: number,
   content: string
 ): RenderedStreamSegment[] => {
+  const segmentLimit = progressiveSegmentRenderLimit.value
   const cache = getAssistantSegmentCache()
+  const storeSegments = (segments: RenderedStreamSegment[]) => {
+    cache.set(messageIndex, {
+      content,
+      segments,
+      revision: MARKDOWN_RENDERER_REVISION
+    })
+    return segments
+  }
+
+  if (segmentLimit !== null) {
+    return storeSegments(buildRenderedSegments(content, false, segmentLimit))
+  }
+
   const hit = cache.get(messageIndex)
   if (
     hit?.content === content &&
@@ -1340,13 +1430,7 @@ const buildStableAssistantSegments = (
   ) {
     return hit.segments
   }
-  const segments = buildRenderedSegments(content, false)
-  cache.set(messageIndex, {
-    content,
-    segments,
-    revision: MARKDOWN_RENDERER_REVISION
-  })
-  return segments
+  return storeSegments(buildRenderedSegments(content, false, null))
 }
 
 const getStableUserHtml = (messageIndex: number, content: string): string => {
@@ -1375,7 +1459,7 @@ const buildAssistantRenderedSegmentsMap = (): Map<
   const streamingMsgIndex = isBusyByState.value
     ? activeAssistantMessageIndex.value
     : -1
-  visibleMessageContext.value.forEach((message) => {
+  displayedMessageContext.value.forEach((message) => {
     if (message.role === 'assistant' && message.content) {
       if (
         isChatViewActive.value &&
@@ -1407,14 +1491,20 @@ const assistantRenderedSegments = computed(() => {
   if (!isChatViewActive.value) {
     return frozenAssistantRenderedSegments.value
   }
+  if (isHistorySwitching.value) {
+    return new Map<number, RenderedStreamSegment[]>()
+  }
   const map = buildAssistantRenderedSegmentsMap()
   lastActiveRenderedSegments.value = map
   return map
 })
 
 const userMessageHtmlMap = computed(() => {
+  if (isHistorySwitching.value) {
+    return new Map<number, string>()
+  }
   const map = new Map<number, string>()
-  visibleMessageContext.value.forEach((message) => {
+  displayedMessageContext.value.forEach((message) => {
     if (message.role === 'user' && message.content) {
       map.set(message.index, getStableUserHtml(message.index, message.content))
     }
@@ -1475,9 +1565,11 @@ const getMarkdownBlocksScope = (): Element | null => {
 }
 
 const runMarkdownBlocks = () => {
-  if (!isChatViewActive.value) {
+  if (!isChatViewActive.value || isHistorySwitching.value) {
     return
   }
+  const capturedSessionGeneration = sessionViewGeneration
+  const capturedMarkdownGeneration = getMarkdownRenderGeneration()
   nextTick(() => {
     const listRoot = messageListRef.value
     if (!listRoot) {
@@ -1490,6 +1582,13 @@ const runMarkdownBlocks = () => {
     }
     renderMarkdownBlocks(scopeRoot, renderOptions)
       .then(() => {
+        if (sessionViewGeneration !== capturedSessionGeneration) {
+          return
+        }
+        if (getMarkdownRenderGeneration() !== capturedMarkdownGeneration) {
+          return
+        }
+        scanRenderedDiagramEviction()
         if (shouldAutoScroll()) {
           scrollToBottom()
         }
@@ -1525,14 +1624,221 @@ const flushActivateMarkdownBlocks = () => {
   runMarkdownBlocks()
 }
 
+const flushActivateMarkdownBlocksFromWatch = () => {
+  if (isHistorySwitching.value) {
+    return
+  }
+  flushActivateMarkdownBlocks()
+}
+
 const buildMarkdownBlocksRenderOptions = () => {
   const scrollRoot =
     (scrollbarRef.value?.wrapRef as HTMLElement | undefined) ?? null
+  const shouldCapDiagramAutoRender =
+    isHeavyDiagramSession.value || isProgressiveHistoryRendering.value
   return {
     deferDiagrams: isBusyByState.value,
     scrollRoot,
-    prefetchRootMargin: buildMarkdownPrefetchRootMargin(scrollRoot)
+    prefetchRootMargin: buildChatDiagramPrefetchRootMargin(scrollRoot),
+    renderOffscreenBackground: false,
+    evictOffscreenDiagrams: true,
+    concurrency: isHeavyDiagramSession.value ? 1 : undefined,
+    maxAutoRenderBlocks: shouldCapDiagramAutoRender
+      ? HISTORY_DIAGRAM_AUTO_RENDER_LIMIT
+      : undefined,
+    capInViewportAutoRender: isHeavyDiagramSession.value,
+    keepAutoRenderLimit: isHeavyDiagramSession.value
   }
+}
+
+const scanRenderedDiagramEviction = () => {
+  const listRoot = messageListRef.value
+  if (!listRoot) {
+    return
+  }
+  scanDiagramEvictionCandidates(listRoot, buildMarkdownBlocksRenderOptions())
+}
+
+const cancelProgressiveHistoryRender = () => {
+  progressiveHistoryRenderCancelled = true
+  if (progressiveHistoryRenderRafId) {
+    cancelAnimationFrame(progressiveHistoryRenderRafId)
+    progressiveHistoryRenderRafId = 0
+  }
+  if (
+    progressiveHistoryIdleId !== null &&
+    typeof cancelIdleCallback === 'function'
+  ) {
+    cancelIdleCallback(progressiveHistoryIdleId)
+    progressiveHistoryIdleId = null
+  }
+}
+
+const abortSessionViewWork = () => {
+  cancelProgressiveHistoryRender()
+  abortChatMarkdownRendering(messageListRef.value ?? null, getScrollWrap())
+}
+
+const isSessionViewCurrent = (generation: number) =>
+  generation === sessionViewGeneration
+
+const resetProgressiveHistoryRender = () => {
+  cancelProgressiveHistoryRender()
+  progressiveHistoryRenderLimit.value = null
+  progressiveSegmentRenderLimit.value = null
+  progressiveHistoryRenderCancelled = false
+  isHeavyDiagramSession.value = false
+}
+
+const isProgressiveRestoreActive = () =>
+  progressiveHistoryRenderLimit.value !== null ||
+  progressiveSegmentRenderLimit.value !== null
+
+const advanceProgressiveBatch = (): boolean => {
+  const maxComplete = maxCompleteSegmentsInDisplayed()
+  const segmentLimit = progressiveSegmentRenderLimit.value
+  if (segmentLimit !== null) {
+    if (segmentLimit >= maxComplete) {
+      progressiveSegmentRenderLimit.value = null
+    } else {
+      progressiveSegmentRenderLimit.value = advanceProgressiveSegmentLimit(
+        segmentLimit,
+        maxComplete
+      )
+    }
+    return true
+  }
+
+  const totalMessages = visibleMessageContext.value.length
+  const messageLimit = progressiveHistoryRenderLimit.value
+  if (messageLimit !== null && messageLimit < totalMessages) {
+    progressiveHistoryRenderLimit.value =
+      nextProgressiveHistoryLimit(messageLimit, totalMessages) ?? totalMessages
+    if (
+      progressiveHistoryRenderLimit.value !== null &&
+      progressiveHistoryRenderLimit.value >= totalMessages
+    ) {
+      progressiveHistoryRenderLimit.value = null
+    }
+    const visible = displayedMessageContext.value
+    const sessionDiagrams = countSessionDiagramFences(visible)
+    const maxMsgDiagrams = maxMessageDiagramFences(visible)
+    if (shouldUseProgressiveSegmentRender(sessionDiagrams, maxMsgDiagrams)) {
+      progressiveSegmentRenderLimit.value = mergeProgressiveSegmentLimit(
+        progressiveSegmentRenderLimit.value,
+        maxCompleteSegmentsInDisplayed()
+      )
+    }
+    return true
+  }
+  if (messageLimit !== null) {
+    progressiveHistoryRenderLimit.value = null
+  }
+  return false
+}
+
+const scheduleNextProgressiveBatch = () => {
+  if (
+    progressiveHistoryRenderCancelled ||
+    !isProgressiveRestoreActive() ||
+    isHistorySwitching.value
+  ) {
+    return
+  }
+
+  const runBatch = () => {
+    if (isHistorySwitching.value) {
+      return
+    }
+    progressiveHistoryRenderRafId = requestAnimationFrame(() => {
+      progressiveHistoryRenderRafId = 0
+      if (
+        progressiveHistoryRenderCancelled ||
+        !isProgressiveRestoreActive() ||
+        isHistorySwitching.value
+      ) {
+        return
+      }
+
+      const savedGeneration = sessionViewGeneration
+      const wrap = getScrollWrap()
+      const prevScrollHeight = wrap?.scrollHeight ?? 0
+      const prevScrollTop = wrap?.scrollTop ?? 0
+      const hadMessageBatch =
+        progressiveHistoryRenderLimit.value !== null &&
+        progressiveSegmentRenderLimit.value === null
+      advanceProgressiveBatch()
+
+      nextTick(() => {
+        if (
+          progressiveHistoryRenderCancelled ||
+          sessionViewGeneration !== savedGeneration ||
+          isHistorySwitching.value
+        ) {
+          return
+        }
+        if (hadMessageBatch && wrap && prevScrollHeight > 0 && !shouldAutoScroll()) {
+          wrap.scrollTop = computeScrollTopAfterPrepend(
+            prevScrollTop,
+            prevScrollHeight,
+            wrap.scrollHeight
+          )
+        }
+        flushActivateMarkdownBlocks()
+        scanRenderedDiagramEviction()
+        if (isProgressiveRestoreActive()) {
+          scheduleNextProgressiveBatch()
+        }
+      })
+    })
+  }
+
+  if (typeof requestIdleCallback === 'function') {
+    progressiveHistoryIdleId = requestIdleCallback(
+      () => {
+        progressiveHistoryIdleId = null
+        runBatch()
+      },
+      { timeout: 150 }
+    )
+  } else {
+    runBatch()
+  }
+}
+
+const beginProgressiveHistoryRender = (messageCount: number) => {
+  resetProgressiveHistoryRender()
+  const visible = visibleMessageContext.value
+  const sessionDiagrams = countSessionDiagramFences(visible)
+  isHeavyDiagramSession.value =
+    sessionDiagrams >= HISTORY_SESSION_HEAVY_DIAGRAM_THRESHOLD
+  const maxMsgDiagrams = maxMessageDiagramFences(visible)
+  const useSegments = shouldUseProgressiveSegmentRender(
+    sessionDiagrams,
+    maxMsgDiagrams
+  )
+  const useMessages = shouldUseProgressiveHistoryRender(
+    messageCount,
+    sessionDiagrams
+  )
+
+  if (!useSegments && !useMessages) {
+    return
+  }
+
+  if (useSegments) {
+    progressiveSegmentRenderLimit.value = initialProgressiveSegmentLimit(
+      maxCompleteSegmentsInDisplayed()
+    )
+  }
+  if (useMessages) {
+    progressiveHistoryRenderLimit.value =
+      initialProgressiveHistoryLimit(messageCount)
+  }
+
+  nextTick(() => {
+    scheduleNextProgressiveBatch()
+  })
 }
 
 /** 切回会话：复用 HTML 占位缓存，仅 flush 图表 DOM（不重算 markdown-it / 不 bulk evict） */
@@ -1982,7 +2288,7 @@ watch(
       return
     }
     nextTick(() => {
-      flushActivateMarkdownBlocks()
+      flushActivateMarkdownBlocksFromWatch()
     })
   }
 )
@@ -2002,7 +2308,7 @@ watch(
     if (prevLength !== undefined && length === prevLength) {
       return
     }
-    flushActivateMarkdownBlocks()
+    flushActivateMarkdownBlocksFromWatch()
   }
 )
 
@@ -2024,7 +2330,7 @@ watch(isBusyByState, (busy, wasBusy) => {
       }
     }
   }
-  flushActivateMarkdownBlocks()
+  flushActivateMarkdownBlocksFromWatch()
 })
 
 /** 后台会话流式更新时，活跃会话 pendingScroll 由 ChatView 消费 */
@@ -2046,8 +2352,12 @@ watch(
 
 watch(
   () => chatSessionRegistry.activeSessionKey.value,
-  () => {
-    cancelPendingMarkdownRenderWork(messageListRef.value ?? null)
+  (newKey, oldKey) => {
+    if (oldKey && oldKey !== newKey) {
+      evictSessionRenderCache(oldKey)
+    }
+    abortSessionViewWork()
+    resetProgressiveHistoryRender()
     resetActiveStreamSplitCache()
     resetActiveStreamRenderedCache()
     activeTailSegmentEl.value = null
@@ -2058,9 +2368,31 @@ watch(
   }
 )
 
-/** 与侧边栏点历史同路：激活会话、按需拉取、滚底、恢复图表 DOM */
-const showSessionView = async (targetContextId: string) => {
-  cancelPendingMarkdownRenderWork(messageListRef.value ?? null)
+/** 切换结束后统一恢复 DOM 更新与图表渲染 */
+const finalizeHistorySwitch = () => {
+  if (!isSessionViewCurrent(sessionViewGeneration)) {
+    return
+  }
+  isHistorySwitching.value = false
+  nextTick(() => {
+    if (isHistorySwitching.value) {
+      return
+    }
+    flushActivateMarkdownBlocks()
+    if (isProgressiveRestoreActive()) {
+      scheduleNextProgressiveBatch()
+    }
+  })
+}
+
+const executeShowSessionView = async (
+  generation: number,
+  targetContextId: string
+) => {
+  if (!isSessionViewCurrent(generation)) {
+    return
+  }
+
   if (markdownBlocksDebounceTimer !== null) {
     clearTimeout(markdownBlocksDebounceTimer)
     markdownBlocksDebounceTimer = null
@@ -2070,30 +2402,82 @@ const showSessionView = async (targetContextId: string) => {
     props.agentId,
     targetContextId
   )
+  if (!isSessionViewCurrent(generation)) {
+    return
+  }
   isAtBottom.value = true
 
   if (
     !session.loadedFromServer.value &&
     session.messageContext.value.length === 0
   ) {
+    const fetchGeneration = ++historyFetchGeneration
     try {
       const res = await getHistoryContext(targetContextId, props.agentId)
+      if (
+        fetchGeneration !== historyFetchGeneration ||
+        !isSessionViewCurrent(generation)
+      ) {
+        return
+      }
       session.messageContext.value = res.data.messages ?? []
       normalizeMessageAttachmentUrls(session.messageContext.value)
       session.loadedFromServer.value = true
     } catch {
-      ElMessage.error(t('ai.assistant.service.unavailable'))
+      if (isSessionViewCurrent(generation)) {
+        ElMessage.error(t('ai.assistant.service.unavailable'))
+      }
     }
   }
+
+  if (!isSessionViewCurrent(generation)) {
+    return
+  }
+
+  const visibleCount = session.messageContext.value.filter(
+    (message) => message.displayInChat !== false
+  ).length
+  beginProgressiveHistoryRender(visibleCount)
 
   if (activeSession.value?.pendingScroll.value) {
     activeSession.value.pendingScroll.value = false
   }
   scrollToBottom()
-  await restoreSessionDiagrams()
+}
+
+/** 与侧边栏点历史同路：激活会话、按需拉取、滚底、恢复图表 DOM */
+const showSessionView = (targetContextId: string): Promise<void> => {
+  sessionViewGeneration += 1
+  latestShowSessionTarget = targetContextId
+  isHistorySwitching.value = true
+  abortSessionViewWork()
+
+  if (!showSessionViewRunner) {
+    showSessionViewRunner = (async () => {
+      try {
+        while (true) {
+          const generation = sessionViewGeneration
+          const target = latestShowSessionTarget
+          await executeShowSessionView(generation, target)
+          if (generation === sessionViewGeneration) {
+            break
+          }
+        }
+      } finally {
+        showSessionViewRunner = null
+        finalizeHistorySwitch()
+      }
+    })()
+  }
+
+  return showSessionViewRunner
 }
 
 const historyChat = async (historyId: string) => {
+  if (isHistorySwitching.value && lastHistoryChatId === historyId) {
+    return
+  }
+  lastHistoryChatId = historyId
   await showSessionView(historyId)
 }
 
@@ -2140,8 +2524,9 @@ const suspendChatViewUi = () => {
   if (!isChatViewActive.value) {
     return
   }
-  cancelPendingMarkdownRenderWork(messageListRef.value ?? null)
-  pauseDiagramReflowInRoot(messageListRef.value ?? null)
+  abortSessionViewWork()
+  progressiveHistoryRenderLimit.value = null
+  progressiveSegmentRenderLimit.value = null
   frozenAssistantRenderedSegments.value = lastActiveRenderedSegments.value
   isChatViewActive.value = false
   activeTailSegmentEl.value = null
@@ -2195,6 +2580,7 @@ defineExpose({
   showChatManage,
   chatManageRef,
   isBusyByState,
+  isHistorySwitching,
   getHistoryListData: () => chatManageRef.value?.getHistoryListData(),
   newChat,
   historyChat,
