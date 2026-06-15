@@ -48,9 +48,9 @@ const routes = [
 export default routes
 
 /** 登录成功后回跳路径（auth guard 写入，Login 读取后清除） */
-export const NAV_POST_LOGIN_PATH_KEY = 'j2agent:postLoginPath'
+export const NAV_POST_LOGIN_PATH_KEY = 'app:postLoginPath'
 /** 智能体列表进入聊天时强制新建会话（AgentListPage 写入，ChatView 读取后清除） */
-export const NAV_FORCE_NEW_CHAT_KEY = 'j2agent:forceNewChat'
+export const NAV_FORCE_NEW_CHAT_KEY = 'app:forceNewChat'
 
 export const setForceNewChatFlag = (agentId: string) => {
 	sessionStorage.setItem(NAV_FORCE_NEW_CHAT_KEY, agentId)

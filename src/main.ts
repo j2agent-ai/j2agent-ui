@@ -53,11 +53,11 @@ async function APP() {
 	// 挂载应用
 	app.mount('#app')
 	const bootCount =
-		Number(sessionStorage.getItem('j2agent-app-boot-count') || 0) + 1
-	sessionStorage.setItem('j2agent-app-boot-count', String(bootCount))
+		Number(sessionStorage.getItem('app-boot-count') || 0) + 1
+	sessionStorage.setItem('app-boot-count', String(bootCount))
 	if (bootCount > 1) {
 		console.error(
-			'[j2agent] document reload detected — in-memory chat sessions were reset (boot #%d)',
+			'document reload detected — in-memory chat sessions were reset (boot #%d)',
 			bootCount
 		)
 	}
