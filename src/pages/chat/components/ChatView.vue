@@ -495,6 +495,7 @@ import {
   getMarkdownHtmlBlockSource,
   MARKDOWN_RENDERER_REVISION,
   hasPendingMarkdownBlocks,
+  normalizeMarkdownImageParagraphs,
   renderMarkdownCached,
   renderMarkdownBlocks,
   cancelPendingMarkdownRenderWork,
@@ -1533,6 +1534,7 @@ const runMarkdownBlocks = () => {
     }
     const scopeRoot = getMarkdownBlocksScope() ?? listRoot
     const renderOptions = buildMarkdownBlocksRenderOptions()
+    normalizeMarkdownImageParagraphs(scopeRoot)
     if (!hasPendingMarkdownBlocks(scopeRoot, renderOptions)) {
       return
     }
