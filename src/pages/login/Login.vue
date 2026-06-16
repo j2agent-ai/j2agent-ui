@@ -112,7 +112,7 @@ import {
 } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 import { getSessionInfo, login } from '@/api/login.api'
-import { bootstrapSessionFromToken } from '@/utils/auth'
+import { bootstrapSessionFromToken, resolvePostLoginPath } from '@/utils/auth'
 import { getAuthToken, setAuthToken } from '@/utils/token'
 import SlipCaptcha from '@/pages/login/components/SlipCaptcha.vue'
 import AuthPageLayout from '@/pages/login/AuthPageLayout.vue'
@@ -120,21 +120,9 @@ import { loadRegisterEnabled, useRegisterEnabled } from '@/composables/useRegist
 import { useLoginCaptcha } from '@/composables/useLoginCaptcha'
 
 import { t } from '@ai-system/lib'
-import { goTo, NAV_POST_LOGIN_PATH_KEY } from '@/routes'
-import { hasRoleAccess, ROLE_ADMIN, setSessionInfo } from '@/utils/role'
+import { goTo } from '@/routes'
+import { setSessionInfo } from '@/utils/role'
 
-const resolvePostLoginPath = (): string => {
-	try {
-		const saved = sessionStorage.getItem(NAV_POST_LOGIN_PATH_KEY)
-		sessionStorage.removeItem(NAV_POST_LOGIN_PATH_KEY)
-		if (saved && saved !== '/login' && saved !== '/logout') {
-			return saved
-		}
-	} catch {
-		/* ignore */
-	}
-	return hasRoleAccess(ROLE_ADMIN) ? '/' : '/agents'
-}
 const loginForm = ref<FormInstance>()
 const loading = ref<boolean>(false)
 const { registerEnabled } = useRegisterEnabled()
