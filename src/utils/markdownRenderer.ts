@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it'
+import { appendAuthTokenToUrl } from './authenticatedUrl'
 import { normalizeMarkdownRepoFileUrls, normalizeRepoFileUrl } from './repoFileUrl'
 import { DIAGRAM_COLOR_PALETTE, DIAGRAM_FONT_FAMILY } from './diagramTheme'
 import {
@@ -2706,7 +2707,7 @@ export const normalizeMarkdownImageParagraphs = (root: ParentNode | Element) => 
   root.querySelectorAll<HTMLImageElement>('.message-md img').forEach((img) => {
     const src = img.getAttribute('src')
     if (src) {
-      const normalized = normalizeRepoFileUrl(src)
+      const normalized = appendAuthTokenToUrl(normalizeRepoFileUrl(src))
       if (normalized !== src) {
         img.src = normalized
       }

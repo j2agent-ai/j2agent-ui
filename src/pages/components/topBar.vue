@@ -361,7 +361,7 @@ const hideUserMenu = () => {
 	/* 窄视图：缩小标题与图标；隐藏用户名，保留菜单按钮与头像 */
 	@media (max-width: 768px) {
 		.tittle {
-			margin-left: 12px;
+			margin-left: 10px;
 			max-width: calc(100% - 120px);
 
 			.title-text,

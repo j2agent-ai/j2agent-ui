@@ -3,9 +3,13 @@ import { bindAppRouter } from './routes/router-holder'
 import langLoaders from './locale'
 import { App } from '@ai-system/lib'
 import { ElLoading } from 'element-plus'
-import { getSessionInfo } from '@/api/login.api'
-import { setSessionInfo } from '@/utils/role'
-import { getAuthToken } from '@/utils/token'
+import {
+	bootstrapSessionFromToken,
+	isDefaultLandingHash,
+	resolvePostLoginPath
+} from '@/utils/auth'
+import { consumeLaunchQueryFromUrl } from '@/utils/launchQuery'
+import { goTo } from '@/routes'
 
 import './styles/index.scss'
 import './styles/markdown.scss'
@@ -19,6 +23,8 @@ document.documentElement.classList.remove('dark')
 localStorage.removeItem('dark-mode')
 
 async function APP() {
+	const { ssoEntry } = consumeLaunchQueryFromUrl()
+
 	const app = new App({
 		routeType: 'hash',
 		routes,
@@ -34,25 +40,19 @@ async function APP() {
 	// 国际化
 	app.setUpLang([langLoaders])
 
-	const isAuthRoute =
-		location.hash.includes('/login') ||
-		location.hash.includes('/logout') ||
-		location.hash.includes('/register') ||
-		location.hash.includes('/forgot-password')
-	if (!isAuthRoute && getAuthToken()) {
-		try {
-			const sessionResponse = await getSessionInfo()
-			setSessionInfo(sessionResponse.data)
-		} catch (error) {
-			setSessionInfo(null)
-		}
-	}
+	const isLogoutRoute = location.hash.includes('/logout')
+	const sessionOk =
+		!isLogoutRoute && (await bootstrapSessionFromToken())
 
 	// 挂载路由
 	app.createRouter(routes)
 	bindAppRouter(app.router)
 	// 挂载应用
 	app.mount('#app')
+
+	if (sessionOk && ssoEntry && isDefaultLandingHash()) {
+		void goTo(resolvePostLoginPath())
+	}
 	const bootCount =
 		Number(sessionStorage.getItem('app-boot-count') || 0) + 1
 	sessionStorage.setItem('app-boot-count', String(bootCount))

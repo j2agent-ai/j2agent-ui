@@ -1,3 +1,4 @@
+import { appendAuthTokenToUrl } from '@/utils/authenticatedUrl'
 import { globalUrlPrefix, programTag } from '@/oem.js'
 
 const REPO_FILE_PATH_MARKER = '/file/repo/'
@@ -15,7 +16,7 @@ const encodeRepoPathSegments = (relativePath: string) =>
  */
 export const normalizeRepoFileUrl = (url: string): string => {
   if (!url?.includes('%2F') || !url.includes(REPO_FILE_PATH_MARKER)) {
-    return url
+    return appendAuthTokenToUrl(url)
   }
   const markerIdx = url.indexOf(REPO_FILE_PATH_MARKER)
   const prefix = url.slice(0, markerIdx + REPO_FILE_PATH_MARKER.length)
@@ -26,11 +27,11 @@ export const normalizeRepoFileUrl = (url: string): string => {
   try {
     const relativePath = decodeURIComponent(encodedTail)
     if (!relativePath) {
-      return url
+      return appendAuthTokenToUrl(url)
     }
-    return prefix + encodeRepoPathSegments(relativePath) + suffix
+    return appendAuthTokenToUrl(prefix + encodeRepoPathSegments(relativePath) + suffix)
   } catch {
-    return url
+    return appendAuthTokenToUrl(url)
   }
 }
 
@@ -49,9 +50,9 @@ export const normalizeMarkdownRepoFileUrls = (markdown: string): string => {
 export const buildRepoFileUrl = (relativePath: string): string => {
   const base = `/v1${globalUrlPrefix}rest/${programTag}/file/repo/`
   if (!relativePath?.trim()) {
-    return base
+    return appendAuthTokenToUrl(base)
   }
-  return base + encodeRepoPathSegments(relativePath)
+  return appendAuthTokenToUrl(base + encodeRepoPathSegments(relativePath))
 }
 
 const resolveRelativeRepoImageUrl = (

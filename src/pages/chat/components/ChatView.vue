@@ -157,7 +157,7 @@
                         <a
                           v-else
                           class="src-file-link"
-                          :href="file.url"
+                          :href="appendAuthTokenToUrl(file.url)"
                           :download="file.fullFileName || undefined"
                           target="_blank"
                           rel="noopener noreferrer"
@@ -484,6 +484,7 @@ import {
   resolveAttachmentImageSrc,
   resolveAttachmentsDisplayUrls
 } from '../ts/media/attachment'
+import { appendAuthTokenToUrl } from '@/utils/authenticatedUrl'
 import { processChatImageFile } from '../ts/media/image'
 import { cloneSvgForPreview } from '@/utils/diagramPreview'
 import { waitForDiagramRuntimesReady } from '@/utils/diagramMarkdownRuntime'
