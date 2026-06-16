@@ -1,18 +1,25 @@
+import { appendAuthTokenToUrl } from '@/utils/authenticatedUrl'
 import { globalUrlPrefix, programTag } from '@/oem.js'
 import type { ObjectFileUploadInit } from '@/types/file.types'
 
 /** 展示 URL 由后端 {@code chat-attachment-display} 配置决定，前端不再改写 host（避免 SigV4 签名失效）。 */
 
 export function buildChatAttachmentContentUrl(objectKey: string): string {
-	return `/v1${globalUrlPrefix}rest/${programTag}/chat/files/content?objectKey=${encodeURIComponent(objectKey)}`
+	return appendAuthTokenToUrl(
+		`/v1${globalUrlPrefix}rest/${programTag}/chat/files/content?objectKey=${encodeURIComponent(objectKey)}`
+	)
 }
 
 export function buildObjectFileContentUrl(objectKey: string): string {
-	return `/v1${globalUrlPrefix}rest/${programTag}/files/content?object-key=${encodeURIComponent(objectKey)}`
+	return appendAuthTokenToUrl(
+		`/v1${globalUrlPrefix}rest/${programTag}/files/content?object-key=${encodeURIComponent(objectKey)}`
+	)
 }
 
 export function buildObjectFileUploadContentUrl(objectKey: string): string {
-	return `/v1${globalUrlPrefix}rest/${programTag}/files/upload/content?object-key=${encodeURIComponent(objectKey)}`
+	return appendAuthTokenToUrl(
+		`/v1${globalUrlPrefix}rest/${programTag}/files/upload/content?object-key=${encodeURIComponent(objectKey)}`
+	)
 }
 
 export function isChatAttachmentContentUrl(url?: string): boolean {
@@ -53,7 +60,7 @@ export function isUnreachableOssUrl(url?: string): boolean {
 
 export function resolveObjectFilePreviewUrl(objectKey: string, url?: string): string {
 	if (url && isObjectFileContentUrl(url)) {
-		return url
+		return appendAuthTokenToUrl(url)
 	}
 	if (!url || isUnreachableOssUrl(url)) {
 		return buildObjectFileContentUrl(objectKey)
@@ -63,7 +70,10 @@ export function resolveObjectFilePreviewUrl(objectKey: string, url?: string): st
 
 export function resolveObjectFileUploadInit(init: ObjectFileUploadInit): ObjectFileUploadInit {
 	if (isObjectFileUploadContentUrl(init.uploadUrl)) {
-		return init
+		return {
+			...init,
+			uploadUrl: appendAuthTokenToUrl(init.uploadUrl)
+		}
 	}
 	if (isUnreachableOssUrl(init.uploadUrl)) {
 		return {
@@ -76,5 +86,8 @@ export function resolveObjectFileUploadInit(init: ObjectFileUploadInit): ObjectF
 }
 
 export function resolveOssDisplayUrl(url?: string): string | undefined {
-	return url
+	if (!url) {
+		return url
+	}
+	return appendAuthTokenToUrl(url)
 }

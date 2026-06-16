@@ -144,6 +144,10 @@ import {
 	normalizeMarkdownRepoFileUrls,
 	rewriteMarkdownRelativeRepoUrls
 } from '@/utils/repoFileUrl'
+import {
+	appendAuthTokenToUrl,
+	authenticatedFetch
+} from '@/utils/authenticatedUrl'
 
 export type MdViewerSource = {
 	url: string
@@ -237,7 +241,7 @@ const downloadCurrentMarkdown = () => {
 		return
 	}
 	const anchor = document.createElement('a')
-	anchor.href = source.url
+	anchor.href = appendAuthTokenToUrl(source.url)
 	anchor.download = filename
 	anchor.rel = 'noopener noreferrer'
 	anchor.target = '_blank'
@@ -278,7 +282,7 @@ const loadCurrentSource = async () => {
 	error.value = ''
 	rawMarkdown.value = ''
 	try {
-		const response = await fetch(source.url, { credentials: 'include' })
+		const response = await authenticatedFetch(source.url)
 		if (!response.ok) {
 			throw new Error(`HTTP ${response.status}`)
 		}

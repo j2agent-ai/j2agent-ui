@@ -8,6 +8,10 @@ import type {
 	ObjectStorageSyncTask
 } from '@/types/file.types'
 import { resolveObjectFileUploadInit } from '@/utils/ossDisplayUrl'
+import {
+	getBearerAuthHeaders,
+	needsAuthInUrl
+} from '@/utils/authenticatedUrl'
 
 const baseUrl = `/v1${globalUrlPrefix}rest/${programTag}/files`
 
@@ -74,6 +78,16 @@ async function completeObjectFileDirectUploadWithRetry(
 	throw lastError
 }
 
+function mergeUploadHeaders(
+	url: string,
+	headers: Record<string, string>
+): Record<string, string> {
+	if (!needsAuthInUrl(url)) {
+		return headers
+	}
+	return { ...getBearerAuthHeaders(), ...headers }
+}
+
 function uploadWithXhr(
 	url: string,
 	method: string,
@@ -81,6 +95,7 @@ function uploadWithXhr(
 	headers: Record<string, string>,
 	onProgress?: (percent: number) => void
 ): Promise<void> {
+	const requestHeaders = mergeUploadHeaders(url, headers)
 	return new Promise((resolve, reject) => {
 		const xhr = new XMLHttpRequest()
 		xhr.upload.onprogress = (event) => {
@@ -97,7 +112,7 @@ function uploadWithXhr(
 		}
 		xhr.onerror = () => reject(new Error('Network error during upload'))
 		xhr.open(method, url)
-		for (const [key, value] of Object.entries(headers)) {
+		for (const [key, value] of Object.entries(requestHeaders)) {
 			xhr.setRequestHeader(key, value)
 		}
 		xhr.send(body)

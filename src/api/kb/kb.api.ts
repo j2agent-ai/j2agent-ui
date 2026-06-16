@@ -8,6 +8,7 @@ import {
 	KnowledgeSyncStatusDto
 } from '@/types/kb.model'
 import { globalUrlPrefix, programTag } from '../../oem.js'
+import { appendAuthTokenToUrl } from '@/utils/authenticatedUrl'
 
 export const getKnowledge = (
 	offset: number,
@@ -81,7 +82,11 @@ export const putKnowledge = (knowledgeList: KnowledgeAddDto[]) => {
  * 下载JSON模板
  */
 export const downloadJsonTemplate = () => {
-	window.open(`/v1${globalUrlPrefix}rest/${programTag}/knowledge/json-template`)
+	window.open(
+		appendAuthTokenToUrl(
+			`/v1${globalUrlPrefix}rest/${programTag}/knowledge/json-template`
+		)
+	)
 }
 
 /**
