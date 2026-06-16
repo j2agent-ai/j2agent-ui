@@ -11,14 +11,18 @@ import {
 } from '@/types/ai.types'
 import http from '@ai-system/http/loginInterceptor'
 import { globalUrlPrefix, programTag } from '@/oem.js'
+import { getAuthToken } from '@/utils/token'
 
 export const chatWebsocketClientApi = (contextId: string, agentId: string): WebSocket => {
+	const token = getAuthToken()
+	const authQuery = token ? `&authorization=${encodeURIComponent(token)}` : ''
 	return new WebSocket(
 		window.location.origin.replace('http', 'ws') +
 			`/ws${globalUrlPrefix}rest/${programTag}/chat?context-id=` +
 			contextId +
 			'&agent-id=' +
-			agentId
+			agentId +
+			authQuery
 	)
 }
 

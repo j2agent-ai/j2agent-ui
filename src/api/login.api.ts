@@ -1,13 +1,18 @@
 import http from '@ai-system/http/loginInterceptor'
 import { globalUrlPrefix, programTag } from '@/oem.js'
 
+export interface AuthResult {
+	token: string
+	expiresIn: number
+}
+
 export const login = (
 	username: string,
 	password: string,
 	validateCode: string,
 	hash: string
 ) => {
-	return http.post(`/v1${globalUrlPrefix}auth/${programTag}/login`, {
+	return http.post<AuthResult>(`/v1${globalUrlPrefix}auth/${programTag}/login`, {
 		username,
 		password,
 		validateCode,

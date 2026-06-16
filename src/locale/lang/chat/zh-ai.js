@@ -27,7 +27,7 @@ export default {
 	'ai.turn.error.emptyMessages': '消息不能为空。',
 	'ai.turn.error.contextIdRequired': '缺少会话 ID，请刷新页面。',
 	'ai.turn.error.agentIdRequired': '缺少智能体 ID，请从智能体列表进入。',
-	'ai.turn.error.sessionMissing': '登录已失效，请重新登录。',
+	'ai.turn.error.loginMissing': '登录已失效，请重新登录。',
 	'ai.turn.error.handshake': '连接建立失败，请稍后重试。',
 	'ai.turn.error.internal': '服务内部错误，请稍后重试。',
 	'ai.search.history.context': '搜索历史记录',
