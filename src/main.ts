@@ -3,9 +3,8 @@ import { bindAppRouter } from './routes/router-holder'
 import langLoaders from './locale'
 import { App } from '@ai-system/lib'
 import { ElLoading } from 'element-plus'
-import { getSessionInfo } from '@/api/login.api'
-import { setSessionInfo } from '@/utils/role'
-import { getAuthToken } from '@/utils/token'
+import { bootstrapSessionFromToken } from '@/utils/auth'
+import { consumeAuthorizationFromUrl } from '@/utils/token'
 
 import './styles/index.scss'
 import './styles/markdown.scss'
@@ -19,6 +18,8 @@ document.documentElement.classList.remove('dark')
 localStorage.removeItem('dark-mode')
 
 async function APP() {
+	consumeAuthorizationFromUrl()
+
 	const app = new App({
 		routeType: 'hash',
 		routes,
@@ -34,18 +35,9 @@ async function APP() {
 	// 国际化
 	app.setUpLang([langLoaders])
 
-	const isAuthRoute =
-		location.hash.includes('/login') ||
-		location.hash.includes('/logout') ||
-		location.hash.includes('/register') ||
-		location.hash.includes('/forgot-password')
-	if (!isAuthRoute && getAuthToken()) {
-		try {
-			const sessionResponse = await getSessionInfo()
-			setSessionInfo(sessionResponse.data)
-		} catch (error) {
-			setSessionInfo(null)
-		}
+	const isLogoutRoute = location.hash.includes('/logout')
+	if (!isLogoutRoute) {
+		await bootstrapSessionFromToken()
 	}
 
 	// 挂载路由

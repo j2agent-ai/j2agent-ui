@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { redirectToLogin } from '@/utils/auth'
-import { clearAuthToken, getAuthToken } from '@/utils/token'
+import { getAuthToken } from '@/utils/token'
 
 const http = axios.create({
 	baseURL: '/',
@@ -23,7 +23,7 @@ http.interceptors.response.use(
 		const requestUrl = error.config?.url ?? ''
 		const isPublicAuthApi = requestUrl.includes('/auth/')
 		if ((status === 401 || status === 403) && !isPublicAuthApi) {
-			clearAuthToken()
+			// access_token 与外部系统共用，鉴权失败时不删除，避免破坏外部系统会话
 			redirectToLogin()
 		}
 		return Promise.reject(error)

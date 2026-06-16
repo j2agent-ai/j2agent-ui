@@ -112,7 +112,8 @@ import {
 } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 import { getSessionInfo, login } from '@/api/login.api'
-import { setAuthToken } from '@/utils/token'
+import { bootstrapSessionFromToken } from '@/utils/auth'
+import { getAuthToken, setAuthToken } from '@/utils/token'
 import SlipCaptcha from '@/pages/login/components/SlipCaptcha.vue'
 import AuthPageLayout from '@/pages/login/AuthPageLayout.vue'
 import { loadRegisterEnabled, useRegisterEnabled } from '@/composables/useRegisterEnabled'
@@ -239,6 +240,14 @@ function handleLoginClick() {
 
 onMounted(() => {
 	void loadRegisterEnabled()
+	if (!getAuthToken()) {
+		return
+	}
+	void bootstrapSessionFromToken().then((ok) => {
+		if (ok) {
+			void goTo(resolvePostLoginPath())
+		}
+	})
 })
 </script>
 <style lang="scss" scoped>
