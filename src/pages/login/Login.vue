@@ -112,6 +112,7 @@ import {
 } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 import { getSessionInfo, login } from '@/api/login.api'
+import { setAuthToken } from '@/utils/token'
 import SlipCaptcha from '@/pages/login/components/SlipCaptcha.vue'
 import AuthPageLayout from '@/pages/login/AuthPageLayout.vue'
 import { loadRegisterEnabled, useRegisterEnabled } from '@/composables/useRegisterEnabled'
@@ -198,12 +199,16 @@ async function submitLogin() {
 	}
 	loading.value = true
 	try {
-		await login(
+		const loginResponse = await login(
 			loginData.username,
 			loginData.password,
 			captchaToken.value.code,
 			captchaToken.value.hash
 		)
+		const authResult = loginResponse.data
+		if (authResult?.token && authResult.expiresIn) {
+			setAuthToken(authResult.token, authResult.expiresIn)
+		}
 		try {
 			const sessionResponse = await getSessionInfo()
 			setSessionInfo(sessionResponse.data)

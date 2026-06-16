@@ -63,7 +63,7 @@ class ChatSessionRegistry {
 			resolveTurnErrorMessage: (errorCode, errorMessage) =>
 				resolveTurnErrorDisplayText(errorCode, errorMessage, t),
 			onTurnFailure: (displayMessage, raw) => {
-				if (raw?.errorCode === 'sessionMissing') {
+				if (raw?.errorCode === 'loginMissing') {
 					redirectToLogin()
 					return
 				}

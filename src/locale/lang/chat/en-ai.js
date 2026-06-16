@@ -27,7 +27,7 @@ export default {
 	'ai.turn.error.emptyMessages': 'Messages cannot be empty.',
 	'ai.turn.error.contextIdRequired': 'Missing conversation ID. Please refresh the page.',
 	'ai.turn.error.agentIdRequired': 'Missing agent ID. Open chat from the agent list.',
-	'ai.turn.error.sessionMissing': 'Your session has expired. Please sign in again.',
+	'ai.turn.error.loginMissing': 'Your session has expired. Please sign in again.',
 	'ai.turn.error.handshake': 'Failed to establish connection. Please try again later.',
 	'ai.turn.error.internal': 'An internal error occurred. Please try again later.',
 	'ai.search.history.context': 'Search history records',

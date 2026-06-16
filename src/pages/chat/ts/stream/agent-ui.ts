@@ -182,7 +182,7 @@ export const TURN_ERROR_I18N_KEYS: Record<string, string> = {
 	emptyMessages: 'ai.turn.error.emptyMessages',
 	context_id_not_found: 'ai.turn.error.contextIdRequired',
 	agent_id_not_found: 'ai.turn.error.agentIdRequired',
-	sessionMissing: 'ai.turn.error.sessionMissing',
+	loginMissing: 'ai.turn.error.loginMissing',
 	handshakeError: 'ai.turn.error.handshake',
 	internalError: 'ai.turn.error.internal'
 }

@@ -5,6 +5,7 @@ import { App } from '@ai-system/lib'
 import { ElLoading } from 'element-plus'
 import { getSessionInfo } from '@/api/login.api'
 import { setSessionInfo } from '@/utils/role'
+import { getAuthToken } from '@/utils/token'
 
 import './styles/index.scss'
 import './styles/markdown.scss'
@@ -38,7 +39,7 @@ async function APP() {
 		location.hash.includes('/logout') ||
 		location.hash.includes('/register') ||
 		location.hash.includes('/forgot-password')
-	if (!isAuthRoute) {
+	if (!isAuthRoute && getAuthToken()) {
 		try {
 			const sessionResponse = await getSessionInfo()
 			setSessionInfo(sessionResponse.data)
