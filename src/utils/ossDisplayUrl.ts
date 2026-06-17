@@ -2,7 +2,7 @@ import { appendAuthTokenToUrl } from '@/utils/authenticatedUrl'
 import { globalUrlPrefix, programTag } from '@/oem.js'
 import type { ObjectFileUploadInit } from '@/types/file.types'
 
-/** 展示 URL 由后端 {@code chat-attachment-display} 配置决定，前端不再改写 host（避免 SigV4 签名失效）。 */
+/** 展示 URL 由后端 {@code access-mode} 配置决定，前端不再改写 host（避免 SigV4 签名失效）。 */
 
 export function buildChatAttachmentContentUrl(objectKey: string): string {
 	return appendAuthTokenToUrl(
