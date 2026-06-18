@@ -42,6 +42,7 @@ import topBar from '@/pages/components/topBar.vue'
 import { getNewContextId } from '@/api/ai.api'
 import { goTo } from '@/routes'
 import { hasRoleAccess, ROLE_ADMIN, ROLE_USER } from '@/utils/role'
+import { scheduleDiagramPrefetch } from '@/utils/scheduleDiagramPrefetch'
 
 const route = useRoute()
 const isFullscreen = ref(true)
@@ -104,6 +105,7 @@ onMounted(() => {
 	handleMobileSafariHeight()
 	window.addEventListener('resize', onWindowResize)
 	window.addEventListener('orientationchange', onOrientationChange)
+	scheduleDiagramPrefetch()
 })
 
 onUnmounted(() => {
