@@ -22,7 +22,6 @@
       v-if="!showChatManage || isFullscreen"
       ref="chatViewRef"
       class="chat-view"
-      :class="{ 'is-runtime-booting': diagramRuntimeLoading }"
     >
       <el-scrollbar ref="scrollbarRef" class="scroll" @scroll="checkScroll">
         <div class="message-init">
@@ -31,20 +30,7 @@
             <span v-else class="ai-logo-emoji">{{ effectiveChatLogo }}</span>
           </div>
           <h2 class="title">{{ assistantGreeting }}</h2>
-          <p
-            v-if="diagramRuntimeLoading"
-            class="chat-runtime-boot-status"
-            role="status"
-            aria-live="polite"
-          >
-            <span class="chat-runtime-boot-status-text">{{
-              t('ai.chat.diagramRuntime.loading')
-            }}</span>
-            <span class="chat-runtime-boot-status-dots" aria-hidden="true">
-              <span>.</span><span>.</span><span>.</span>
-            </span>
-          </p>
-          <div v-if="showHotQuestions && !diagramRuntimeLoading" class="hot-questions">
+          <div v-if="showHotQuestions" class="hot-questions">
             <div class="fx hot-questions-title">
               <strong class="fx">
                 <el-icon>
@@ -267,7 +253,7 @@
         </div>
       </el-scrollbar>
       <div
-        v-if="!isAtBottom && !diagramRuntimeLoading"
+        v-if="!isAtBottom"
         class="scroll-to-bottom-button"
         @click="handleScrollToBottomClick"
       >
@@ -275,7 +261,7 @@
           <ArrowDown />
         </ElIcon>
       </div>
-      <div v-show="!diagramRuntimeLoading" class="chat-bottom-dock">
+      <div class="chat-bottom-dock">
         <div
           v-show="suggestedFollowUps.length && !isBusyByState"
           class="suggested-follow-ups"
@@ -487,7 +473,7 @@ import {
 import { appendAuthTokenToUrl } from '@/utils/authenticatedUrl'
 import { processChatImageFile } from '../ts/media/image'
 import { cloneSvgForPreview } from '@/utils/diagramPreview'
-import { waitForDiagramRuntimesReady } from '@/utils/diagramMarkdownRuntime'
+import { preloadDiagramRuntimes } from '@/utils/diagramMarkdownRuntime'
 import {
   buildMarkdownPrefetchRootMargin,
   clearDiagramMarkupCacheForSession,
@@ -495,6 +481,7 @@ import {
   getMarkdownHtmlBlockSource,
   MARKDOWN_RENDERER_REVISION,
   hasPendingMarkdownBlocks,
+  normalizeMarkdownImageParagraphs,
   renderMarkdownCached,
   renderMarkdownBlocks,
   cancelPendingMarkdownRenderWork,
@@ -507,7 +494,6 @@ import { getAgentDisplayName, getAgentLogo, agentNameMap } from '../ts/agent/nam
 
 const showChatManage = ref(false)
 const chatManageRef = ref(null)
-const diagramRuntimeLoading = ref(true)
 /** 聊天主区域根节点，用于写入底部悬浮层高度 CSS 变量 */
 const chatViewRef = ref<HTMLElement>()
 /** 监听消息列表高度变化（图片/iframe/图表异步撑高），跟随态下瞬时贴底 */
@@ -1533,6 +1519,7 @@ const runMarkdownBlocks = () => {
     }
     const scopeRoot = getMarkdownBlocksScope() ?? listRoot
     const renderOptions = buildMarkdownBlocksRenderOptions()
+    normalizeMarkdownImageParagraphs(scopeRoot)
     if (!hasPendingMarkdownBlocks(scopeRoot, renderOptions)) {
       return
     }
@@ -2196,12 +2183,7 @@ watch(
 onMounted(async () => {
   registerSessionRenderCacheEvict(evictSessionRenderCache)
   isChatViewActive.value = true
-  diagramRuntimeLoading.value = true
-  try {
-    await waitForDiagramRuntimesReady()
-  } finally {
-    diagramRuntimeLoading.value = false
-  }
+  preloadDiagramRuntimes()
   await bootstrapAgentSession()
   nextTick(() => {
     chatManageRef.value?.getHistoryListData()
@@ -2556,10 +2538,6 @@ defineExpose({
       }
     }
 
-    &.is-runtime-booting .scroll :deep(.el-scrollbar__view) {
-      padding-bottom: var(--chat-bottom-scroll-gap, 30px);
-    }
-
     .chat-bottom-dock {
       position: absolute;
       /* 对齐 content 区；底边与左侧历史栏卡片底边同一水平线 */
@@ -2618,30 +2596,6 @@ defineExpose({
     font-size: 20px;
     color: var(--n-color-text-primary);
     margin-top: 20px;
-  }
-
-  .chat-runtime-boot-status {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    margin: 16px 0 0;
-    font-size: var(--n-font-size-1, 13px);
-    line-height: 1.5;
-    color: var(--n-color-text-muted);
-    user-select: none;
-  }
-
-  .chat-runtime-boot-status-dots span {
-    animation: chat-runtime-boot-dot 1.2s ease-in-out infinite;
-  }
-
-  .chat-runtime-boot-status-dots span:nth-child(2) {
-    animation-delay: 0.15s;
-  }
-
-  .chat-runtime-boot-status-dots span:nth-child(3) {
-    animation-delay: 0.3s;
   }
 
   .sub-tip {
@@ -3529,19 +3483,5 @@ defineExpose({
 /* ElImageViewer 挂载到 body，需 :global 穿透 scoped */
 :global(.el-image-viewer__close) {
   display: none;
-}
-
-@keyframes chat-runtime-boot-dot {
-  0%,
-  80%,
-  100% {
-    opacity: 0.25;
-    transform: translateY(0);
-  }
-
-  40% {
-    opacity: 1;
-    transform: translateY(-2px);
-  }
 }
 </style>

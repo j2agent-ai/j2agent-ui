@@ -1040,6 +1040,7 @@ export const updateStreamTailSegmentInPlace = (
 
     buildOpenFenceTailDom(root, markdown, scan, oldPending)
     lastStreamTailMarkdown.set(root, text)
+    normalizeMarkdownImageParagraphs(root)
     return
   }
 
@@ -1056,11 +1057,13 @@ export const updateStreamTailSegmentInPlace = (
     syncBlockSource(oldPending, newPending)
     removeChildNodesAfter(root, oldPending)
     lastStreamTailMarkdown.set(root, text)
+    normalizeMarkdownImageParagraphs(root)
     return
   }
 
   root.innerHTML = nextHtml
   lastStreamTailMarkdown.set(root, text)
+  normalizeMarkdownImageParagraphs(root)
 }
 
 let streamTailUpdateRafId = 0
@@ -2700,11 +2703,25 @@ const bindImageLoadNormalization = (img: HTMLImageElement) => {
   }
 }
 
+const collectMarkdownImages = (root: ParentNode | Element): HTMLImageElement[] => {
+  const scoped = Array.from(
+    root.querySelectorAll<HTMLImageElement>('.message-md img')
+  )
+  if (scoped.length > 0) {
+    return scoped
+  }
+  // 流式尾段容器在 .message-md 内，但不是其祖先，无法用 `.message-md img` 命中
+  if (root instanceof Element && root.closest('.message-md')) {
+    return Array.from(root.querySelectorAll<HTMLImageElement>('img'))
+  }
+  return scoped
+}
+
 /**
  * 图片加载成功后压缩单图段落的 line-height；加载失败时保持正常行高，避免 alt 文本叠在一起。
  */
 export const normalizeMarkdownImageParagraphs = (root: ParentNode | Element) => {
-  root.querySelectorAll<HTMLImageElement>('.message-md img').forEach((img) => {
+  collectMarkdownImages(root).forEach((img) => {
     const src = img.getAttribute('src')
     if (src) {
       const normalized = appendAuthTokenToUrl(normalizeRepoFileUrl(src))
