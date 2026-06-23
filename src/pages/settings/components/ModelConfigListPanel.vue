@@ -17,31 +17,27 @@
 			<el-table-column :label="t('providerConfig.col.model')" width="220">
 				<template #default="{ row }">{{ row.config?.modelName ?? '-' }}</template>
 			</el-table-column>
-			<el-table-column :label="t('providerConfig.col.enabled')" width="100">
-				<template #default="{ row }">
-					<el-tag v-if="row.enabled" type="success">{{ t('providerConfig.tag.enabled') }}</el-tag>
-					<el-tag v-else type="info">{{ t('providerConfig.tag.disabled') }}</el-tag>
-				</template>
-			</el-table-column>
 			<el-table-column :label="t('providerConfig.col.current')" width="120">
 				<template #default="{ row }">
 					<el-tag v-if="row.isCurrent" type="warning">{{ t('providerConfig.tag.current') }}</el-tag>
 					<span v-else>-</span>
 				</template>
 			</el-table-column>
-			<el-table-column :label="t('providerConfig.col.actions')" width="260" fixed="right">
+			<el-table-column :label="t('providerConfig.col.actions')" width="300" fixed="right">
 				<template #default="{ row }">
 					<el-button
 						v-if="!row.isCurrent"
 						type="primary"
 						link
-						:disabled="!row.enabled"
 						@click="onActivate(row)"
 					>
 						{{ t('providerConfig.action.activate') }}
 					</el-button>
 					<el-button type="primary" link @click="openEdit(row)">
 						{{ t('providerConfig.action.edit') }}
+					</el-button>
+					<el-button type="primary" link @click="onCopy(row)">
+						{{ t('providerConfig.action.copy') }}
 					</el-button>
 					<el-button type="danger" link :disabled="row.isCurrent" @click="onDelete(row)">
 						{{ t('providerConfig.action.delete') }}
@@ -92,6 +88,7 @@ import { t } from '@ai-system/lib'
 import ProviderConfigForm from './ProviderConfigForm.vue'
 import {
 	activateProviderConfig,
+	copyProviderConfig,
 	createProviderConfig,
 	deleteProviderConfig,
 	listProviderConfigs,
@@ -205,7 +202,6 @@ const hasEmbeddingRuntimeFieldChange = (
 }
 
 const shouldConfirmEmbeddingChangeOnSubmit = (value: {
-	enabled: boolean
 	makeCurrent: boolean
 	providerType: string
 	config: Record<string, unknown>
@@ -214,7 +210,7 @@ const shouldConfirmEmbeddingChangeOnSubmit = (value: {
 		return false
 	}
 	if (dialogMode.value === 'create') {
-		return value.enabled && value.makeCurrent
+		return value.makeCurrent
 	}
 	if (dialogMode.value === 'edit' && editing.value?.isCurrent) {
 		return hasEmbeddingRuntimeFieldChange(editing.value, value.config, value.providerType)
@@ -259,6 +255,16 @@ const onDelete = async (row: ProviderConfigDto) => {
 		if (e !== 'cancel') {
 			ElMessage.error(t('providerConfig.delete.failed'))
 		}
+	}
+}
+
+const onCopy = async (row: ProviderConfigDto) => {
+	try {
+		await copyProviderConfig(row.id)
+		ElMessage.success(t('providerConfig.copy.success'))
+		await fetchList()
+	} catch (e) {
+		ElMessage.error(t('providerConfig.copy.failed'))
 	}
 }
 
@@ -335,19 +341,16 @@ const onSubmit = async () => {
 				providerType: value.providerType,
 				config: cleanedConfig,
 				description: value.description,
-				enabled: value.enabled,
 				makeCurrent: value.makeCurrent
 			})
-			embeddingChanged =
-				props.apiType === 'embedding' && value.enabled && value.makeCurrent
+			embeddingChanged = props.apiType === 'embedding' && value.makeCurrent
 			ElMessage.success(t('providerConfig.create.success'))
 		} else if (editing.value) {
 			await updateProviderConfig(editing.value.id, {
 				configName: value.configName,
 				providerType: value.providerType,
 				config: cleanedConfig,
-				description: value.description,
-				enabled: value.enabled
+				description: value.description
 			})
 			embeddingChanged =
 				props.apiType === 'embedding'

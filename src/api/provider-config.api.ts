@@ -51,3 +51,7 @@ export const deleteProviderConfig = (id: number) => {
 export const activateProviderConfig = (id: number) => {
 	return http.post<ProviderConfigDto>(`${baseUrl}/${id}/activate`)
 }
+
+export const copyProviderConfig = (id: number) => {
+	return http.post<ProviderConfigDto>(`${baseUrl}/${id}/copy`)
+}

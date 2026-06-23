@@ -30,17 +30,11 @@
 				/>
 			</el-select>
 		</el-form-item>
-		<el-form-item>
-			<template #label>
-				<FormFieldLabel :label="t('providerConfig.enabled')" :tip="t('providerConfig.field.enabled.tip')" />
-			</template>
-			<el-switch v-model="formState.enabled" />
-		</el-form-item>
 		<el-form-item v-if="showMakeCurrent">
 			<template #label>
 				<FormFieldLabel :label="t('providerConfig.makeCurrent')" :tip="t('providerConfig.field.makeCurrent.tip')" />
 			</template>
-			<el-switch v-model="formState.makeCurrent" :disabled="!formState.enabled" />
+			<el-switch v-model="formState.makeCurrent" />
 		</el-form-item>
 		<el-form-item>
 			<template #label>
@@ -263,7 +257,6 @@ const THINKING_MODE_OFF = 'off'
 type FormState = {
 	configName: string
 	providerType: string
-	enabled: boolean
 	makeCurrent: boolean
 	description: string
 	config: Record<string, any>
@@ -353,7 +346,6 @@ function normalizeThinkingInForm(config: Record<string, any>, provider: string) 
 const formState = reactive<FormState>({
 	configName: '',
 	providerType: isLlm.value ? 'open-ai' : 'open-ai',
-	enabled: true,
 	makeCurrent: false,
 	description: '',
 	config: buildInitialConfig()
@@ -366,7 +358,6 @@ watch(
 			Object.assign(formState, {
 				configName: '',
 				providerType: isLlm.value ? 'open-ai' : 'open-ai',
-				enabled: true,
 				makeCurrent: false,
 				description: '',
 				config: buildInitialConfig()
@@ -375,7 +366,6 @@ watch(
 		}
 		formState.configName = src.configName
 		formState.providerType = src.providerType
-		formState.enabled = src.enabled
 		formState.makeCurrent = false
 		formState.description = src.description ?? ''
 		const merged = {
