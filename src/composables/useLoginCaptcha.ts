@@ -121,17 +121,4 @@ export function useLoginCaptcha(options: UseLoginCaptchaOptions = {}) {
 	}
 }
 
-/** 从 axios 错误体提取可读 message */
-export function extractApiErrorMessage(
-	error: unknown,
-	fallback: string
-): string {
-	if (typeof error !== 'object' || error === null || !('response' in error)) {
-		return fallback
-	}
-	const data = (error as { response?: { data?: { message?: string; error?: string } } }).response
-		?.data
-	if (data?.message) return data.message
-	if (data?.error) return data.error
-	return fallback
-}
+export { extractApiErrorMessage } from '@/utils/apiError'

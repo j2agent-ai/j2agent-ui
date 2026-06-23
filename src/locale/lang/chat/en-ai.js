@@ -17,6 +17,7 @@ export default {
 	'ai.image.upload.failed': 'Image upload failed',
 	'ai.input.placeholder': 'Please enter your question',
 	'ai.assistant.service.unavailable': 'Service unavailable, please try again later.',
+	'ai.error.system': 'An error occurred. TRACE_ID: {traceId}',
 	'ai.assistant.waiting': 'Please wait for the previous reply to complete',
 	'ai.history.stop.chat.first': 'Please stop the current conversation first',
 	'ai.turn.error.generic': 'The conversation failed. Please try again later.',
