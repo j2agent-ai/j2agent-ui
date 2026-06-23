@@ -1026,6 +1026,10 @@ const handleAttachmentImageError = (attachment: ChatAttachmentDto) => {
     return
   }
   if (isChatAttachmentContentUrl(attachment.url)) {
+    const withAuth = appendAuthTokenToUrl(attachment.url)
+    if (withAuth !== attachment.url) {
+      attachment.url = withAuth
+    }
     return
   }
   attachment.url = buildChatAttachmentContentUrl(attachment.objectKey)
