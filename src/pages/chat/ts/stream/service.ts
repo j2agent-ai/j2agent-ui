@@ -9,6 +9,10 @@ import { chatWebsocketClientApi } from '@/api/ai.api'
 import { getSessionInfo } from '@/api/login.api'
 import type { AgentUiEventEnvelope, ChatRequestDto } from '@/types/ai.types'
 import { redirectToLogin } from '@/utils/auth'
+import {
+	formatApiErrorMessage,
+	formatSystemErrorMessage
+} from '@/utils/apiError'
 import { chatActivityStore } from '../activity/store'
 import type { ChatSessionRuntime } from '../session/types'
 
@@ -57,16 +61,23 @@ const onTurnClose = (session: ChatSessionRuntime) => {
 	})
 }
 
+const systemErrorText = (traceId: string) => t('ai.error.system', { traceId })
+
 const probeSessionAfterHandshakeFailure = async () => {
 	try {
 		await getSessionInfo()
-		ElMessage.error(t('ai.assistant.service.unavailable'))
+		ElMessage.error(formatSystemErrorMessage(systemErrorText))
 	} catch (error) {
 		const status = (error as { response?: { status?: number } })?.response?.status
 		if (status === 401 || status === 403) {
 			redirectToLogin()
 		} else {
-			ElMessage.error(t('ai.assistant.service.unavailable'))
+			ElMessage.error(
+				formatApiErrorMessage(error, {
+					fallback: formatSystemErrorMessage(systemErrorText),
+					formatSystem: systemErrorText
+				})
+			)
 		}
 	}
 }

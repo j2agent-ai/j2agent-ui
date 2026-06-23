@@ -3,6 +3,7 @@
  * 将后端 objectKey / 内网预签名 URL 转为前端可访问的 content 代理地址。
  */
 import type { ChatAttachmentDto } from '@/types/ai.types'
+import { appendAuthTokenToUrl } from '@/utils/authenticatedUrl'
 import {
 	buildChatAttachmentContentUrl,
 	isChatAttachmentContentUrl,
@@ -25,7 +26,7 @@ export function resolveAttachmentDisplayUrl(
 	if (attachment.objectKey) {
 		const url = attachment.url
 		if (url && isChatAttachmentContentUrl(url)) {
-			return attachment
+			return { ...attachment, url: appendAuthTokenToUrl(url) }
 		}
 		// 后端仍下发 MinIO 内网预签名（旧版本或未生效的 proxy 配置）时，改走 content 代理
 		if (!url || isUnreachableOssUrl(url)) {

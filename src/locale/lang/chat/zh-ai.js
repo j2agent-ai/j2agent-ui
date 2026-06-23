@@ -17,6 +17,7 @@ export default {
 	'ai.image.upload.failed': '图片上传失败',
 	'ai.input.placeholder': '请输入问题',
 	'ai.assistant.service.unavailable': '服务不可用，请稍后再试。',
+	'ai.error.system': '发生错误，TRACE_ID: {traceId}',
 	'ai.assistant.waiting': '请等待上一次回复完成',
 	'ai.history.stop.chat.first': '请先停止对话',
 	'ai.turn.error.generic': '对话失败，请稍后重试。',

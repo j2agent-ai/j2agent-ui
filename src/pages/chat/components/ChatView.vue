@@ -471,6 +471,7 @@ import {
   resolveAttachmentsDisplayUrls
 } from '../ts/media/attachment'
 import { appendAuthTokenToUrl } from '@/utils/authenticatedUrl'
+import { formatApiErrorMessage } from '@/utils/apiError'
 import { processChatImageFile } from '../ts/media/image'
 import { cloneSvgForPreview } from '@/utils/diagramPreview'
 import { preloadDiagramRuntimes } from '@/utils/diagramMarkdownRuntime'
@@ -1025,6 +1026,10 @@ const handleAttachmentImageError = (attachment: ChatAttachmentDto) => {
     return
   }
   if (isChatAttachmentContentUrl(attachment.url)) {
+    const withAuth = appendAuthTokenToUrl(attachment.url)
+    if (withAuth !== attachment.url) {
+      attachment.url = withAuth
+    }
     return
   }
   attachment.url = buildChatAttachmentContentUrl(attachment.objectKey)
@@ -2136,8 +2141,13 @@ const showSessionView = async (targetContextId: string) => {
       session.messageContext.value = res.data.messages ?? []
       normalizeMessageAttachmentUrls(session.messageContext.value)
       session.loadedFromServer.value = true
-    } catch {
-      ElMessage.error(t('ai.assistant.service.unavailable'))
+    } catch (error) {
+      ElMessage.error(
+        formatApiErrorMessage(error, {
+          fallback: t('ai.error.system', { traceId: crypto.randomUUID() }),
+          formatSystem: (traceId) => t('ai.error.system', { traceId })
+        })
+      )
     }
   }
 
