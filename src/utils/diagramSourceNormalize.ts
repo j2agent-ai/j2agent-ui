@@ -4,6 +4,140 @@ export const XYCHART_HORIZONTAL_MIN_CATEGORIES = 11
 /** Vega-Lite 多类目时自动倾斜 X 轴标签的阈值 */
 export const VEGA_LITE_MULTI_CATEGORY_THRESHOLD = 8
 
+/** 匹配 pie 扇区起始位置（用于从 title/声明行尾切开）。 */
+const PIE_SLICE_START_PATTERN =
+  /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s"',:]+(?:\s+[^\s"',:]+)*)\s*:\s*[\d.]+/
+
+/** 从一行文本中提取 pie 扇区片段（引号标签、未引号中文/英文标签；忽略逗号/分号分隔）。 */
+const extractPieSliceSegments = (text: string): string[] => {
+  const slices: string[] = []
+  const pattern =
+    /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s"',:]+(?:\s+[^\s"',:]+)*)\s*:\s*([\d.]+)/g
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(text)) !== null) {
+    slices.push(`${match[1].trim()} : ${match[2]}`)
+  }
+  return slices
+}
+
+/** 拆分 `title ...` 行：title 独占一行，后续扇区各占一行。 */
+const splitPieTitleLine = (line: string): string[] => {
+  const indent = line.match(/^[\t ]*/)?.[0] ?? ''
+  const trimmed = line.trimStart()
+  const titleRest = trimmed.match(/^title\b\s*(.*)$/i)?.[1] ?? ''
+  const sliceStart = titleRest.search(PIE_SLICE_START_PATTERN)
+  if (sliceStart < 0) {
+    return [line]
+  }
+  const titleText = titleRest.slice(0, sliceStart).trim()
+  const sliceText = titleRest.slice(sliceStart).trim()
+  const slices = extractPieSliceSegments(sliceText)
+  if (slices.length === 0) {
+    return [line]
+  }
+  const titleLine = titleText
+    ? `${indent}title ${titleText}`
+    : `${indent}title`
+  return [titleLine, ...slices.map((slice) => `${indent}${slice}`)]
+}
+
+/**
+ * 拆分首行 `pie [showData] [title ...] [扇区...]`。
+ * LLM 常把声明、标题与全部扇区压缩到一行。
+ */
+const splitPieDeclarationLine = (line: string): string[] => {
+  const indent = line.match(/^[\t ]*/)?.[0] ?? ''
+  const trimmed = line.trimStart()
+  if (!/^pie\b/i.test(trimmed)) {
+    return [line]
+  }
+
+  const hasShowData = /^pie\b\s+showData\b/i.test(trimmed)
+  const rest = trimmed.replace(/^pie\b(?:\s+showData\b)?\s*/i, '').trim()
+  const header = hasShowData ? `${indent}pie showData` : `${indent}pie`
+
+  if (!rest) {
+    return [header]
+  }
+
+  if (/^title\b/i.test(rest)) {
+    return [header, ...splitPieTitleLine(`${indent}${rest}`)]
+  }
+
+  const sliceStart = rest.search(PIE_SLICE_START_PATTERN)
+  if (sliceStart < 0) {
+    return [header, `${indent}title ${rest}`]
+  }
+
+  if (sliceStart === 0) {
+    const slices = extractPieSliceSegments(rest)
+    return [header, ...slices.map((slice) => `${indent}${slice}`)]
+  }
+
+  const titleText = rest.slice(0, sliceStart).trim()
+  const slices = extractPieSliceSegments(rest.slice(sliceStart))
+  const out: string[] = [header]
+  if (titleText) {
+    out.push(
+      /^title\b/i.test(titleText)
+        ? `${indent}${titleText}`
+        : `${indent}title ${titleText}`
+    )
+  }
+  out.push(...slices.map((slice) => `${indent}${slice}`))
+  return out
+}
+
+/** 将同行多个 pie 扇区拆成多行；title 行若混入扇区则拆开。 */
+const splitMultiplePieSlicesOnLine = (line: string): string[] => {
+  const indent = line.match(/^[\t ]*/)?.[0] ?? ''
+  const trimmed = line.trimStart()
+  if (!trimmed || /^pie\b/i.test(trimmed) || trimmed.startsWith('%%')) {
+    return [line]
+  }
+
+  if (/^title\b/i.test(trimmed)) {
+    return splitPieTitleLine(line)
+  }
+
+  const sliceStart = trimmed.search(PIE_SLICE_START_PATTERN)
+  if (sliceStart > 0) {
+    const prefix = trimmed.slice(0, sliceStart).trim()
+    const slices = extractPieSliceSegments(trimmed.slice(sliceStart))
+    if (prefix && slices.length >= 1) {
+      return [
+        `${indent}title ${prefix}`,
+        ...slices.map((slice) => `${indent}${slice}`)
+      ]
+    }
+  }
+
+  const slices = extractPieSliceSegments(trimmed)
+  if (slices.length <= 1) {
+    return [line]
+  }
+  return slices.map((slice) => `${indent}${slice}`)
+}
+
+/** LLM 常把 pie 声明/标题/扇区压缩到少量行；拆开后 quotePieSliceLines 才能补引号。 */
+const normalizePieMultilineSlices = (source: string) => {
+  if (!/^\s*pie\b/im.test(source)) {
+    return source
+  }
+  let pieHeaderHandled = false
+  const out: string[] = []
+  for (const line of source.split('\n')) {
+    const trimmed = line.trimStart()
+    if (!pieHeaderHandled && /^pie\b/i.test(trimmed)) {
+      out.push(...splitPieDeclarationLine(line))
+      pieHeaderHandled = true
+      continue
+    }
+    out.push(...splitMultiplePieSlicesOnLine(line))
+  }
+  return out.join('\n')
+}
+
 /**
  * 为 pie 图中未加引号的扇区标签补引号（含括号、空格时 lexer 会失败）。
  */
@@ -359,6 +493,7 @@ export const normalizeMermaidSource = (source: string) => {
   text = normalizeFlowchartSubgraphLabels(text)
   text = normalizeFlowchartMultilineNodeDefs(text)
   text = normalizeFlowchartMultilineEdges(text)
+  text = normalizePieMultilineSlices(text)
   text = quotePieSliceLines(text)
   return normalizeXychartOrientation(text)
 }
