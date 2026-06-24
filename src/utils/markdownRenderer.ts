@@ -1225,6 +1225,9 @@ const isBlockPendingRender = (
   if (isAsyncBlock && !isAsyncDiagramBlockReady(block, options)) {
     return false
   }
+  if (block.classList.contains('md-diagram-error')) {
+    return false
+  }
   const alreadyRendered = block.getAttribute(MARKDOWN_RENDERED_ATTR) === 'true'
   if (!alreadyRendered) {
     return true
@@ -1501,6 +1504,12 @@ const renderWithViewportScheduling = async (
           heavyInFlight = Math.max(0, heavyInFlight - 1)
         }
         inFlight.delete(block)
+        if (
+          block.getAttribute(MARKDOWN_RENDERED_ATTR) === 'true' ||
+          block.classList.contains('md-diagram-error')
+        ) {
+          remaining.delete(block)
+        }
         scheduleDrain()
         maybeFinish()
       })
@@ -1989,6 +1998,8 @@ const setBlockError = (block: Element, error: unknown) => {
       '</details>'
     ].join('')
   }
+  block.setAttribute(MARKDOWN_RENDERED_ATTR, 'true')
+  block.setAttribute(MARKDOWN_REVISION_ATTR, MARKDOWN_RENDERER_REVISION)
 }
 
 const mountDiagramMarkup = (body: HTMLElement, markup: string) => {
