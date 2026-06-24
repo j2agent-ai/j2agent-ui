@@ -210,5 +210,18 @@ onUnmounted(() => {
 			margin-right: 0;
 		}
 	}
+
+	/* 与 layout.ts CHAT_MOBILE_COMPACT_MEDIA_MAX_PX（599）同步 */
+	@media (max-width: 600px) {
+		&.mobile-page {
+			--n-topbar-height: 44px;
+		}
+
+		.menu-button {
+			width: 26px;
+			height: 26px;
+			font-size: 18px;
+		}
+	}
 }
 </style>

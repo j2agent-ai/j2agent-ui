@@ -2420,6 +2420,8 @@ defineExpose({
       .hot-questions {
         align-self: center;
         min-width: 0;
+        min-height: 120px;
+        max-height: 240px;
         width: var(--chat-hot-questions-width);
         max-width: var(--chat-hot-questions-width);
         margin-top: 20px;
@@ -3457,35 +3459,84 @@ defineExpose({
   }
 }
 
-/* 手机设备样式 */
+/* 手机紧凑：与 layout.ts CHAT_MOBILE_COMPACT_MEDIA_MAX_PX（599）同步 */
 @media only screen and (max-width: 600px) {
   .chat-container.is-mobile {
-    --chat-content-h-pad: 14px;
-    --chat-init-top-gap: 64px;
+    --chat-content-h-pad: 12px;
+    --chat-init-top-gap: 48px;
+    --chat-hot-questions-width: 92%;
+
+    .chat-view {
+      --chat-bottom-reserve: 118px;
+      --chat-input-expanded-height: 132px;
+    }
 
     .ai-logo {
-      width: 160px;
+      width: 110px;
     }
 
     .ai-logo-emoji {
-      font-size: 52px;
+      font-size: 44px;
     }
 
     .message-init {
-      padding: 14px 0;
+      padding: 8px 0;
 
       .title {
-        font-size: 16px;
-        margin-top: 14px;
+        font-size: 14px;
+        margin-top: 10px;
       }
 
       .hot-questions {
-        padding: 14px 16px;
+        margin-top: 12px;
+        padding: 10px 12px;
+        font-size: 11px;
+        min-height: 96px;
+        max-height: 200px;
+
+        .hot-questions-title {
+          margin-bottom: 8px;
+          font-size: 12px;
+        }
+
+        .question-list .question {
+          margin-bottom: 8px;
+          line-height: 1.4;
+
+          .qa {
+            font-size: 10px;
+            height: 18px;
+            line-height: 18px;
+          }
+        }
       }
     }
 
     .message-init .sub-tip {
       font-size: 14px;
+    }
+
+    .message-list {
+      --chat-message-avatar-size: 32px;
+
+      .message-row .message-content {
+        padding: 8px 10px;
+        min-height: 36px;
+      }
+    }
+
+    .input-area {
+      --chat-input-inset-x: 12px;
+      --chat-input-inset-y: 10px;
+      --chat-input-action-size: 28px;
+
+      &:not(.is-input-editing) .el-textarea.chat-input {
+        :deep(.el-textarea__inner) {
+          min-height: 72px;
+          height: 72px !important;
+          max-height: 72px;
+        }
+      }
     }
   }
 }
