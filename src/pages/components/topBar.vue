@@ -364,6 +364,10 @@ const hideUserMenu = () => {
 			margin-left: 10px;
 			max-width: calc(100% - 120px);
 
+			.top-bar-logo {
+				height: 28px;
+			}
+
 			.title-text,
 			.title-suffix__name,
 			.title-text :deep(.el-tooltip__trigger) {
@@ -399,6 +403,55 @@ const hideUserMenu = () => {
 			.user-avatar {
 				width: 26px;
 				height: 26px;
+			}
+		}
+	}
+
+	/* 手机紧凑：与 layout.ts CHAT_MOBILE_COMPACT_MEDIA_MAX_PX（599）同步 */
+	@media (max-width: 600px) {
+		.tittle {
+			margin-left: 8px;
+			max-width: calc(100% - 132px);
+
+			.top-bar-logo {
+				height: 24px;
+			}
+
+			.title-text,
+			.title-suffix__name,
+			.title-text :deep(.el-tooltip__trigger) {
+				font-size: 14px;
+				height: 28px;
+				line-height: 28px;
+			}
+
+			.title-suffix__sep {
+				width: 14px;
+				height: 28px;
+				font-size: 14px;
+			}
+
+			.title-suffix__name {
+				height: 28px;
+				line-height: 28px;
+			}
+		}
+
+		.menu-button-box {
+			.menu-button {
+				width: 28px;
+				height: 28px;
+				font-size: 18px;
+
+				svg {
+					width: 18px;
+					height: 18px;
+				}
+			}
+
+			.user-avatar {
+				width: 24px;
+				height: 24px;
 			}
 		}
 	}
