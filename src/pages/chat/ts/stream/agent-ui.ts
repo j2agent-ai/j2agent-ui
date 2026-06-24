@@ -8,6 +8,7 @@ import type {
 	TurnStepItem,
 	TurnStepStatus
 } from '@/types/ai.types'
+import { agentNameMap, registeredAgents } from '../agent/name-registry'
 
 // ---------------------------------------------------------------------------
 // 状态机文案与步骤展示
@@ -102,6 +103,19 @@ const STATE_MAP: Record<string, { zh: string; en: string }> = {
 
 const TOOL_NAME_STATES: AgentState[] = ['CALLING_TOOL', 'LOAD_SKILL']
 
+const isSubAgentCallTrailName = (name?: string) => {
+	if (!name?.trim()) {
+		return false
+	}
+	const trimmed = name.trim()
+	if (agentNameMap.value.has(trimmed)) {
+		return true
+	}
+	return registeredAgents.value.some(
+		(a) => a.agentId === trimmed || a.name?.trim() === trimmed
+	)
+}
+
 export const getCurrentLocale = () => {
 	const browserLang = navigator.language?.toLowerCase?.() || 'zh-cn'
 	return browserLang.startsWith('en') ? 'en' : 'zh'
@@ -119,7 +133,14 @@ export const formatStepLabelParts = (
 	step: Pick<TurnStepItem, 'state' | 'toolName'>,
 	locale?: 'zh' | 'en'
 ) => {
-	const stateText = getStateI18nText(step.state, locale)
+	const lang = locale ?? getCurrentLocale()
+	let stateText = getStateI18nText(step.state, locale)
+	if (
+		step.state === 'CALLING_TOOL' &&
+		isSubAgentCallTrailName(step.toolName)
+	) {
+		stateText = lang === 'en' ? 'Calling sub-agent' : '调用子智能体'
+	}
 	const toolName =
 		TOOL_NAME_STATES.includes(step.state) && step.toolName?.trim()
 			? step.toolName.trim()

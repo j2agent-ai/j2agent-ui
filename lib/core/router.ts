@@ -11,7 +11,7 @@ import {
 } from '@ai-system/utils'
 import { t } from '@ai-system/locale'
 import { getUserRole, hasRoleAccess, ROLE_USER } from '@/utils/role'
-import { NAV_POST_LOGIN_PATH_KEY } from '@/routes/index'
+import { NAV_POST_LOGIN_PATH_KEY, DEFAULT_USER_LANDING_PATH } from '@/routes/index'
 import type { Router, RouteRecordRaw } from 'vue-router'
 
 function optimizeRoutes(routes: RouteRecordRaw[]) {
@@ -62,7 +62,7 @@ export function createWebRouter({ routes, routeBase, routeType }): Router {
 			return '/login'
 		}
 		if (!hasRoleAccess(requiredRole)) {
-			return { path: requiredRole <= ROLE_USER ? '/agents' : '/' }
+			return requiredRole <= ROLE_USER ? DEFAULT_USER_LANDING_PATH : '/'
 		}
 		return true
 	})
