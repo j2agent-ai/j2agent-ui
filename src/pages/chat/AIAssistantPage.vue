@@ -44,6 +44,10 @@ import {
 	getAgentDisplayName,
 	registeredAgents
 } from './ts/agent/name-registry'
+import {
+	UNIVERSAL_ASSISTANT_ID,
+	UNIVERSAL_ASSISTANT_SHOW_HOT_QUESTIONS
+} from './ts/agent/universal-assistant'
 import { CHAT_NARROW_LAYOUT_MAX_WIDTH_PX, isChatNarrowLayout } from './ts/layout'
 
 const route = useRoute()
@@ -59,6 +63,9 @@ const agentIdFromRoute = computed(() => {
 
 /** 由 Agent 元数据 showHotQuestions 决定是否展示热门问题 */
 const showHotQuestions = computed(() => {
+	if (agentIdFromRoute.value === UNIVERSAL_ASSISTANT_ID) {
+		return UNIVERSAL_ASSISTANT_SHOW_HOT_QUESTIONS
+	}
 	const hit = registeredAgents.value.find((a) => a.agentId === agentIdFromRoute.value)
 	return hit?.showHotQuestions === true
 })

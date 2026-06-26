@@ -3,11 +3,20 @@
 		class="ai-assistant-page"
 		:class="{ 'full-page': isFullscreen, 'mobile-page': isMobile }"
 	>
-		<top-bar/>
+		<top-bar />
 		<!-- 功能导航卡片 -->
 		<div class="feature-cards">
-			<div class="feature-card" v-if="canAccessChat" @click="goTo('/agents')">
+			<div
+				class="feature-card"
+				v-if="canAccessChat"
+				@click="goTo(AI_HUB_CHAT_PATH)"
+			>
 				<div class="card-icon">🤖</div>
+				<h3>{{ t('ai.hub') }}</h3>
+				<p>{{ t('ai.hub.desc') }}</p>
+			</div>
+			<div class="feature-card" v-if="canAccessChat" @click="goTo('/agents')">
+				<div class="card-icon">💡</div>
 				<h3>{{ t('ai.assistant') }}</h3>
 				<p>{{ t('ai.assistant.desc') }}</p>
 			</div>
@@ -41,6 +50,7 @@ import { debounce, t } from '@ai-system/lib'
 import topBar from '@/pages/components/topBar.vue'
 import { getNewContextId } from '@/api/ai.api'
 import { goTo } from '@/routes'
+import { AI_HUB_CHAT_PATH } from '@/pages/chat/ts/agent/universal-assistant'
 import { hasRoleAccess, ROLE_ADMIN, ROLE_USER } from '@/utils/role'
 import { scheduleDiagramPrefetch } from '@/utils/scheduleDiagramPrefetch'
 

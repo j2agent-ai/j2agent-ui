@@ -6,6 +6,10 @@ import { ref } from 'vue'
 import { getAgentList } from '@/api/ai.api'
 import type { AgentInfoDto } from '@/types/ai.types'
 import { hasRoleAccess, ROLE_USER } from '@/utils/role'
+import {
+	UNIVERSAL_ASSISTANT_DISPLAY_NAME,
+	UNIVERSAL_ASSISTANT_ID
+} from './universal-assistant'
 
 const canLoadAgentNames = () => hasRoleAccess(ROLE_USER)
 
@@ -26,6 +30,7 @@ export function extractAgentsPayload(res: {
 const applyAgents = (agents: AgentInfoDto[]) => {
 	registeredAgents.value = agents
 	const map = new Map<string, string>()
+	map.set(UNIVERSAL_ASSISTANT_ID, UNIVERSAL_ASSISTANT_DISPLAY_NAME)
 	for (const agent of agents) {
 		map.set(agent.agentId, agent.name?.trim() || agent.agentId)
 	}

@@ -19,6 +19,7 @@ import {
 	isTerminalAgentState,
 	resolveRendererKey
 } from './agent-ui'
+import { getAgentDisplayName } from '../agent/name-registry'
 import { resolveAttachmentsDisplayUrls } from '../media/attachment'
 
 type DispatcherOptions = {
@@ -299,6 +300,23 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		}
 	}
 
+	const parseAgentIdFromArguments = (
+		argumentsJson: unknown
+	): string | undefined => {
+		if (typeof argumentsJson !== 'string' || !argumentsJson.trim()) {
+			return undefined
+		}
+		try {
+			const parsed = JSON.parse(argumentsJson) as Record<string, unknown>
+			const agentId = parsed.agentId
+			return typeof agentId === 'string' && agentId.trim()
+				? agentId.trim()
+				: undefined
+		} catch {
+			return undefined
+		}
+	}
+
 	/** LOAD_SKILL 轨迹括号内优先展示 skillName（含 relative_path），否则回退 toolName。 */
 	const resolveTrailDisplayName = (event: AgentUiEventEnvelope) => {
 		if (event.eventType !== 'TOOL') {
@@ -319,7 +337,18 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 				return relativePath ? `${skillId}/${relativePath}` : skillId
 			}
 		}
-		return resolveToolName(event)
+		const toolName = resolveToolName(event)
+		if (
+			toolName === 'call_sub_agent' ||
+			toolName === 'delegate_to_agent' ||
+			toolName === 'call_agent'
+		) {
+			const agentId = parseAgentIdFromArguments(payload.arguments)
+			if (agentId) {
+				return getAgentDisplayName(agentId)
+			}
+		}
+		return toolName
 	}
 
 	/**

@@ -2,6 +2,8 @@ import { aiIntroducePrefixZh, webTitleZh } from '@/oem.js'
 
 export default {
 	'ai.title': webTitleZh,
+	'ai.hub': 'AI助手',
+	'ai.hub.desc': '智能识别意图并自动调度专业智能体',
 	'ai.assistant': '智能体',
 	'ai.assistant.desc': '选择智能体并开始对话',
 	'ai.agent.list.title': '选择智能体',

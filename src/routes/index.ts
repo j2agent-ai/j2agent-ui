@@ -8,6 +8,7 @@ import mcp from '@/routes/mcp'
 import settings from '@/routes/settings'
 import account from '@/routes/account'
 import files from '@/routes/files'
+import { AI_HUB_CHAT_PATH } from '@/pages/chat/ts/agent/universal-assistant'
 
 // 业务系统路由定义
 const routes = [
@@ -49,6 +50,8 @@ export default routes
 
 /** 登录成功后回跳路径（auth guard 写入，Login 读取后清除） */
 export const NAV_POST_LOGIN_PATH_KEY = 'app:postLoginPath'
+/** 普通用户（非管理员）登录后的默认落点：平台通用助手 */
+export const DEFAULT_USER_LANDING_PATH = AI_HUB_CHAT_PATH
 /** 智能体列表进入聊天时强制新建会话（AgentListPage 写入，ChatView 读取后清除） */
 export const NAV_FORCE_NEW_CHAT_KEY = 'app:forceNewChat'
 

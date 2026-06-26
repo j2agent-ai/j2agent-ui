@@ -471,7 +471,7 @@ import {
   resolveAttachmentsDisplayUrls
 } from '../ts/media/attachment'
 import { appendAuthTokenToUrl } from '@/utils/authenticatedUrl'
-import { formatApiErrorMessage } from '@/utils/apiError'
+import { formatApiErrorMessage, isSystemApiError } from '@/utils/apiError'
 import { processChatImageFile } from '../ts/media/image'
 import { cloneSvgForPreview } from '@/utils/diagramPreview'
 import { preloadDiagramRuntimes } from '@/utils/diagramMarkdownRuntime'
@@ -2138,10 +2138,16 @@ const showSessionView = async (targetContextId: string) => {
   ) {
     try {
       const res = await getHistoryContext(targetContextId, props.agentId)
-      session.messageContext.value = res.data.messages ?? []
+      session.messageContext.value = res.data?.messages ?? []
       normalizeMessageAttachmentUrls(session.messageContext.value)
       session.loadedFromServer.value = true
     } catch (error) {
+      console.error('[ChatView] load history failed', error)
+      if (!isSystemApiError(error)) {
+        session.messageContext.value = []
+        session.loadedFromServer.value = true
+        return
+      }
       ElMessage.error(
         formatApiErrorMessage(error, {
           fallback: t('ai.error.system', { traceId: crypto.randomUUID() }),

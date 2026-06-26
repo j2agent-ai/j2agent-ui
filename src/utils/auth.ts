@@ -1,5 +1,5 @@
 import { getSessionInfo } from '@/api/login.api'
-import { goTo, NAV_POST_LOGIN_PATH_KEY } from '@/routes'
+import { goTo, DEFAULT_USER_LANDING_PATH, NAV_POST_LOGIN_PATH_KEY } from '@/routes'
 import { hasRoleAccess, ROLE_ADMIN, setSessionInfo } from '@/utils/role'
 import { getAuthToken } from '@/utils/token'
 
@@ -21,7 +21,7 @@ export const resolvePostLoginPath = (): string => {
 	} catch {
 		/* ignore */
 	}
-	return hasRoleAccess(ROLE_ADMIN) ? '/' : '/agents'
+	return hasRoleAccess(ROLE_ADMIN) ? '/' : DEFAULT_USER_LANDING_PATH
 }
 
 export async function bootstrapSessionFromToken(): Promise<boolean> {

@@ -2,6 +2,8 @@ import { aiIntroducePrefixEn, webTitleEn } from '@/oem.js'
 
 export default {
 	'ai.title': webTitleEn,
+	'ai.hub': 'AI Assistant',
+	'ai.hub.desc': 'Recognize intent and route to specialist agents',
 	'ai.assistant': 'Agents',
 	'ai.assistant.desc': 'Choose an agent to start chatting',
 	'ai.agent.list.title': 'Choose an agent',
