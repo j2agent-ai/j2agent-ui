@@ -524,11 +524,18 @@ let userScrollIdleTimer: ReturnType<typeof setTimeout> | null = null
 const USER_SCROLL_IDLE_MS = 200
 /** 自动下滚的统一条件：处于贴底区域（按钮已隐藏）且用户当前没有在滚动 */
 const shouldAutoScroll = () => isAtBottom.value && !userScrolling
+
 /**
  * 仅展示后端标记为可展示的消息；displayInChat === false 的条目仍保留在上下文中，但不渲染气泡。
+ * system/tool 无气泡 UI，过滤以免空 message-row 撑大间距。
  */
 const visibleMessageContext = computed(() =>
-  messageContext.value.filter((m) => m.displayInChat !== false)
+  messageContext.value.filter(
+    (m) =>
+      m.displayInChat !== false &&
+      m.role !== 'system' &&
+      m.role !== 'tool'
+  )
 )
 const imageInputRef = ref<HTMLInputElement>()
 const isDragOverImages = ref(false)

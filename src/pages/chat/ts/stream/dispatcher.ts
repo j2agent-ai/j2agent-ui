@@ -488,8 +488,7 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 			return
 		}
 		if (serverMessage.role === 'system') {
-			// system 消息直接作为独立条目展示。
-			messageContext.value.push(serverMessage)
+			// 协议类 system 事件不入气泡列表（无对应 UI，空行会撑大 message-row 间距）。
 			return
 		}
 		if (serverMessage.role !== 'assistant') {
@@ -614,12 +613,7 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		if (!notice || key === 'ignore') {
 			return
 		}
-		// 当前先以系统文本兜底展示，后续可替换为独立 notice 组件。
-		messageContext.value.push({
-			index: messageContext.value.length,
-			role: 'system',
-			content: `[${key}] ${notice}`
-		})
+		// NOTICE 由 suggestedFollowUps / 专用组件承接，不写入 messageContext 气泡列表。
 	}
 
 	/**
