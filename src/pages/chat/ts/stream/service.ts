@@ -19,20 +19,20 @@ export const detachWebSocket = (ws: WebSocket | undefined) => {
 		return
 	}
 	try {
-		ws.onopen = null
-		ws.onmessage = null
-		ws.onerror = null
-		ws.onclose = null
-	} catch {
-		/* ignore */
-	}
-	try {
 		if (
 			ws.readyState === WebSocket.OPEN ||
 			ws.readyState === WebSocket.CONNECTING
 		) {
-			ws.close()
+			ws.close(1000, 'user interrupt')
 		}
+	} catch {
+		/* ignore */
+	}
+	try {
+		ws.onopen = null
+		ws.onmessage = null
+		ws.onerror = null
+		ws.onclose = null
 	} catch {
 		/* ignore */
 	}
