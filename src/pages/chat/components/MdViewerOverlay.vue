@@ -19,19 +19,21 @@
 								<button
 									type="button"
 									class="md-viewer-nav-btn"
-									:class="{ 'is-disabled': !infinite && isFirst }"
+									:class="{ 'is-disabled': isNavDisabled || (!infinite && isFirst) }"
+									:disabled="isNavDisabled"
 									:aria-label="t('mdViewer.prev')"
 									@click="prev"
 								>
 									<ElIcon><ArrowLeft /></ElIcon>
 								</button>
 								<span class="md-viewer-progress">
-									{{ activeIndex + 1 }} / {{ sources.length }}
+									{{ activeIndex + 1 }} / {{ viewerSources.length }}
 								</span>
 								<button
 									type="button"
 									class="md-viewer-nav-btn"
-									:class="{ 'is-disabled': !infinite && isLast }"
+									:class="{ 'is-disabled': isNavDisabled || (!infinite && isLast) }"
+									:disabled="isNavDisabled"
 									:aria-label="t('mdViewer.next')"
 									@click="next"
 								>
@@ -138,11 +140,15 @@ import {
 	preloadDiagramRuntimes,
 	renderMarkdownCached,
 	renderMarkdownBlocks,
-	buildMdViewerPrefetchRootMargin
+	buildMdViewerPrefetchRootMargin,
+	cancelPendingMarkdownRenderWork,
+	pauseDiagramReflowInRoot
 } from '@/utils/markdownRenderer'
 import {
 	normalizeMarkdownRepoFileUrls,
-	rewriteMarkdownRelativeRepoUrls
+	parseRepoMarkdownLinkTarget,
+	rewriteMarkdownRelativeRepoUrls,
+	type RepoMarkdownLinkTarget
 } from '@/utils/repoFileUrl'
 import {
 	appendAuthTokenToUrl,
@@ -174,13 +180,29 @@ const emit = defineEmits<{
 
 const overlayRef = ref<HTMLElement>()
 const contentRef = ref<HTMLElement>()
+const viewerSources = ref<MdViewerSource[]>([])
 const activeIndex = ref(0)
+const pendingHash = ref<string | undefined>()
 const loading = ref(false)
 const error = ref('')
 const rawMarkdown = ref('')
 let fetchToken = 0
 let activateToken = 0
+let navigationEpoch = 0
+let loadDebounceTimer = 0
 let preloadStarted = false
+
+type CachedViewerDoc = {
+	rawMarkdown: string
+	renderedHtml: string
+}
+
+const viewerDocCache = new Map<string, CachedViewerDoc>()
+
+const cacheKeyForSource = (source: MdViewerSource) =>
+	source.relativePath?.trim() || source.url
+
+const isNavDisabled = computed(() => loading.value)
 
 const imagePreviewVisible = ref(false)
 const imagePreviewUrlList = ref<string[]>([])
@@ -192,13 +214,13 @@ const htmlPreviewVisible = ref(false)
 const htmlPreviewSources = ref<string[]>([])
 const htmlPreviewIndex = ref(0)
 
-const isSingle = computed(() => props.sources.length <= 1)
+const isSingle = computed(() => viewerSources.value.length <= 1)
 const isFirst = computed(() => activeIndex.value <= 0)
 const isLast = computed(
-	() => activeIndex.value >= props.sources.length - 1
+	() => activeIndex.value >= viewerSources.value.length - 1
 )
 const currentSource = computed(
-	() => props.sources[activeIndex.value] ?? null
+	() => viewerSources.value[activeIndex.value] ?? null
 )
 const currentTitle = computed(() => currentSource.value?.title || '')
 
@@ -267,8 +289,35 @@ const syncRenderedHtml = () => {
 	renderedHtml.value = markdown ? renderMarkdownCached(markdown) : ''
 }
 
-const loadCurrentSource = async () => {
+const rememberCurrentDocInCache = () => {
+	const source = currentSource.value
+	if (!source?.url || !rawMarkdown.value) {
+		return
+	}
+	viewerDocCache.set(cacheKeyForSource(source), {
+		rawMarkdown: rawMarkdown.value,
+		renderedHtml: renderedHtml.value
+	})
+}
+
+const cancelInFlightMarkdownWork = () => {
 	activateToken++
+	pauseDiagramReflowInRoot(contentRef.value)
+	cancelPendingMarkdownRenderWork(contentRef.value ?? null)
+}
+
+const scheduleLoadCurrentSource = () => {
+	if (loadDebounceTimer) {
+		window.clearTimeout(loadDebounceTimer)
+	}
+	loadDebounceTimer = window.setTimeout(() => {
+		loadDebounceTimer = 0
+		void loadCurrentSource()
+	}, 80)
+}
+
+const loadCurrentSource = async () => {
+	const epoch = ++navigationEpoch
 	const source = currentSource.value
 	if (!source?.url) {
 		rawMarkdown.value = ''
@@ -277,31 +326,78 @@ const loadCurrentSource = async () => {
 		loading.value = false
 		return
 	}
+
+	const cacheKey = cacheKeyForSource(source)
+	const cached = viewerDocCache.get(cacheKey)
+	if (cached) {
+		cancelInFlightMarkdownWork()
+		if (epoch !== navigationEpoch) {
+			return
+		}
+		rawMarkdown.value = cached.rawMarkdown
+		renderedHtml.value = cached.renderedHtml
+		error.value = ''
+		loading.value = false
+		await nextTick()
+		if (epoch !== navigationEpoch) {
+			return
+		}
+		if (contentRef.value) {
+			contentRef.value.scrollTop = 0
+		}
+		return
+	}
+
+	cancelInFlightMarkdownWork()
 	const token = ++fetchToken
 	loading.value = true
 	error.value = ''
 	rawMarkdown.value = ''
+	renderedHtml.value = ''
 	try {
 		const response = await authenticatedFetch(source.url)
 		if (!response.ok) {
 			throw new Error(`HTTP ${response.status}`)
 		}
 		const text = await response.text()
-		if (token !== fetchToken) {
+		if (token !== fetchToken || epoch !== navigationEpoch) {
 			return
 		}
 		rawMarkdown.value = text
 		syncRenderedHtml()
+		rememberCurrentDocInCache()
 	} catch {
-		if (token !== fetchToken) {
+		if (token !== fetchToken || epoch !== navigationEpoch) {
 			return
 		}
 		error.value = t('mdViewer.loadFailed')
 	} finally {
-		if (token === fetchToken) {
+		if (token === fetchToken && epoch === navigationEpoch) {
 			loading.value = false
 		}
 	}
+}
+
+const scrollToPendingHash = () => {
+	const hash = pendingHash.value
+	if (!hash || !contentRef.value) {
+		return
+	}
+	pendingHash.value = undefined
+	const target = contentRef.value.querySelector(hash)
+	target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+let activateDebounceTimer = 0
+
+const scheduleActivateMarkdown = () => {
+	if (activateDebounceTimer) {
+		window.clearTimeout(activateDebounceTimer)
+	}
+	activateDebounceTimer = window.setTimeout(() => {
+		activateDebounceTimer = 0
+		void activateMarkdown()
+	}, 80)
 }
 
 const activateMarkdown = async () => {
@@ -310,6 +406,7 @@ const activateMarkdown = async () => {
 	if (!root) {
 		return
 	}
+	const indexAtStart = activeIndex.value
 	const token = ++activateToken
 	await renderMarkdownBlocks(root, {
 		scrollRoot: root,
@@ -318,9 +415,10 @@ const activateMarkdown = async () => {
 		prefetchRootMargin: buildMdViewerPrefetchRootMargin(root),
 		lazy: true
 	})
-	if (token !== activateToken) {
+	if (token !== activateToken || indexAtStart !== activeIndex.value) {
 		return
 	}
+	scrollToPendingHash()
 }
 
 const ensureDiagramPreload = () => {
@@ -332,10 +430,10 @@ const ensureDiagramPreload = () => {
 }
 
 const setActiveIndex = (index: number) => {
-	if (!props.sources.length) {
+	if (!viewerSources.value.length) {
 		return
 	}
-	const len = props.sources.length
+	const len = viewerSources.value.length
 	let nextIndex = index
 	if (props.infinite) {
 		nextIndex = ((index % len) + len) % len
@@ -345,7 +443,43 @@ const setActiveIndex = (index: number) => {
 	activeIndex.value = nextIndex
 }
 
+const navigateToMarkdown = (
+	parsed: RepoMarkdownLinkTarget,
+	linkTitle?: string
+) => {
+	const title =
+		linkTitle?.trim() ||
+		parsed.relativePath.split('/').pop() ||
+		'document.md'
+	const existingIdx = viewerSources.value.findIndex(
+		(source) => source.relativePath === parsed.relativePath
+	)
+	pendingHash.value = parsed.hash
+	if (existingIdx >= 0) {
+		const sameDoc = existingIdx === activeIndex.value
+		setActiveIndex(existingIdx)
+		if (sameDoc && !loading.value && renderedHtml.value) {
+			void nextTick(() => scrollToPendingHash())
+		}
+	} else {
+		viewerSources.value.push({
+			url: parsed.url,
+			title,
+			relativePath: parsed.relativePath
+		})
+		activeIndex.value = viewerSources.value.length - 1
+	}
+	void nextTick(() => {
+		if (contentRef.value) {
+			contentRef.value.scrollTop = 0
+		}
+	})
+}
+
 const prev = () => {
+	if (isNavDisabled.value) {
+		return
+	}
 	if (!props.infinite && isFirst.value) {
 		return
 	}
@@ -353,6 +487,9 @@ const prev = () => {
 }
 
 const next = () => {
+	if (isNavDisabled.value) {
+		return
+	}
 	if (!props.infinite && isLast.value) {
 		return
 	}
@@ -502,6 +639,30 @@ const handleContentClick = (event: MouseEvent) => {
 		return
 	}
 
+	const link = target.closest('a')
+	if (link instanceof HTMLAnchorElement) {
+		const href = link.getAttribute('href') ?? ''
+		if (href.startsWith('#')) {
+			event.preventDefault()
+			event.stopPropagation()
+			messageContent.querySelector(href)?.scrollIntoView({
+				behavior: 'smooth',
+				block: 'start'
+			})
+			return
+		}
+		const parsed = parseRepoMarkdownLinkTarget(
+			href,
+			currentSource.value?.relativePath
+		)
+		if (parsed) {
+			event.preventDefault()
+			event.stopPropagation()
+			navigateToMarkdown(parsed, link.textContent?.trim())
+			return
+		}
+	}
+
 	const htmlPreviewWrap = target.closest(
 		'.md-html-preview-wrap:not(.md-block-pending)'
 	)
@@ -570,12 +731,15 @@ watch(
 			prevBodyOverflow = document.body.style.overflow
 			document.body.style.overflow = 'hidden'
 			registerKeydownListener()
+			viewerSources.value = [...props.sources]
 			activeIndex.value = Math.min(
 				Math.max(props.initialIndex, 0),
-				Math.max(props.sources.length - 1, 0)
+				Math.max(viewerSources.value.length - 1, 0)
 			)
+			pendingHash.value = undefined
+			viewerDocCache.clear()
 			ensureDiagramPreload()
-			void loadCurrentSource()
+			scheduleLoadCurrentSource()
 			nextTick(() => overlayRef.value?.focus())
 			return
 		}
@@ -583,6 +747,19 @@ watch(
 		document.body.style.overflow = prevBodyOverflow
 		fetchToken++
 		activateToken++
+		navigationEpoch++
+		if (loadDebounceTimer) {
+			window.clearTimeout(loadDebounceTimer)
+			loadDebounceTimer = 0
+		}
+		if (activateDebounceTimer) {
+			window.clearTimeout(activateDebounceTimer)
+			activateDebounceTimer = 0
+		}
+		cancelInFlightMarkdownWork()
+		viewerSources.value = []
+		viewerDocCache.clear()
+		pendingHash.value = undefined
 		rawMarkdown.value = ''
 		renderedHtml.value = ''
 		error.value = ''
@@ -600,7 +777,7 @@ watch(
 		if (!props.visible) {
 			return
 		}
-		void loadCurrentSource()
+		scheduleLoadCurrentSource()
 	}
 )
 
@@ -610,7 +787,7 @@ watch(
 		if (!visible || isLoading || !html) {
 			return
 		}
-		void activateMarkdown()
+		scheduleActivateMarkdown()
 	},
 	{ flush: 'post' }
 )
@@ -629,6 +806,17 @@ onUnmounted(() => {
 	unregisterKeydownListener()
 	document.body.style.overflow = prevBodyOverflow
 	fetchToken++
+	navigationEpoch++
+	if (loadDebounceTimer) {
+		window.clearTimeout(loadDebounceTimer)
+		loadDebounceTimer = 0
+	}
+	if (activateDebounceTimer) {
+		window.clearTimeout(activateDebounceTimer)
+		activateDebounceTimer = 0
+	}
+	cancelInFlightMarkdownWork()
+	viewerDocCache.clear()
 })
 </script>
 
