@@ -16,13 +16,14 @@ import { agentNameMap, registeredAgents } from '../agent/name-registry'
 
 /** 状态机非终态 busy 集合 */
 export const BUSY_AGENT_STATES: AgentState[] = [
+	'AGENT_SCHEDULING',
 	'THINKING',
 	'STREAMING_TEXT',
 	'CALLING_TOOL',
 	'LOAD_SKILL'
 ]
 
-/** 状态机全量 8 态（时间线完整迁移链，与 AgentState 枚举一致） */
+/** 状态机全量 9 态（时间线完整迁移链，与 AgentState 枚举一致） */
 export const ALL_AGENT_STATES: AgentState[] = [
 	'IDLE',
 	...BUSY_AGENT_STATES,
@@ -92,6 +93,7 @@ export const resolveTurnStepStatus = (
 
 const STATE_MAP: Record<string, { zh: string; en: string }> = {
 	IDLE: { zh: '空闲', en: 'Idle' },
+	AGENT_SCHEDULING: { zh: '智能体调度器决策中', en: 'Agent scheduler routing' },
 	THINKING: { zh: '思考中', en: 'Thinking' },
 	STREAMING_TEXT: { zh: '输出中', en: 'Streaming' },
 	CALLING_TOOL: { zh: '调用工具', en: 'Calling Tool' },

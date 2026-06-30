@@ -9,10 +9,7 @@ import { chatWebsocketClientApi } from '@/api/ai.api'
 import { getSessionInfo } from '@/api/login.api'
 import type { AgentUiEventEnvelope, ChatRequestDto } from '@/types/ai.types'
 import { redirectToLogin } from '@/utils/auth'
-import {
-	formatApiErrorMessage,
-	formatSystemErrorMessage
-} from '@/utils/apiError'
+import { formatApiErrorMessage } from '@/utils/apiError'
 import { chatActivityStore } from '../activity/store'
 import type { ChatSessionRuntime } from '../session/types'
 
@@ -64,9 +61,10 @@ const onTurnClose = (session: ChatSessionRuntime) => {
 const systemErrorText = (traceId: string) => t('ai.error.system', { traceId })
 
 const probeSessionAfterHandshakeFailure = async () => {
+	const handshakeFallback = t('ai.turn.error.handshake')
 	try {
 		await getSessionInfo()
-		ElMessage.error(formatSystemErrorMessage(systemErrorText))
+		ElMessage.error(handshakeFallback)
 	} catch (error) {
 		const status = (error as { response?: { status?: number } })?.response?.status
 		if (status === 401 || status === 403) {
@@ -74,7 +72,7 @@ const probeSessionAfterHandshakeFailure = async () => {
 		} else {
 			ElMessage.error(
 				formatApiErrorMessage(error, {
-					fallback: formatSystemErrorMessage(systemErrorText),
+					fallback: handshakeFallback,
 					formatSystem: systemErrorText
 				})
 			)

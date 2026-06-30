@@ -2143,6 +2143,7 @@ const showSessionView = async (targetContextId: string) => {
       session.loadedFromServer.value = true
     } catch (error) {
       console.error('[ChatView] load history failed', error)
+      // 非 HTTP 错误（如 res.data 为空时的 JS 异常）不应展示伪造的 TRACE_ID
       if (!isSystemApiError(error)) {
         session.messageContext.value = []
         session.loadedFromServer.value = true
@@ -2150,7 +2151,7 @@ const showSessionView = async (targetContextId: string) => {
       }
       ElMessage.error(
         formatApiErrorMessage(error, {
-          fallback: t('ai.error.system', { traceId: crypto.randomUUID() }),
+          fallback: t('ai.turn.error.generic'),
           formatSystem: (traceId) => t('ai.error.system', { traceId })
         })
       )

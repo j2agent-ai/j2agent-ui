@@ -49,22 +49,15 @@ function readHttpStatus(error: unknown): number | undefined {
 	return asAxiosError(error)?.response?.status
 }
 
-/** 是否为系统/未预期错误（无 HTTP 响应或 5xx） */
+/** 是否为后端 5xx 未预期错误（需展示 TRACE_ID） */
 export function isSystemApiError(error: unknown): boolean {
 	const status = readHttpStatus(error)
-	return status === undefined || status >= 500
-}
-
-/** 无 HTTP 上下文时的系统错误文案（如 WebSocket 握手失败且 session 仍有效） */
-export function formatSystemErrorMessage(
-	formatSystem: (traceId: string) => string,
-	traceId?: string
-): string {
-	return formatSystem(traceId?.trim() || crypto.randomUUID())
+	return status !== undefined && status >= 500
 }
 
 /**
- * 解析 API 错误展示文案：4xx 业务错误保留后端 message；5xx/无响应走 TRACE_ID 格式。
+ * 解析 API 错误展示文案：4xx 业务错误保留后端 message；
+ * 5xx 仅在后端提供 traceId 或 message 已含 TRACE_ID 时展示 TRACE_ID 格式。
  */
 export function formatApiErrorMessage(
 	error: unknown,
@@ -78,11 +71,14 @@ export function formatApiErrorMessage(
 	}
 
 	if (isSystemApiError(error)) {
-		const traceId = extractTraceId(error) ?? crypto.randomUUID()
 		if (data?.message?.includes('TRACE_ID')) {
 			return data.message.trim()
 		}
-		return options.formatSystem(traceId)
+		const traceId = extractTraceId(error)
+		if (traceId) {
+			return options.formatSystem(traceId)
+		}
+		return options.fallback
 	}
 
 	if (data?.message?.trim()) {
