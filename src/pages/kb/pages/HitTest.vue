@@ -354,7 +354,8 @@ const loadCollections = async () => {
 	collectionLoading.value = true
 	try {
 		const response = await getKnowledgeCollections()
-		collectionOptions.value = response.data?.data || []
+		const body = response.data as { data?: string[] } | undefined
+		collectionOptions.value = body?.data ?? []
 	} catch (error) {
 		console.error('加载知识库 Collection 失败:', error)
 		collectionOptions.value = []

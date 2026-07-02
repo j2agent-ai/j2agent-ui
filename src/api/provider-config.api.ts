@@ -8,7 +8,7 @@ export type LlmProviderType = 'open-ai' | 'vllm' | 'anthropic' | 'ollama'
 export type EmbeddingProviderType = 'open-ai' | 'ollama'
 
 export interface ProviderConfigDto {
-	id: number
+	id: string
 	apiType: ProviderApiType
 	configName: string
 	providerType: string
@@ -40,18 +40,18 @@ export const createProviderConfig = (body: ProviderConfigUpsertDto) => {
 	return http.post<ProviderConfigDto>(baseUrl, body)
 }
 
-export const updateProviderConfig = (id: number, body: ProviderConfigUpsertDto) => {
+export const updateProviderConfig = (id: string, body: ProviderConfigUpsertDto) => {
 	return http.put<ProviderConfigDto>(`${baseUrl}/${id}`, body)
 }
 
-export const deleteProviderConfig = (id: number) => {
+export const deleteProviderConfig = (id: string) => {
 	return http.delete<void>(`${baseUrl}/${id}`)
 }
 
-export const activateProviderConfig = (id: number) => {
+export const activateProviderConfig = (id: string) => {
 	return http.post<ProviderConfigDto>(`${baseUrl}/${id}/activate`)
 }
 
-export const copyProviderConfig = (id: number) => {
+export const copyProviderConfig = (id: string) => {
 	return http.post<ProviderConfigDto>(`${baseUrl}/${id}/copy`)
 }
