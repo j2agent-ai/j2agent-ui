@@ -16,7 +16,7 @@ import { agentNameMap, registeredAgents } from '../agent/name-registry'
 
 /** 状态机非终态 busy 集合 */
 export const BUSY_AGENT_STATES: AgentState[] = [
-	'AGENT_SCHEDULING',
+	'AGENT_DISPATCHING',
 	'THINKING',
 	'STREAMING_TEXT',
 	'CALLING_TOOL',
@@ -93,7 +93,7 @@ export const resolveTurnStepStatus = (
 
 const STATE_MAP: Record<string, { zh: string; en: string }> = {
 	IDLE: { zh: '空闲', en: 'Idle' },
-	AGENT_SCHEDULING: { zh: '智能体调度器决策中', en: 'Agent scheduler routing' },
+	AGENT_DISPATCHING: { zh: '智能体调度器决策中', en: 'Agent dispatcher deciding' },
 	THINKING: { zh: '思考中', en: 'Thinking' },
 	STREAMING_TEXT: { zh: '输出中', en: 'Streaming' },
 	CALLING_TOOL: { zh: '调用工具', en: 'Calling Tool' },

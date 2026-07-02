@@ -105,7 +105,7 @@ export type WsResponse = {
 
 export type AgentState =
 	| 'IDLE'
-	| 'AGENT_SCHEDULING'
+	| 'AGENT_DISPATCHING'
 	| 'THINKING'
 	| 'STREAMING_TEXT'
 	| 'CALLING_TOOL'
