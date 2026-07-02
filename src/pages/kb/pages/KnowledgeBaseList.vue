@@ -20,7 +20,7 @@
 					/>
 				</el-select>
 				<div class="toolbar-buttons">
-					<el-button type="primary" :icon="Refresh" @click="loadKnowledge">
+					<el-button type="primary" :icon="Refresh" @click="handleRefresh">
 						{{ t('common.refresh') }}
 					</el-button>
 					<el-button type="warning" @click="handleRebuild">
@@ -266,6 +266,12 @@ const emptyTableMessage = computed(() =>
 	selectedCollection.value ? '暂无数据' : '请先选择 Collection'
 )
 
+/** 解析 collection 列表响应体 */
+const unwrapCollectionList = (res: unknown): string[] => {
+	const body = (res as { data?: { data?: string[] } })?.data
+	return body?.data ?? []
+}
+
 const rebuildButtonLabel = computed(() => {
 	if (syncMaintenanceActive.value) {
 		return t('kb.sync.running.button')
@@ -278,13 +284,23 @@ const loadCollections = async () => {
 	collectionLoading.value = true
 	try {
 		const response = await getKnowledgeCollections()
-		collectionOptions.value = response.data?.data || []
+		const collections = unwrapCollectionList(response)
+		collectionOptions.value = collections
+		if (!selectedCollection.value && collections.length > 0) {
+			selectedCollection.value = collections[0]
+			await loadKnowledge()
+		}
 	} catch (error) {
 		console.error('Failed to load knowledge collections:', error)
 		collectionOptions.value = []
 	} finally {
 		collectionLoading.value = false
 	}
+}
+
+const handleRefresh = async () => {
+	await loadCollections()
+	await loadKnowledge()
 }
 
 // 加载数据
