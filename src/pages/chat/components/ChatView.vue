@@ -144,7 +144,6 @@
                           v-else
                           class="src-file-link"
                           :href="appendAuthTokenToUrl(file.url)"
-                          :download="file.fullFileName || undefined"
                           target="_blank"
                           rel="noopener noreferrer"
                         >{{ formatSrcFileLabel(file) }}</a>
@@ -735,6 +734,7 @@ const mdViewerSources = ref<MdViewerSource[]>([])
 /** Markdown 来源预览初始下标 */
 const mdViewerIndex = ref(0)
 
+/** .md 来源用内置 Markdown 预览；其他格式（如 .adoc）在新标签页打开。 */
 const isSrcMarkdownFile = (file: FileDto) =>
   isMarkdownFile(resolveMarkdownFileName(file))
 
