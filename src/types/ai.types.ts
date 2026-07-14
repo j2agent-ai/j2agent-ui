@@ -72,6 +72,8 @@ export type ChatRequestDto = {
 	retrievalKb: boolean;
 	// 系统提示词
 	systemPrompt: 'GENERAL_ASSISTANT' | 'TOOL_USE';
+	// 通用助手手动直连子智能体；传入后跳过调度器
+	manualDispatchAgentId?: string
 }
 
 export type MessageFeedbackRequest = {
