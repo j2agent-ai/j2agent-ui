@@ -10,6 +10,7 @@ import type {
 	AgentUiEventEnvelope,
 	ChatAttachmentDto,
 	ChatResponseDto,
+	FileDto,
 	MessageDto,
 	TurnStepItem
 } from '@/types/ai.types'
@@ -496,7 +497,7 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		}
 		const msg = ensureTurnAssistant()
 		if (serverMessage.srcFile?.length) {
-			msg.srcFile = serverMessage.srcFile
+			msg.srcFile = mergeSrcFiles(msg.srcFile, serverMessage.srcFile)
 		}
 		if (serverMessage.reasoningContent) {
 			msg.reasoningContent =
@@ -507,6 +508,35 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 			msg.content = (msg.content ?? '') + serverMessage.content
 			coalesceOrphanTurnStepAssistants()
 		}
+	}
+
+	const srcFileKey = (file: FileDto) => {
+		const path = file.relativePath?.trim()
+		if (path) {
+			return path.replace(/\\/g, '/')
+		}
+		return file.url?.trim() ?? file.fullFileName?.trim() ?? ''
+	}
+
+	/** PATCH 下发的 srcFile 按路径/url 去重合并，避免覆盖丢失。 */
+	const mergeSrcFiles = (
+		existing: FileDto[] | undefined,
+		incoming: FileDto[]
+	): FileDto[] => {
+		const map = new Map<string, FileDto>()
+		for (const file of existing ?? []) {
+			const key = srcFileKey(file)
+			if (key) {
+				map.set(key, file)
+			}
+		}
+		for (const file of incoming) {
+			const key = srcFileKey(file)
+			if (key) {
+				map.set(key, file)
+			}
+		}
+		return [...map.values()]
 	}
 
 	/**
