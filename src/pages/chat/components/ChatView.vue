@@ -2331,6 +2331,10 @@ defineExpose({
 .chat-container {
   /* 与左侧历史栏 padding-bottom 共用，保证输入框底边对齐 */
   --chat-side-gutter: 20px;
+  --chat-bottom-control-inset: 29px;
+  --chat-input-disclaimer-reserve: calc(
+    var(--chat-bottom-control-inset) - var(--chat-side-gutter)
+  );
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -2417,7 +2421,6 @@ defineExpose({
 
     .chat-view {
       --chat-scrollbar-right-offset: calc(-1 * var(--chat-content-h-pad) + 2px);
-      --chat-input-disclaimer-reserve: 17px;
       --chat-bottom-reserve: calc(
         var(--chat-input-expanded-height) + var(--chat-input-disclaimer-reserve)
       );
@@ -2543,12 +2546,13 @@ defineExpose({
     /* 固定预留：输入区浮在滚动层上方，不随 input 实时高度改变 scroll 内边距 */
     /* 与 .input-area.is-input-editing 展开高度一致，按钮相对屏幕底边固定 */
     --chat-input-expanded-height: 148px;
-    --chat-input-disclaimer-reserve: 0px;
-    --chat-bottom-reserve: 140px;
+    --chat-bottom-reserve: calc(
+      var(--chat-input-expanded-height) + var(--chat-input-disclaimer-reserve)
+    );
     --chat-bottom-scroll-gap: 30px;
     --chat-scroll-button-gap: 12px;
     --chat-scroll-button-offset: calc(
-      var(--chat-input-expanded-height) + var(--chat-scroll-button-gap)
+      var(--chat-input-expanded-height) + var(--chat-input-disclaimer-reserve) + var(--chat-scroll-button-gap)
     );
     --chat-scrollbar-right-offset: calc(-2 * var(--n-padding-basic) + 2px);
     --chat-scrollbar-thumb: color-mix(
