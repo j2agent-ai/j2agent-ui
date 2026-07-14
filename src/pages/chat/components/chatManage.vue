@@ -579,7 +579,7 @@ defineExpose({
 .chat-manage-container {
   width: 340px;
   /* 右侧留足空间：卡片 elevation 阴影不压到聊天输入区左侧 */
-  padding: 70px 24px var(--chat-side-gutter, 20px) 16px;
+  padding: 70px 24px var(--chat-bottom-control-inset, 20px) 16px;
   margin: 0 12px 0 auto;
   display: flex;
   height: 100%;
