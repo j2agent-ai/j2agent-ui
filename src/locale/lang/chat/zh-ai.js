@@ -18,6 +18,7 @@ export default {
 	'ai.image.process.failed': '图片处理失败，请换一张试试',
 	'ai.image.upload.failed': '图片上传失败',
 	'ai.input.placeholder': '请输入问题',
+	'ai.input.disclaimer': '* 内容由生成式人工智能大模型产生，请注意核实',
 	'ai.assistant.service.unavailable': '服务不可用，请稍后再试。',
 	'ai.error.system': '发生错误，TRACE_ID: {traceId}',
 	'ai.assistant.waiting': '请等待上一次回复完成',

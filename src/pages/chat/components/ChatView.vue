@@ -348,6 +348,9 @@
             @input="handleInput"
             @keyup="handleKeyup"
           />
+          <div class="chat-input-disclaimer">
+            {{ t('ai.input.disclaimer') }}
+          </div>
           <ElButton
             class="image-button"
             text
@@ -524,6 +527,18 @@ const USER_SCROLL_IDLE_MS = 200
 /** 自动下滚的统一条件：处于贴底区域（按钮已隐藏）且用户当前没有在滚动 */
 const shouldAutoScroll = () => isAtBottom.value && !userScrolling
 
+const isHiddenAuditMessage = (message: { role?: string; content?: string }) => {
+  if (message.role !== 'assistant' || !message.content?.trim().startsWith('{')) {
+    return false
+  }
+  try {
+    const parsed = JSON.parse(message.content) as { kind?: unknown }
+    return parsed.kind === 'turn_trace'
+  } catch {
+    return false
+  }
+}
+
 /**
  * 仅展示后端标记为可展示的消息；displayInChat === false 的条目仍保留在上下文中，但不渲染气泡。
  * system/tool 无气泡 UI，过滤以免空 message-row 撑大间距。
@@ -533,7 +548,8 @@ const visibleMessageContext = computed(() =>
     (m) =>
       m.displayInChat !== false &&
       m.role !== 'system' &&
-      m.role !== 'tool'
+      m.role !== 'tool' &&
+      !isHiddenAuditMessage(m)
   )
 )
 const imageInputRef = ref<HTMLInputElement>()
@@ -2401,6 +2417,14 @@ defineExpose({
 
     .chat-view {
       --chat-scrollbar-right-offset: calc(-1 * var(--chat-content-h-pad) + 2px);
+      --chat-input-disclaimer-reserve: 17px;
+      --chat-bottom-reserve: calc(
+        var(--chat-input-expanded-height) + var(--chat-input-disclaimer-reserve)
+      );
+      --chat-bottom-scroll-gap: 36px;
+      --chat-scroll-button-offset: calc(
+        var(--chat-input-expanded-height) + var(--chat-input-disclaimer-reserve) + var(--chat-scroll-button-gap)
+      );
       padding: var(--n-padding-basic) var(--chat-content-h-pad) 0;
       padding-bottom: 0;
 
@@ -2517,10 +2541,11 @@ defineExpose({
 
   .chat-view {
     /* 固定预留：输入区浮在滚动层上方，不随 input 实时高度改变 scroll 内边距 */
-    --chat-bottom-reserve: 140px;
-    --chat-bottom-scroll-gap: 30px;
     /* 与 .input-area.is-input-editing 展开高度一致，按钮相对屏幕底边固定 */
     --chat-input-expanded-height: 148px;
+    --chat-input-disclaimer-reserve: 0px;
+    --chat-bottom-reserve: 140px;
+    --chat-bottom-scroll-gap: 30px;
     --chat-scroll-button-gap: 12px;
     --chat-scroll-button-offset: calc(
       var(--chat-input-expanded-height) + var(--chat-scroll-button-gap)
@@ -2549,7 +2574,7 @@ defineExpose({
 
       :deep(.el-scrollbar__view) {
         padding-bottom: calc(
-          var(--chat-bottom-reserve, 260px) + var(--chat-bottom-scroll-gap, 30px)
+          var(--chat-input-disclaimer-reserve, 0px) + var(--chat-bottom-scroll-gap, 30px)
         );
       }
 
@@ -2571,12 +2596,32 @@ defineExpose({
       right: calc(2 * var(--n-padding-basic));
       bottom: var(--chat-side-gutter);
       z-index: 10;
+      isolation: isolate;
       display: flex;
       flex-direction: column;
       gap: 10px;
       pointer-events: none;
 
+      &::before {
+        content: '';
+        position: absolute;
+        left: calc(-1 * var(--chat-content-h-pad, 0px));
+        right: calc(-1 * var(--chat-content-h-pad, 0px));
+        top: -12px;
+        bottom: calc(-1 * var(--chat-side-gutter, 20px));
+        z-index: 0;
+        background: linear-gradient(
+          to bottom,
+          color-mix(in srgb, var(--n-color-bg-page, #eef1f5), transparent 100%) 0%,
+          color-mix(in srgb, var(--n-color-bg-page, #eef1f5), transparent 8%) 18px,
+          var(--n-color-bg-page, #eef1f5) 100%
+        );
+        pointer-events: none;
+      }
+
       > * {
+        position: relative;
+        z-index: 1;
         pointer-events: auto;
       }
     }
@@ -3092,6 +3137,7 @@ defineExpose({
   overflow: visible;
   display: flex;
   padding: 0;
+  margin-bottom: var(--chat-input-disclaimer-reserve, 0px);
   border-radius: 15px;
   position: relative;
   flex-wrap: wrap;
@@ -3223,6 +3269,27 @@ defineExpose({
     :deep(.el-icon) {
       font-size: 18px;
     }
+  }
+
+  .chat-input-disclaimer {
+    position: absolute;
+    left: calc(
+      var(--chat-input-inset-x) + var(--chat-input-action-size) + var(--chat-input-action-gap)
+    );
+    right: calc(
+      var(--chat-input-inset-x) + var(--chat-input-action-size) + var(--chat-input-action-gap)
+    );
+    top: calc(100% + 6px);
+    z-index: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--el-color-primary);
+    font-size: 10px;
+    line-height: 1.15;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
   }
 
   .el-textarea {
@@ -3481,7 +3548,6 @@ defineExpose({
     --chat-hot-questions-width: 92%;
 
     .chat-view {
-      --chat-bottom-reserve: 118px;
       --chat-input-expanded-height: 132px;
     }
 
