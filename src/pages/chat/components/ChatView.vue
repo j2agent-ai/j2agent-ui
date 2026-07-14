@@ -2425,6 +2425,7 @@ defineExpose({
         var(--chat-input-expanded-height) + var(--chat-input-disclaimer-reserve)
       );
       --chat-bottom-scroll-gap: 36px;
+      --chat-message-tail-room: 140px;
       --chat-scroll-button-offset: calc(
         var(--chat-input-expanded-height) + var(--chat-input-disclaimer-reserve) + var(--chat-scroll-button-gap)
       );
@@ -2550,6 +2551,7 @@ defineExpose({
       var(--chat-input-expanded-height) + var(--chat-input-disclaimer-reserve)
     );
     --chat-bottom-scroll-gap: 30px;
+    --chat-message-tail-room: 150px;
     --chat-scroll-button-gap: 12px;
     --chat-scroll-button-offset: calc(
       var(--chat-input-expanded-height) + var(--chat-input-disclaimer-reserve) + var(--chat-scroll-button-gap)
@@ -2578,7 +2580,7 @@ defineExpose({
 
       :deep(.el-scrollbar__view) {
         padding-bottom: calc(
-          var(--chat-input-disclaimer-reserve, 0px) + var(--chat-bottom-scroll-gap, 30px)
+          var(--chat-message-tail-room, 150px) + var(--chat-input-disclaimer-reserve, 0px) + var(--chat-bottom-scroll-gap, 30px)
         );
       }
 
