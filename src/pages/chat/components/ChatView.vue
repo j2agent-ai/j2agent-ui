@@ -421,7 +421,7 @@
                     :key="agent.agentId"
                     :command="agent.agentId"
                   >
-                    <ElTooltip placement="right" :show-after="250">
+                    <ElTooltip placement="top" :show-after="250">
                       <template #content>
                         <div class="manual-dispatch-tooltip">
                           <div class="manual-dispatch-tooltip-title">
