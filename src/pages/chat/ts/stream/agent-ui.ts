@@ -180,9 +180,7 @@ const STATE_EVENT_RENDERER: Record<string, string> = {
 	/** 生命周期 SYSTEM 由分发器消费，不进入消息列表 */
 	'THINKING:SYSTEM': 'ignore',
 	'COMPLETED:SYSTEM': 'ignore',
-	'CANCELLED:SYSTEM': 'ignore',
-	/** 建议追问由分发器单独消费，不进入消息列表 */
-	'COMPLETED:NOTICE': 'ignore'
+	'CANCELLED:SYSTEM': 'ignore'
 }
 
 /** 根据 Agent 状态与事件类型解析 UI 渲染器 key */

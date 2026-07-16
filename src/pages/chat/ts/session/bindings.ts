@@ -100,10 +100,6 @@ export const useActiveChatSessionBindings = () => {
 		() => activeSession.value?.dispatcher.currentAgentState.value ?? null
 	)
 
-	const suggestedFollowUps = computed(
-		() => activeSession.value?.dispatcher.suggestedFollowUps.value ?? []
-	)
-
 	const requireActiveSession = () => chatSessionRegistry.getActiveSession()
 
 	return {
@@ -119,7 +115,6 @@ export const useActiveChatSessionBindings = () => {
 		isBusyByState,
 		isTerminalState,
 		currentAgentState,
-		suggestedFollowUps,
 		requireActiveSession
 	}
 }

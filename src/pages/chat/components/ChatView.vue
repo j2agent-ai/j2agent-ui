@@ -150,6 +150,13 @@
                       </li>
                     </ul>
                   </div>
+                  <AskQuestionCard
+                    v-if="message.pendingQuestion"
+                    :question="message.pendingQuestion"
+                    :disabled="sendingMessage || !isLatestPendingQuestionMessage(message)"
+                    :pending="isPendingAskQuestionAnswer(message, contextId)"
+                    @answer="(answer) => sendAskQuestionAnswer(message, answer, contextId)"
+                  />
                   <AgentTurnTimeline
                     v-if="message.turnSteps?.length"
                     :steps="message.turnSteps"
@@ -231,6 +238,15 @@
                   class="message-md"
                   v-html="userMessageHtmlMap.get(message.index) ?? ''"
                 ></div>
+                <div
+                  v-if="message.messageKind === 'queued_user'"
+                  class="queued-message-status"
+                >
+                  <ElIcon>
+                    <Clock />
+                  </ElIcon>
+                  <span>{{ t('ai.queue.waiting') }}</span>
+                </div>
                 <div v-show="message?.content" class="message-actions">
                   <el-button
                     class="copy-button"
@@ -261,32 +277,6 @@
         </ElIcon>
       </div>
       <div class="chat-bottom-dock">
-        <div
-          v-show="suggestedFollowUps.length && !isBusyByState"
-          class="suggested-follow-ups"
-        >
-          <div class="suggested-follow-ups-title">
-						<span class="suggested-follow-ups-title-text">
-							<el-icon class="suggested-follow-ups-title-icon">
-								<ChatLineSquare />
-							</el-icon>
-							{{ t('ai.suggested.follow.ups') }}
-						</span>
-          </div>
-          <ElScrollbar max-height="88px" class="suggested-follow-ups-scroll">
-            <ElSpace wrap size="small">
-              <ElTag
-                v-for="(text, idx) in suggestedFollowUps"
-                :key="idx"
-                effect="plain"
-                class="suggested-follow-ups-tag"
-                @click="sendMessage(text)"
-              >
-                {{ text }}
-              </ElTag>
-            </ElSpace>
-          </ElScrollbar>
-        </div>
         <div
           class="input-area"
           :class="{
@@ -493,7 +483,7 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowDown, ChatLineSquare, DocumentCopy, Loading, Picture, Position, Refresh } from '@element-plus/icons-vue'
+import { ArrowDown, ChatLineSquare, Clock, DocumentCopy, Loading, Picture, Position, Refresh } from '@element-plus/icons-vue'
 import {
   computed,
   nextTick,
@@ -517,12 +507,11 @@ import {
   ElInput,
   ElMessage,
   ElScrollbar,
-  ElSpace,
-  ElTag,
   ElTooltip
 } from 'element-plus'
 import ChatManage from './chatManage.vue'
 import AgentTurnTimeline from './AgentTurnTimeline.vue'
+import AskQuestionCard from './AskQuestionCard.vue'
 import AgentThinkingBlock from './AgentThinkingBlock.vue'
 import DiagramPreviewOverlay from './DiagramPreviewOverlay.vue'
 import HtmlPreviewOverlay from './HtmlPreviewOverlay.vue'
@@ -552,7 +541,7 @@ import { isContextStreaming } from '../ts/activity/live'
 import { chatSessionRegistry } from '../ts/session/registry'
 import { startTurn, stopTurn } from '../ts/stream/service'
 import { useActiveChatSessionBindings } from '../ts/session/bindings'
-import type { PendingChatImage } from '../ts/session/types'
+import type { ChatSessionRuntime, PendingChatImage } from '../ts/session/types'
 import { buildSessionKey } from '../ts/session/types'
 import { buildSessionTitle } from '../ts/history/title'
 import {
@@ -602,7 +591,6 @@ const {
   sendingMessage,
   isBusyByState,
   currentAgentState,
-  suggestedFollowUps,
   requireActiveSession
 } = useActiveChatSessionBindings()
 const scrollbarRef = ref()
@@ -893,6 +881,50 @@ const activeAssistantMessageIndex = computed(() => {
 const isActiveAssistantTurn = (messageIndex: number) =>
   messageIndex === activeAssistantMessageIndex.value
 
+const isLatestPendingQuestionMessage = (message: MessageDto) => {
+  if (!message.pendingQuestion) {
+    return false
+  }
+  const list = visibleMessageContext.value
+  const messagePosition = list.indexOf(message)
+  if (messagePosition < 0) {
+    return false
+  }
+  for (let i = messagePosition + 1; i < list.length; i += 1) {
+    if (list[i].role === 'user') {
+      return false
+    }
+  }
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (list[i].pendingQuestion) {
+      return list[i] === message
+    }
+  }
+  return false
+}
+
+type PendingAskQuestionAnswer = {
+  agentId: string
+  contextId: string
+  questionMessageIndex: number
+  userMessageIndex: number
+  answer: string
+}
+
+const pendingAskQuestionAnswer = ref<PendingAskQuestionAnswer | null>(null)
+
+const isPendingAskQuestionAnswer = (
+  message: MessageDto,
+  targetContextId?: string
+) => {
+  return (
+    !!targetContextId &&
+    pendingAskQuestionAnswer.value?.agentId === props.agentId &&
+    pendingAskQuestionAnswer.value?.contextId === targetContextId &&
+    pendingAskQuestionAnswer.value?.questionMessageIndex === message.index
+  )
+}
+
 const props = defineProps({
   isFullscreen: {
     type: Boolean,
@@ -1160,53 +1192,32 @@ const onChatInputBlur = () => {
   syncChatInputHeight()
 }
 
-const sendMessage = async (msg?: string) => {
-  let session = requireActiveSession()
-  if (!session) {
-    session = await chatSessionRegistry.enterAgent(props.agentId)
-  }
-  if (isBusyByState.value || sendingMessage.value || isProcessingImages.value) {
-    ElMessage.info(isProcessingImages.value ? t('ai.image.processing') : t('ai.assistant.waiting'))
-    return
-  }
-  if (msg) {
-    session.inputMessage.value = msg
-  }
-  if (!session.inputMessage.value.trim() && !readyAttachments.value.length) {
-    return
-  }
-  const activeContextId = await ensureContextId()
+const startUserMessageTurn = async (
+  session: ChatSessionRuntime,
+  message: MessageDto,
+  pendingImages: PendingChatImage[],
+  manualDispatchAgentId?: string
+) => {
+  const activeContextId = session.contextId.value
   if (!activeContextId) {
     return
   }
   session.sendingMessage.value = true
   try {
-    const pendingImages = [...readyAttachments.value]
-    const displayAttachments = buildDisplayAttachments(pendingImages)
     const outboundAttachments = pendingImages.length
       ? await buildOutboundAttachments(pendingImages)
       : []
-    session.dispatcher.clearSuggestedFollowUps()
-    const message: MessageDto = {
-      index: session.messageContext.value.length,
-      content: session.inputMessage.value,
-      role: 'user',
-      attachments: displayAttachments
-    }
-    session.messageContext.value.push(message)
-    session.inputMessage.value = ''
-    session.selectedAttachments.value = []
     const sessionTitle = buildSessionTitle(
       message.content,
-      message.attachments.length
+      message.attachments?.length ?? 0
     )
     chatManageRef.value?.upsertSessionHistoryItem({
       contextId: activeContextId,
-      agentId: props.agentId,
+      agentId: session.agentId,
       title: sessionTitle
     })
     session.dispatcher.beginOptimisticTurn()
-    chatActivityStore.markActive(props.agentId, activeContextId, 'THINKING')
+    chatActivityStore.markActive(session.agentId, activeContextId, 'THINKING')
     isAtBottom.value = true
     scrollToBottomAfterMessageFlush()
     const chatRequestDto: ChatRequestDto = {
@@ -1220,9 +1231,8 @@ const sendMessage = async (msg?: string) => {
       retrievalKb: true,
       systemPrompt: 'GENERAL_ASSISTANT'
     }
-    const manualDispatchTarget = resolveManualDispatchAgentIdForRequest(session)
-    if (manualDispatchTarget) {
-      chatRequestDto.manualDispatchAgentId = manualDispatchTarget
+    if (manualDispatchAgentId) {
+      chatRequestDto.manualDispatchAgentId = manualDispatchAgentId
     }
     startTurn(session, chatRequestDto, {
       onScrollRequest: () => {
@@ -1236,6 +1246,138 @@ const sendMessage = async (msg?: string) => {
   } finally {
     session.sendingMessage.value = false
   }
+}
+
+const sendMessage = async (msg?: string) => {
+  let session = requireActiveSession()
+  if (!session) {
+    session = await chatSessionRegistry.enterAgent(props.agentId)
+  }
+  if (msg) {
+    session.inputMessage.value = msg
+  }
+  if (isProcessingImages.value) {
+    ElMessage.info(t('ai.image.processing'))
+    return
+  }
+  const content = session.inputMessage.value.trim()
+  const pendingImages = [...readyAttachments.value]
+  if (!content && !pendingImages.length) {
+    return
+  }
+  const activeContextId = await ensureContextId()
+  if (!activeContextId) {
+    return
+  }
+  const manualDispatchTarget = resolveManualDispatchAgentIdForRequest(session)
+  if (session.dispatcher.isBusyByState.value || session.sendingMessage.value) {
+    ElMessage.info(t('ai.assistant.waiting'))
+    return
+  }
+  const displayAttachments = buildDisplayAttachments(pendingImages)
+  const message: MessageDto = {
+    index: session.messageContext.value.length,
+    content,
+    role: 'user',
+    attachments: displayAttachments
+  }
+  session.messageContext.value.push(message)
+  session.inputMessage.value = ''
+  session.selectedAttachments.value = []
+  await startUserMessageTurn(session, message, pendingImages, manualDispatchTarget)
+}
+
+const appendPendingAskQuestionAnswerBubble = (
+  session: ChatSessionRuntime,
+  targetContextId: string,
+  questionMessageIndex: number,
+  answer: string
+) => {
+  const message: MessageDto = {
+    index: session.messageContext.value.length,
+    content: answer,
+    role: 'user',
+    attachments: [],
+    messageKind: 'queued_user'
+  }
+  session.messageContext.value.push(message)
+  pendingAskQuestionAnswer.value = {
+    agentId: props.agentId,
+    contextId: targetContextId,
+    questionMessageIndex,
+    userMessageIndex: message.index,
+    answer
+  }
+  isAtBottom.value = true
+  scrollToBottomAfterMessageFlush()
+}
+
+const sendAskQuestionAnswer = async (
+  message: MessageDto,
+  answer: string,
+  targetContextId?: string
+) => {
+  const normalized = answer?.trim()
+  if (!normalized || !targetContextId || !isLatestPendingQuestionMessage(message)) {
+    return
+  }
+  const targetSession = chatSessionRegistry.getOrCreateSession(
+    props.agentId,
+    targetContextId
+  )
+  if (targetSession.dispatcher.isBusyByState.value || targetSession.sendingMessage.value) {
+    appendPendingAskQuestionAnswerBubble(
+      targetSession,
+      targetContextId,
+      message.index,
+      normalized
+    )
+    return
+  }
+  if (targetContextId && targetContextId !== contextId.value) {
+    chatSessionRegistry.activateSession(props.agentId, targetContextId)
+    await nextTick()
+  }
+  const userMessage: MessageDto = {
+    index: targetSession.messageContext.value.length,
+    content: normalized,
+    role: 'user',
+    attachments: []
+  }
+  targetSession.messageContext.value.push(userMessage)
+  await startUserMessageTurn(targetSession, userMessage, [], undefined)
+}
+
+const flushPendingAskQuestionAnswer = async () => {
+  const pending = pendingAskQuestionAnswer.value
+  if (!pending || pending.agentId !== props.agentId) {
+    return
+  }
+  const session = chatSessionRegistry.getOrCreateSession(
+    pending.agentId,
+    pending.contextId
+  )
+  if (session.dispatcher.isBusyByState.value || session.sendingMessage.value) {
+    return
+  }
+  const questionMessage = session.messageContext.value.find(
+    (item) =>
+      item.index === pending.questionMessageIndex && item.role === 'assistant'
+  )
+  const userMessage = session.messageContext.value.find(
+    (item) => item.index === pending.userMessageIndex && item.role === 'user'
+  )
+  if (!questionMessage?.pendingQuestion || !userMessage) {
+    pendingAskQuestionAnswer.value = null
+    return
+  }
+  userMessage.messageKind = undefined
+  pendingAskQuestionAnswer.value = null
+  if (pending.contextId !== contextId.value) {
+    chatSessionRegistry.activateSession(pending.agentId, pending.contextId)
+    await nextTick()
+  }
+  await startUserMessageTurn(session, userMessage, [], undefined)
 }
 
 const handleImageSelect = async (event: Event) => {
@@ -2404,6 +2546,30 @@ watch(isBusyByState, (busy, wasBusy) => {
   flushActivateMarkdownBlocks()
 })
 
+watch(
+  () => {
+    const pending = pendingAskQuestionAnswer.value
+    if (!pending || pending.agentId !== props.agentId) {
+      return ''
+    }
+    const session = chatSessionRegistry.getOrCreateSession(
+      pending.agentId,
+      pending.contextId
+    )
+    return [
+      pending.agentId,
+      pending.contextId,
+      pending.userMessageIndex,
+      session.dispatcher.currentAgentState.value,
+      session.sendingMessage.value
+    ].join(':')
+  },
+  () => {
+    void flushPendingAskQuestionAnswer()
+  },
+  { flush: 'post' }
+)
+
 /** 后台会话流式更新时，活跃会话 pendingScroll 由 ChatView 消费 */
 watch(
   () => activeSession.value?.pendingScroll.value,
@@ -2819,23 +2985,6 @@ defineExpose({
 
     .avatar-emoji {
       font-size: 22px;
-    }
-
-    .suggested-follow-ups {
-      padding: 10px 12px 8px;
-    }
-
-    .suggested-follow-ups-title-text {
-      font-size: 12px;
-    }
-
-    .suggested-follow-ups-title-icon {
-      font-size: 14px;
-    }
-
-    .suggested-follow-ups :deep(.el-tag.suggested-follow-ups-tag) {
-      font-size: var(--n-font-size-1);
-      padding: 4px 10px;
     }
 
     /* 窄屏：仅覆盖 inset，高度规则见全局 .input-area */
@@ -3429,6 +3578,25 @@ defineExpose({
             padding: 0;
           }
         }
+
+        .queued-message-status {
+          display: inline-flex;
+          align-items: center;
+          align-self: flex-end;
+          gap: 4px;
+          margin-top: 6px;
+          padding: 2px 7px;
+          border: 1px solid color-mix(in srgb, var(--el-color-primary), transparent 72%);
+          border-radius: 999px;
+          background: color-mix(in srgb, var(--el-color-primary-light-9), transparent 18%);
+          font-size: 12px;
+          line-height: 1.4;
+          color: color-mix(in srgb, var(--el-color-primary), var(--n-color-text-secondary) 28%);
+
+          .el-icon {
+            font-size: 12px;
+          }
+        }
       }
     }
   }
@@ -3789,77 +3957,6 @@ defineExpose({
     border-radius: 2px;
     background-color: currentColor;
   }
-}
-
-.suggested-follow-ups {
-  align-self: stretch;
-  width: 100%;
-  max-width: 100%;
-  margin: 0;
-  padding: 14px 16px 12px;
-  border-radius: var(--n-radius-quadruple);
-  @include n-glass-surface(2);
-  color: var(--n-color-text-primary);
-}
-
-.suggested-follow-ups-title {
-  margin-bottom: 10px;
-}
-
-.suggested-follow-ups-title-text {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--n-color-text-primary);
-  letter-spacing: 0.02em;
-}
-
-.suggested-follow-ups-title-icon {
-  font-size: 16px;
-  color: var(--el-color-primary);
-  flex-shrink: 0;
-}
-
-.suggested-follow-ups-scroll {
-  width: 100%;
-
-  :deep(.el-scrollbar__bar) {
-    &.is-horizontal {
-      height: 5px;
-    }
-  }
-}
-
-.suggested-follow-ups :deep(.el-tag.suggested-follow-ups-tag) {
-  cursor: pointer;
-  max-width: 100%;
-  white-space: normal;
-  height: auto;
-  line-height: 1.4;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-weight: 500;
-  color: var(--n-color-text-primary);
-  @include n-glass-surface(1);
-  transition: color 0.2s ease,
-  border-color 0.2s ease,
-  background 0.2s ease,
-  box-shadow 0.2s ease,
-  transform 0.15s ease;
-}
-
-.suggested-follow-ups :deep(.el-tag.suggested-follow-ups-tag:hover) {
-  color: var(--el-color-primary);
-  border-color: color-mix(in srgb, var(--el-color-primary), transparent 45%);
-  background: color-mix(
-    in srgb,
-    var(--el-color-primary-light-8),
-    transparent 35%
-  );
-  box-shadow: var(--n-shadow-card);
-  transform: translateY(-1px);
 }
 
 .avatar-wrap {

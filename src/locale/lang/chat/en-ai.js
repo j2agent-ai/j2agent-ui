@@ -77,7 +77,10 @@ export default {
 	'ai.manual.dispatch.title': 'Target agent',
 	'ai.manual.dispatch.more': 'More agents',
 	'ai.manual.dispatch.agent.removed': 'The unavailable target agent has been cleared',
-	'ai.suggested.follow.ups': 'Suggested follow-ups',
+	'ai.askQuestion.customPlaceholder': 'Custom answer',
+	'ai.askQuestion.confirm': 'Submit answer',
+	'ai.askQuestion.empty': 'Choose an option or enter a custom answer',
+	'ai.queue.waiting': 'Queued. It will send after the current response finishes.',
 	'ai.turn.timeline.thinking': 'Thinking… ({duration})',
 	'ai.turn.timeline.thoughtFor': 'Thought for {duration}',
 }

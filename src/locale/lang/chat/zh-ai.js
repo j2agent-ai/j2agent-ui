@@ -76,7 +76,10 @@ export default {
 	'ai.manual.dispatch.title': '指定智能体',
 	'ai.manual.dispatch.more': '更多智能体',
 	'ai.manual.dispatch.agent.removed': '已清除不可用的指定智能体',
-	'ai.suggested.follow.ups': '猜你想问',
+	'ai.askQuestion.customPlaceholder': '自定义回答',
+	'ai.askQuestion.confirm': '提交回答',
+	'ai.askQuestion.empty': '请选择一个选项或填写自定义回答',
+	'ai.queue.waiting': '已排队，等待当前回复结束后发送',
 	'ai.turn.timeline.thinking': '思考中… ({duration})',
 	'ai.turn.timeline.thoughtFor': '思考了 {duration}',
 }
