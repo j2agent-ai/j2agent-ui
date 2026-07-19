@@ -48,6 +48,26 @@ export const useActiveChatSessionBindings = () => {
 		}
 	})
 
+	const manualDispatchEnabled = computed({
+		get: () => activeSession.value?.manualDispatchEnabled.value ?? false,
+		set: (value: boolean) => {
+			const session = activeSession.value
+			if (session) {
+				session.manualDispatchEnabled.value = value
+			}
+		}
+	})
+
+	const manualDispatchAgentId = computed({
+		get: () => activeSession.value?.manualDispatchAgentId.value ?? '',
+		set: (value: string) => {
+			const session = activeSession.value
+			if (session) {
+				session.manualDispatchAgentId.value = value
+			}
+		}
+	})
+
 	const sendingMessage = computed({
 		get: () => activeSession.value?.sendingMessage.value ?? false,
 		set: (value: boolean) => {
@@ -80,10 +100,6 @@ export const useActiveChatSessionBindings = () => {
 		() => activeSession.value?.dispatcher.currentAgentState.value ?? null
 	)
 
-	const suggestedFollowUps = computed(
-		() => activeSession.value?.dispatcher.suggestedFollowUps.value ?? []
-	)
-
 	const requireActiveSession = () => chatSessionRegistry.getActiveSession()
 
 	return {
@@ -92,12 +108,13 @@ export const useActiveChatSessionBindings = () => {
 		messageContext,
 		inputMessage,
 		selectedAttachments,
+		manualDispatchEnabled,
+		manualDispatchAgentId,
 		sendingMessage,
 		isNewLlmResponse,
 		isBusyByState,
 		isTerminalState,
 		currentAgentState,
-		suggestedFollowUps,
 		requireActiveSession
 	}
 }

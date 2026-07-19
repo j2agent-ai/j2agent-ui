@@ -5,15 +5,26 @@
 	>
 		<top-bar :title-suffix="agentTitleSuffix">
 			<template #external-menu>
-				<span
-					v-show="isMobile"
-					v-draggable="{ device: 'mobile' }"
-					class="menu-button"
-					:class="{ active: chatManageActive }"
-					@click="handleChatManage"
+				<el-tooltip
+					:content="t('ai.chat.history.toggle')"
+					placement="bottom"
+					effect="dark"
+					popper-class="n-tooltip--on-dark"
 				>
-				⌥
-			</span>
+					<span
+						v-show="isMobile"
+						v-draggable="{ device: 'mobile' }"
+						class="menu-button"
+						:class="{ active: chatManageActive }"
+						role="button"
+						:aria-label="t('ai.chat.history.toggle')"
+						@click="handleChatManage"
+					>
+						<el-icon class="chat-manage-icon">
+							<ChatLineSquare />
+						</el-icon>
+					</span>
+				</el-tooltip>
 			</template>
 		</top-bar>
 		<!-- 添加聊天界面组件 -->
@@ -36,7 +47,9 @@ export default {
 import ChatView from './components/ChatView.vue'
 import { computed, onActivated, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { debounce } from '@ai-system/lib'
+import { debounce, t } from '@ai-system/lib'
+import { ElIcon, ElTooltip } from 'element-plus'
+import { ChatLineSquare } from '@element-plus/icons-vue'
 import topBar from '@/pages/components/topBar.vue'
 import {
 	agentNameMap,
@@ -181,7 +194,6 @@ onUnmounted(() => {
 	}
 
 	.menu-button {
-		font-size: 24px;
 		margin-right: 5px;
 		cursor: pointer;
 		width: 36px;
@@ -192,6 +204,10 @@ onUnmounted(() => {
 		color: var(--n-topbar-text-muted);
 		border-radius: 8px;
 		transition: all 0.3s;
+
+		.chat-manage-icon {
+			font-size: 22px;
+		}
 
 		&:hover {
 			color: var(--n-topbar-text);
@@ -213,8 +229,11 @@ onUnmounted(() => {
 		.menu-button {
 			width: 30px;
 			height: 30px;
-			font-size: 20px;
 			margin-right: 0;
+
+			.chat-manage-icon {
+				font-size: 20px;
+			}
 		}
 	}
 
@@ -227,7 +246,10 @@ onUnmounted(() => {
 		.menu-button {
 			width: 26px;
 			height: 26px;
-			font-size: 18px;
+
+			.chat-manage-icon {
+				font-size: 18px;
+			}
 		}
 	}
 }

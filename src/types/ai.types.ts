@@ -20,6 +20,16 @@ export type MessageDto = {
 	feedback?: 0 | 1 | 2
 	srcFile?: FileDto[]
 	attachments?: ChatAttachmentDto[]
+	/** assistant 触发的用户澄清问题 */
+	pendingQuestion?: AskQuestion
+}
+
+/** Agent 向用户提问并等待用户补充输入 */
+export type AskQuestion = {
+	type: 'ask_question'
+	version: number
+	question: string
+	options: string[]
 }
 
 export type ChatAttachmentDto = {
@@ -72,6 +82,8 @@ export type ChatRequestDto = {
 	retrievalKb: boolean;
 	// 系统提示词
 	systemPrompt: 'GENERAL_ASSISTANT' | 'TOOL_USE';
+	// 通用助手手动直连子智能体；传入后跳过调度器
+	manualDispatchAgentId?: string
 }
 
 export type MessageFeedbackRequest = {
@@ -148,14 +160,6 @@ export type AgentUiEventEnvelope = {
 	eventType: AgentEventType
 	payload?: ChatResponseDto | Record<string, any>
 	ts: number
-}
-
-/**
- * 回合成功后 `eventType=NOTICE` 且 `state=COMPLETED` 时的「建议追问」载荷（与后端一致）。
- */
-export type SuggestedFollowUpsNoticePayload = {
-	notice: 'suggested-follow-ups'
-	items: string[]
 }
 
 /**

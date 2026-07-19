@@ -150,6 +150,13 @@
                       </li>
                     </ul>
                   </div>
+                  <AskQuestionCard
+                    v-if="message.pendingQuestion"
+                    :question="message.pendingQuestion"
+                    :disabled="sendingMessage || !isLatestPendingQuestionMessage(message)"
+                    :pending="isPendingAskQuestionAnswer(message, contextId)"
+                    @answer="(answer) => sendAskQuestionAnswer(message, answer, contextId)"
+                  />
                   <AgentTurnTimeline
                     v-if="message.turnSteps?.length"
                     :steps="message.turnSteps"
@@ -231,6 +238,15 @@
                   class="message-md"
                   v-html="userMessageHtmlMap.get(message.index) ?? ''"
                 ></div>
+                <div
+                  v-if="message.messageKind === 'queued_user'"
+                  class="queued-message-status"
+                >
+                  <ElIcon>
+                    <Clock />
+                  </ElIcon>
+                  <span>{{ t('ai.queue.waiting') }}</span>
+                </div>
                 <div v-show="message?.content" class="message-actions">
                   <el-button
                     class="copy-button"
@@ -261,32 +277,6 @@
         </ElIcon>
       </div>
       <div class="chat-bottom-dock">
-        <div
-          v-show="suggestedFollowUps.length && !isBusyByState"
-          class="suggested-follow-ups"
-        >
-          <div class="suggested-follow-ups-title">
-						<span class="suggested-follow-ups-title-text">
-							<el-icon class="suggested-follow-ups-title-icon">
-								<ChatLineSquare />
-							</el-icon>
-							{{ t('ai.suggested.follow.ups') }}
-						</span>
-          </div>
-          <ElScrollbar max-height="88px" class="suggested-follow-ups-scroll">
-            <ElSpace wrap size="small">
-              <ElTag
-                v-for="(text, idx) in suggestedFollowUps"
-                :key="idx"
-                effect="plain"
-                class="suggested-follow-ups-tag"
-                @click="sendMessage(text)"
-              >
-                {{ text }}
-              </ElTag>
-            </ElSpace>
-          </ElScrollbar>
-        </div>
         <div
           class="input-area"
           :class="{
@@ -358,6 +348,90 @@
             :disabled="isBusyByState || sendingMessage || isProcessingImages || selectedAttachments.length >= 4"
             @click="imageInputRef?.click()"
           />
+          <div
+            v-if="showManualDispatchBar"
+            ref="manualDispatchRef"
+            class="manual-dispatch"
+            :class="{ 'is-disabled': manualDispatchDisabled }"
+          >
+            <ElTooltip
+              v-for="agent in visibleManualDispatchAgents"
+              :key="agent.agentId"
+              placement="top"
+              :show-after="250"
+            >
+              <template #content>
+                <div class="manual-dispatch-tooltip">
+                  <div class="manual-dispatch-tooltip-title">
+                    {{ agent.name || agent.agentId }}
+                  </div>
+                  <div v-if="agent.description" class="manual-dispatch-tooltip-desc">
+                    {{ agent.description }}
+                  </div>
+                </div>
+              </template>
+              <button
+                type="button"
+                class="manual-dispatch-chip"
+                :class="{ active: isManualDispatchSelected(agent.agentId) }"
+                :disabled="manualDispatchDisabled"
+                @click="toggleManualDispatchAgent(agent.agentId)"
+              >
+                <span class="manual-dispatch-logo">{{ agent.logo || '🤖' }}</span>
+                <span class="manual-dispatch-name">{{ agent.name || agent.agentId }}</span>
+                <span
+                  v-if="isManualDispatchSelected(agent.agentId)"
+                  class="manual-dispatch-clear"
+                  @click.stop="clearManualDispatchSelection"
+                >
+                  ×
+                </span>
+              </button>
+            </ElTooltip>
+            <ElDropdown
+              v-if="overflowManualDispatchAgents.length"
+              trigger="click"
+              placement="top-start"
+              popper-class="manual-dispatch-popper"
+              :disabled="manualDispatchDisabled"
+              @command="selectManualDispatchAgent"
+            >
+              <button
+                type="button"
+                class="manual-dispatch-chip manual-dispatch-more"
+                :disabled="manualDispatchDisabled"
+                :title="t('ai.manual.dispatch.more')"
+              >
+                ...
+              </button>
+              <template #dropdown>
+                <ElDropdownMenu class="manual-dispatch-menu">
+                  <ElDropdownItem
+                    v-for="agent in overflowManualDispatchAgents"
+                    :key="agent.agentId"
+                    :command="agent.agentId"
+                  >
+                    <ElTooltip placement="top" :show-after="250">
+                      <template #content>
+                        <div class="manual-dispatch-tooltip">
+                          <div class="manual-dispatch-tooltip-title">
+                            {{ agent.name || agent.agentId }}
+                          </div>
+                          <div v-if="agent.description" class="manual-dispatch-tooltip-desc">
+                            {{ agent.description }}
+                          </div>
+                        </div>
+                      </template>
+                      <span class="manual-dispatch-menu-item">
+                        <span class="manual-dispatch-logo">{{ agent.logo || '🤖' }}</span>
+                        <span class="manual-dispatch-menu-name">{{ agent.name || agent.agentId }}</span>
+                      </span>
+                    </ElTooltip>
+                  </ElDropdownItem>
+                </ElDropdownMenu>
+              </template>
+            </ElDropdown>
+          </div>
           <ElButton
             :type="isBusyByState ? 'danger' : 'primary'"
             class="chat-button"
@@ -409,7 +483,7 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowDown, ChatLineSquare, DocumentCopy, Loading, Picture, Position, Refresh } from '@element-plus/icons-vue'
+import { ArrowDown, ChatLineSquare, Clock, DocumentCopy, Loading, Picture, Position, Refresh } from '@element-plus/icons-vue'
 import {
   computed,
   nextTick,
@@ -425,16 +499,19 @@ import { consumeForceNewChatFlag } from '@/routes'
 import {
   ElAvatar,
   ElButton,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
   ElIcon,
   ElImageViewer,
   ElInput,
   ElMessage,
   ElScrollbar,
-  ElSpace,
-  ElTag
+  ElTooltip
 } from 'element-plus'
 import ChatManage from './chatManage.vue'
 import AgentTurnTimeline from './AgentTurnTimeline.vue'
+import AskQuestionCard from './AskQuestionCard.vue'
 import AgentThinkingBlock from './AgentThinkingBlock.vue'
 import DiagramPreviewOverlay from './DiagramPreviewOverlay.vue'
 import HtmlPreviewOverlay from './HtmlPreviewOverlay.vue'
@@ -442,6 +519,7 @@ import MdViewerOverlay, {
   type MdViewerSource
 } from './MdViewerOverlay.vue'
 import {
+  AgentInfoDto,
   ChatAttachmentDto,
   ChatRequestDto,
   FileDto,
@@ -463,7 +541,7 @@ import { isContextStreaming } from '../ts/activity/live'
 import { chatSessionRegistry } from '../ts/session/registry'
 import { startTurn, stopTurn } from '../ts/stream/service'
 import { useActiveChatSessionBindings } from '../ts/session/bindings'
-import type { PendingChatImage } from '../ts/session/types'
+import type { ChatSessionRuntime, PendingChatImage } from '../ts/session/types'
 import { buildSessionKey } from '../ts/session/types'
 import { buildSessionTitle } from '../ts/history/title'
 import {
@@ -493,7 +571,8 @@ import {
 } from '@/utils/markdownRenderer'
 import { registerSessionRenderCacheEvict } from '../ts/render/session-render-cache'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
-import { getAgentDisplayName, getAgentLogo, agentNameMap } from '../ts/agent/name-registry'
+import { getAgentDisplayName, getAgentLogo, agentNameMap, registeredAgents } from '../ts/agent/name-registry'
+import { UNIVERSAL_ASSISTANT_ID } from '../ts/agent/universal-assistant'
 
 const showChatManage = ref(false)
 const chatManageRef = ref(null)
@@ -507,10 +586,11 @@ const {
   messageContext,
   inputMessage,
   selectedAttachments,
+  manualDispatchEnabled,
+  manualDispatchAgentId,
   sendingMessage,
   isBusyByState,
   currentAgentState,
-  suggestedFollowUps,
   requireActiveSession
 } = useActiveChatSessionBindings()
 const scrollbarRef = ref()
@@ -801,6 +881,50 @@ const activeAssistantMessageIndex = computed(() => {
 const isActiveAssistantTurn = (messageIndex: number) =>
   messageIndex === activeAssistantMessageIndex.value
 
+const isLatestPendingQuestionMessage = (message: MessageDto) => {
+  if (!message.pendingQuestion) {
+    return false
+  }
+  const list = visibleMessageContext.value
+  const messagePosition = list.indexOf(message)
+  if (messagePosition < 0) {
+    return false
+  }
+  for (let i = messagePosition + 1; i < list.length; i += 1) {
+    if (list[i].role === 'user') {
+      return false
+    }
+  }
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (list[i].pendingQuestion) {
+      return list[i] === message
+    }
+  }
+  return false
+}
+
+type PendingAskQuestionAnswer = {
+  agentId: string
+  contextId: string
+  questionMessageIndex: number
+  userMessageIndex: number
+  answer: string
+}
+
+const pendingAskQuestionAnswer = ref<PendingAskQuestionAnswer | null>(null)
+
+const isPendingAskQuestionAnswer = (
+  message: MessageDto,
+  targetContextId?: string
+) => {
+  return (
+    !!targetContextId &&
+    pendingAskQuestionAnswer.value?.agentId === props.agentId &&
+    pendingAskQuestionAnswer.value?.contextId === targetContextId &&
+    pendingAskQuestionAnswer.value?.questionMessageIndex === message.index
+  )
+}
+
 const props = defineProps({
   isFullscreen: {
     type: Boolean,
@@ -837,6 +961,180 @@ const messageAvatarSize = computed(() => (props.isMobile ? 36 : 50))
 const effectiveChatLogo = computed(
   () => getAgentLogo(props.agentId) || chatLogoEmoji
 )
+
+const MANUAL_DISPATCH_ORDER_STORAGE_KEY = 'ai-manual-dispatch-agent-order'
+const MANUAL_DISPATCH_MAX_VISIBLE = 3
+const MANUAL_DISPATCH_MEDIUM_VISIBLE = 2
+const MANUAL_DISPATCH_COMPACT_VISIBLE = 1
+const MANUAL_DISPATCH_MEDIUM_WIDTH_PX = 560
+const MANUAL_DISPATCH_COMPACT_WIDTH_PX = 240
+
+const manualDispatchOrder = ref<string[]>([])
+const manualDispatchRef = ref<HTMLElement>()
+const manualDispatchVisibleLimit = ref(MANUAL_DISPATCH_MAX_VISIBLE)
+let manualDispatchResizeObserver: ResizeObserver | undefined
+
+const isUniversalAssistantPage = computed(
+  () => props.agentId === UNIVERSAL_ASSISTANT_ID
+)
+
+const readManualDispatchOrder = (): string[] => {
+  try {
+    const raw = localStorage.getItem(MANUAL_DISPATCH_ORDER_STORAGE_KEY)
+    if (!raw) {
+      return []
+    }
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+    return parsed.filter((item): item is string => typeof item === 'string' && !!item.trim())
+  } catch {
+    return []
+  }
+}
+
+const writeManualDispatchOrder = (order: string[]) => {
+  try {
+    localStorage.setItem(
+      MANUAL_DISPATCH_ORDER_STORAGE_KEY,
+      JSON.stringify([...new Set(order.filter(Boolean))])
+    )
+  } catch {
+    /* ignore storage failure */
+  }
+}
+
+const syncManualDispatchOrderWithAgents = () => {
+  const ids = new Set(registeredAgents.value.map((agent) => agent.agentId))
+  const next = manualDispatchOrder.value.filter((agentId) => ids.has(agentId))
+  if (next.length !== manualDispatchOrder.value.length) {
+    manualDispatchOrder.value = next
+    writeManualDispatchOrder(next)
+  }
+}
+
+const orderedManualDispatchAgents = computed<AgentInfoDto[]>(() => {
+  const agents = registeredAgents.value
+  const byId = new Map(agents.map((agent) => [agent.agentId, agent]))
+  const ordered: AgentInfoDto[] = []
+  const seen = new Set<string>()
+  for (const agentId of manualDispatchOrder.value) {
+    const agent = byId.get(agentId)
+    if (agent && !seen.has(agentId)) {
+      ordered.push(agent)
+      seen.add(agentId)
+    }
+  }
+  for (const agent of agents) {
+    if (!seen.has(agent.agentId)) {
+      ordered.push(agent)
+      seen.add(agent.agentId)
+    }
+  }
+  return ordered
+})
+
+const visibleManualDispatchAgents = computed(() =>
+  orderedManualDispatchAgents.value.slice(0, manualDispatchVisibleLimit.value)
+)
+
+const overflowManualDispatchAgents = computed(() =>
+  orderedManualDispatchAgents.value.slice(manualDispatchVisibleLimit.value)
+)
+
+const showManualDispatchBar = computed(
+  () => isUniversalAssistantPage.value && orderedManualDispatchAgents.value.length > 0
+)
+
+const manualDispatchDisabled = computed(
+  () => isBusyByState.value || sendingMessage.value
+)
+
+const updateManualDispatchVisibleLimit = () => {
+  const width = manualDispatchRef.value?.clientWidth ?? 0
+  if (width > 0 && width < MANUAL_DISPATCH_COMPACT_WIDTH_PX) {
+    manualDispatchVisibleLimit.value = MANUAL_DISPATCH_COMPACT_VISIBLE
+    return
+  }
+  if (width > 0 && width < MANUAL_DISPATCH_MEDIUM_WIDTH_PX) {
+    manualDispatchVisibleLimit.value = MANUAL_DISPATCH_MEDIUM_VISIBLE
+    return
+  }
+  manualDispatchVisibleLimit.value = MANUAL_DISPATCH_MAX_VISIBLE
+}
+
+const reconnectManualDispatchResizeObserver = () => {
+  manualDispatchResizeObserver?.disconnect()
+  manualDispatchResizeObserver = undefined
+  const el = manualDispatchRef.value
+  if (!el || typeof ResizeObserver === 'undefined') {
+    updateManualDispatchVisibleLimit()
+    return
+  }
+  manualDispatchResizeObserver = new ResizeObserver(updateManualDispatchVisibleLimit)
+  manualDispatchResizeObserver.observe(el)
+  updateManualDispatchVisibleLimit()
+}
+
+const isManualDispatchSelected = (agentId: string) =>
+  manualDispatchEnabled.value && manualDispatchAgentId.value === agentId
+
+const promoteManualDispatchAgent = (agentId: string) => {
+  const next = [agentId, ...manualDispatchOrder.value.filter((id) => id !== agentId)]
+  manualDispatchOrder.value = next
+  syncManualDispatchOrderWithAgents()
+  writeManualDispatchOrder(manualDispatchOrder.value)
+}
+
+const clearManualDispatchSelection = () => {
+  manualDispatchEnabled.value = false
+  manualDispatchAgentId.value = ''
+}
+
+const selectManualDispatchAgent = (command: string | number | object) => {
+  if (manualDispatchDisabled.value || typeof command !== 'string') {
+    return
+  }
+  manualDispatchEnabled.value = true
+  manualDispatchAgentId.value = command
+  promoteManualDispatchAgent(command)
+}
+
+const toggleManualDispatchAgent = (agentId: string) => {
+  if (manualDispatchDisabled.value) {
+    return
+  }
+  if (isManualDispatchSelected(agentId)) {
+    clearManualDispatchSelection()
+    return
+  }
+  manualDispatchEnabled.value = true
+  manualDispatchAgentId.value = agentId
+}
+
+const hasManualDispatchAgent = (agentId: string) =>
+  registeredAgents.value.some((agent) => agent.agentId === agentId)
+
+const resolveManualDispatchAgentIdForRequest = (session: {
+  manualDispatchEnabled: { value: boolean }
+  manualDispatchAgentId: { value: string }
+}) => {
+  if (!isUniversalAssistantPage.value || !session.manualDispatchEnabled.value) {
+    return ''
+  }
+  const agentId = session.manualDispatchAgentId.value.trim()
+  if (!agentId) {
+    return ''
+  }
+  if (!hasManualDispatchAgent(agentId)) {
+    clearManualDispatchSelection()
+    ElMessage.info(t('ai.manual.dispatch.agent.removed'))
+    return ''
+  }
+  return agentId
+}
+
 
 const assistantGreeting = computed(() => {
   agentNameMap.value
@@ -894,53 +1192,32 @@ const onChatInputBlur = () => {
   syncChatInputHeight()
 }
 
-const sendMessage = async (msg?: string) => {
-  let session = requireActiveSession()
-  if (!session) {
-    session = await chatSessionRegistry.enterAgent(props.agentId)
-  }
-  if (isBusyByState.value || sendingMessage.value || isProcessingImages.value) {
-    ElMessage.info(isProcessingImages.value ? t('ai.image.processing') : t('ai.assistant.waiting'))
-    return
-  }
-  if (msg) {
-    session.inputMessage.value = msg
-  }
-  if (!session.inputMessage.value.trim() && !readyAttachments.value.length) {
-    return
-  }
-  const activeContextId = await ensureContextId()
+const startUserMessageTurn = async (
+  session: ChatSessionRuntime,
+  message: MessageDto,
+  pendingImages: PendingChatImage[],
+  manualDispatchAgentId?: string
+) => {
+  const activeContextId = session.contextId.value
   if (!activeContextId) {
     return
   }
   session.sendingMessage.value = true
   try {
-    const pendingImages = [...readyAttachments.value]
-    const displayAttachments = buildDisplayAttachments(pendingImages)
     const outboundAttachments = pendingImages.length
       ? await buildOutboundAttachments(pendingImages)
       : []
-    session.dispatcher.clearSuggestedFollowUps()
-    const message: MessageDto = {
-      index: session.messageContext.value.length,
-      content: session.inputMessage.value,
-      role: 'user',
-      attachments: displayAttachments
-    }
-    session.messageContext.value.push(message)
-    session.inputMessage.value = ''
-    session.selectedAttachments.value = []
     const sessionTitle = buildSessionTitle(
       message.content,
-      message.attachments.length
+      message.attachments?.length ?? 0
     )
     chatManageRef.value?.upsertSessionHistoryItem({
       contextId: activeContextId,
-      agentId: props.agentId,
+      agentId: session.agentId,
       title: sessionTitle
     })
     session.dispatcher.beginOptimisticTurn()
-    chatActivityStore.markActive(props.agentId, activeContextId, 'THINKING')
+    chatActivityStore.markActive(session.agentId, activeContextId, 'THINKING')
     isAtBottom.value = true
     scrollToBottomAfterMessageFlush()
     const chatRequestDto: ChatRequestDto = {
@@ -954,6 +1231,9 @@ const sendMessage = async (msg?: string) => {
       retrievalKb: true,
       systemPrompt: 'GENERAL_ASSISTANT'
     }
+    if (manualDispatchAgentId) {
+      chatRequestDto.manualDispatchAgentId = manualDispatchAgentId
+    }
     startTurn(session, chatRequestDto, {
       onScrollRequest: () => {
         if (shouldAutoScroll()) {
@@ -966,6 +1246,138 @@ const sendMessage = async (msg?: string) => {
   } finally {
     session.sendingMessage.value = false
   }
+}
+
+const sendMessage = async (msg?: string) => {
+  let session = requireActiveSession()
+  if (!session) {
+    session = await chatSessionRegistry.enterAgent(props.agentId)
+  }
+  if (msg) {
+    session.inputMessage.value = msg
+  }
+  if (isProcessingImages.value) {
+    ElMessage.info(t('ai.image.processing'))
+    return
+  }
+  const content = session.inputMessage.value.trim()
+  const pendingImages = [...readyAttachments.value]
+  if (!content && !pendingImages.length) {
+    return
+  }
+  const activeContextId = await ensureContextId()
+  if (!activeContextId) {
+    return
+  }
+  const manualDispatchTarget = resolveManualDispatchAgentIdForRequest(session)
+  if (session.dispatcher.isBusyByState.value || session.sendingMessage.value) {
+    ElMessage.info(t('ai.assistant.waiting'))
+    return
+  }
+  const displayAttachments = buildDisplayAttachments(pendingImages)
+  const message: MessageDto = {
+    index: session.messageContext.value.length,
+    content,
+    role: 'user',
+    attachments: displayAttachments
+  }
+  session.messageContext.value.push(message)
+  session.inputMessage.value = ''
+  session.selectedAttachments.value = []
+  await startUserMessageTurn(session, message, pendingImages, manualDispatchTarget)
+}
+
+const appendPendingAskQuestionAnswerBubble = (
+  session: ChatSessionRuntime,
+  targetContextId: string,
+  questionMessageIndex: number,
+  answer: string
+) => {
+  const message: MessageDto = {
+    index: session.messageContext.value.length,
+    content: answer,
+    role: 'user',
+    attachments: [],
+    messageKind: 'queued_user'
+  }
+  session.messageContext.value.push(message)
+  pendingAskQuestionAnswer.value = {
+    agentId: props.agentId,
+    contextId: targetContextId,
+    questionMessageIndex,
+    userMessageIndex: message.index,
+    answer
+  }
+  isAtBottom.value = true
+  scrollToBottomAfterMessageFlush()
+}
+
+const sendAskQuestionAnswer = async (
+  message: MessageDto,
+  answer: string,
+  targetContextId?: string
+) => {
+  const normalized = answer?.trim()
+  if (!normalized || !targetContextId || !isLatestPendingQuestionMessage(message)) {
+    return
+  }
+  const targetSession = chatSessionRegistry.getOrCreateSession(
+    props.agentId,
+    targetContextId
+  )
+  if (targetSession.dispatcher.isBusyByState.value || targetSession.sendingMessage.value) {
+    appendPendingAskQuestionAnswerBubble(
+      targetSession,
+      targetContextId,
+      message.index,
+      normalized
+    )
+    return
+  }
+  if (targetContextId && targetContextId !== contextId.value) {
+    chatSessionRegistry.activateSession(props.agentId, targetContextId)
+    await nextTick()
+  }
+  const userMessage: MessageDto = {
+    index: targetSession.messageContext.value.length,
+    content: normalized,
+    role: 'user',
+    attachments: []
+  }
+  targetSession.messageContext.value.push(userMessage)
+  await startUserMessageTurn(targetSession, userMessage, [], undefined)
+}
+
+const flushPendingAskQuestionAnswer = async () => {
+  const pending = pendingAskQuestionAnswer.value
+  if (!pending || pending.agentId !== props.agentId) {
+    return
+  }
+  const session = chatSessionRegistry.getOrCreateSession(
+    pending.agentId,
+    pending.contextId
+  )
+  if (session.dispatcher.isBusyByState.value || session.sendingMessage.value) {
+    return
+  }
+  const questionMessage = session.messageContext.value.find(
+    (item) =>
+      item.index === pending.questionMessageIndex && item.role === 'assistant'
+  )
+  const userMessage = session.messageContext.value.find(
+    (item) => item.index === pending.userMessageIndex && item.role === 'user'
+  )
+  if (!questionMessage?.pendingQuestion || !userMessage) {
+    pendingAskQuestionAnswer.value = null
+    return
+  }
+  userMessage.messageKind = undefined
+  pendingAskQuestionAnswer.value = null
+  if (pending.contextId !== contextId.value) {
+    chatSessionRegistry.activateSession(pending.agentId, pending.contextId)
+    await nextTick()
+  }
+  await startUserMessageTurn(session, userMessage, [], undefined)
 }
 
 const handleImageSelect = async (event: Event) => {
@@ -2000,6 +2412,23 @@ watch(
   }
 )
 
+watch(
+  () => registeredAgents.value.map((agent) => agent.agentId).join('\u0001'),
+  () => {
+    syncManualDispatchOrderWithAgents()
+    if (
+      isUniversalAssistantPage.value &&
+      manualDispatchEnabled.value &&
+      manualDispatchAgentId.value &&
+      registeredAgents.value.length > 0 &&
+      !hasManualDispatchAgent(manualDispatchAgentId.value)
+    ) {
+      clearManualDispatchSelection()
+      ElMessage.info(t('ai.manual.dispatch.agent.removed'))
+    }
+  }
+)
+
 /** Agent 元数据异步到达后补拉热门问题 */
 watch(
   () => props.showHotQuestions,
@@ -2026,6 +2455,16 @@ watch(scrollbarRef, () => {
     bindUserScrollIntent()
   })
 })
+
+watch(
+  [manualDispatchRef, showManualDispatchBar],
+  () => {
+    nextTick(() => {
+      reconnectManualDispatchResizeObserver()
+    })
+  },
+  { flush: 'post' }
+)
 
 /** 流式尾段就地增量更新，保留 pending 图表占位节点以维持流光动画 */
 watch(
@@ -2106,6 +2545,30 @@ watch(isBusyByState, (busy, wasBusy) => {
   }
   flushActivateMarkdownBlocks()
 })
+
+watch(
+  () => {
+    const pending = pendingAskQuestionAnswer.value
+    if (!pending || pending.agentId !== props.agentId) {
+      return ''
+    }
+    const session = chatSessionRegistry.getOrCreateSession(
+      pending.agentId,
+      pending.contextId
+    )
+    return [
+      pending.agentId,
+      pending.contextId,
+      pending.userMessageIndex,
+      session.dispatcher.currentAgentState.value,
+      session.sendingMessage.value
+    ].join(':')
+  },
+  () => {
+    void flushPendingAskQuestionAnswer()
+  },
+  { flush: 'post' }
+)
 
 /** 后台会话流式更新时，活跃会话 pendingScroll 由 ChatView 消费 */
 watch(
@@ -2224,10 +2687,13 @@ onMounted(async () => {
   registerSessionRenderCacheEvict(evictSessionRenderCache)
   isChatViewActive.value = true
   preloadDiagramRuntimes()
+  manualDispatchOrder.value = readManualDispatchOrder()
+  syncManualDispatchOrderWithAgents()
   await bootstrapAgentSession()
   nextTick(() => {
     chatManageRef.value?.getHistoryListData()
     bindUserScrollIntent()
+    reconnectManualDispatchResizeObserver()
   })
 })
 
@@ -2287,6 +2753,8 @@ onUnmounted(() => {
   closeDiagramPreview()
   closeImagePreview()
   closeHtmlPreview()
+  manualDispatchResizeObserver?.disconnect()
+  manualDispatchResizeObserver = undefined
 })
 
 defineExpose({
@@ -2517,23 +2985,6 @@ defineExpose({
 
     .avatar-emoji {
       font-size: 22px;
-    }
-
-    .suggested-follow-ups {
-      padding: 10px 12px 8px;
-    }
-
-    .suggested-follow-ups-title-text {
-      font-size: 12px;
-    }
-
-    .suggested-follow-ups-title-icon {
-      font-size: 14px;
-    }
-
-    .suggested-follow-ups :deep(.el-tag.suggested-follow-ups-tag) {
-      font-size: var(--n-font-size-1);
-      padding: 4px 10px;
     }
 
     /* 窄屏：仅覆盖 inset，高度规则见全局 .input-area */
@@ -3127,6 +3578,25 @@ defineExpose({
             padding: 0;
           }
         }
+
+        .queued-message-status {
+          display: inline-flex;
+          align-items: center;
+          align-self: flex-end;
+          gap: 4px;
+          margin-top: 6px;
+          padding: 2px 7px;
+          border: 1px solid color-mix(in srgb, var(--el-color-primary), transparent 72%);
+          border-radius: 999px;
+          background: color-mix(in srgb, var(--el-color-primary-light-9), transparent 18%);
+          font-size: 12px;
+          line-height: 1.4;
+          color: color-mix(in srgb, var(--el-color-primary), var(--n-color-text-secondary) 28%);
+
+          .el-icon {
+            font-size: 12px;
+          }
+        }
       }
     }
   }
@@ -3277,6 +3747,98 @@ defineExpose({
     }
   }
 
+  .manual-dispatch {
+    position: absolute;
+    left: calc(
+      var(--chat-input-inset-x) + var(--chat-input-action-size) + var(--chat-input-action-gap)
+    );
+    right: 132px;
+    bottom: var(--chat-input-inset-y);
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    height: var(--chat-input-action-size);
+    overflow: hidden;
+    color: var(--n-color-text-primary);
+
+    &.is-disabled {
+      opacity: 0.72;
+    }
+  }
+
+  .manual-dispatch-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 168px;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid color-mix(in srgb, var(--el-color-primary) 16%, transparent);
+    border-radius: 8px;
+    color: var(--n-color-text-primary);
+    background: color-mix(in srgb, #fff 58%, transparent);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+
+    &:hover:not(:disabled),
+    &.active {
+      color: var(--el-color-primary);
+      border-color: color-mix(in srgb, var(--el-color-primary) 58%, transparent);
+      background: color-mix(in srgb, var(--el-color-primary) 12%, #fff);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+    }
+  }
+
+  .manual-dispatch-logo {
+    flex: 0 0 auto;
+    line-height: 1;
+  }
+
+  .manual-dispatch-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .manual-dispatch-clear {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    margin-left: 1px;
+    border-radius: 50%;
+    color: #fff;
+    background: color-mix(in srgb, var(--el-color-primary) 76%, #333);
+    font-size: 11px;
+    line-height: 13px;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--el-color-danger);
+    }
+  }
+
+  .manual-dispatch-more {
+    flex: 0 0 auto;
+    width: 34px;
+    padding: 0;
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
   .chat-input-disclaimer {
     position: absolute;
     left: calc(
@@ -3397,77 +3959,6 @@ defineExpose({
   }
 }
 
-.suggested-follow-ups {
-  align-self: stretch;
-  width: 100%;
-  max-width: 100%;
-  margin: 0;
-  padding: 14px 16px 12px;
-  border-radius: var(--n-radius-quadruple);
-  @include n-glass-surface(2);
-  color: var(--n-color-text-primary);
-}
-
-.suggested-follow-ups-title {
-  margin-bottom: 10px;
-}
-
-.suggested-follow-ups-title-text {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--n-color-text-primary);
-  letter-spacing: 0.02em;
-}
-
-.suggested-follow-ups-title-icon {
-  font-size: 16px;
-  color: var(--el-color-primary);
-  flex-shrink: 0;
-}
-
-.suggested-follow-ups-scroll {
-  width: 100%;
-
-  :deep(.el-scrollbar__bar) {
-    &.is-horizontal {
-      height: 5px;
-    }
-  }
-}
-
-.suggested-follow-ups :deep(.el-tag.suggested-follow-ups-tag) {
-  cursor: pointer;
-  max-width: 100%;
-  white-space: normal;
-  height: auto;
-  line-height: 1.4;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-weight: 500;
-  color: var(--n-color-text-primary);
-  @include n-glass-surface(1);
-  transition: color 0.2s ease,
-  border-color 0.2s ease,
-  background 0.2s ease,
-  box-shadow 0.2s ease,
-  transform 0.15s ease;
-}
-
-.suggested-follow-ups :deep(.el-tag.suggested-follow-ups-tag:hover) {
-  color: var(--el-color-primary);
-  border-color: color-mix(in srgb, var(--el-color-primary), transparent 45%);
-  background: color-mix(
-    in srgb,
-    var(--el-color-primary-light-8),
-    transparent 35%
-  );
-  box-shadow: var(--n-shadow-card);
-  transform: translateY(-1px);
-}
-
 .avatar-wrap {
   margin: 0 var(--chat-message-avatar-margin, 10px);
 
@@ -3542,6 +4033,32 @@ defineExpose({
       min-width: 0;
       width: var(--chat-hot-questions-width, 80%);
       max-width: var(--chat-hot-questions-width, 80%);
+    }
+  }
+
+  .chat-container {
+    .manual-dispatch {
+      right: 120px;
+    }
+  }
+
+}
+
+
+@media only screen and (max-width: 360px) {
+  .chat-container.is-mobile .input-area {
+    .manual-dispatch {
+      right: 96px;
+      gap: 5px;
+    }
+
+    .manual-dispatch-chip {
+      max-width: 96px;
+      padding: 0 6px;
+    }
+
+    .manual-dispatch-more {
+      width: 28px;
     }
   }
 }
@@ -3625,6 +4142,78 @@ defineExpose({
       }
     }
   }
+}
+
+
+:global(.manual-dispatch-menu-item) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 24px;
+  min-width: 0;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 24px;
+}
+
+:global(.manual-dispatch-menu-name) {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 24px;
+}
+
+:global(.manual-dispatch-popper) {
+  min-width: 180px !important;
+}
+
+:global(.manual-dispatch-popper .el-dropdown-menu) {
+  min-width: 180px;
+  padding: 6px;
+}
+
+:global(.manual-dispatch-popper .el-dropdown-menu__item) {
+  display: flex;
+  align-items: center;
+  min-width: 168px;
+  max-width: 280px;
+  min-height: 36px;
+  height: 36px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  line-height: 24px;
+  overflow: visible;
+}
+
+:global(.manual-dispatch-popper .el-tooltip__trigger) {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  line-height: 24px;
+}
+
+:global(.manual-dispatch-tooltip) {
+  max-width: 320px;
+}
+
+:global(.manual-dispatch-tooltip-title) {
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+:global(.manual-dispatch-tooltip-desc) {
+  margin-top: 4px;
+  line-height: 1.45;
+  opacity: 0.86;
+  white-space: normal;
 }
 
 /* ElImageViewer 挂载到 body，需 :global 穿透 scoped */

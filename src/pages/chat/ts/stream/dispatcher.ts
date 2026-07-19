@@ -1,6 +1,6 @@
 /**
  * Agent UI 事件分发器。
- * 消费 WebSocket 信封，维护轮次状态机、assistant 气泡锚点、时间线轨迹与建议追问。
+ * 消费 WebSocket 信封，维护轮次状态机、assistant 气泡锚点与时间线轨迹。
  */
 import type { Ref } from 'vue'
 import { computed, ref } from 'vue'
@@ -8,6 +8,7 @@ import type {
 	AgentState,
 	AgentTurnFailurePayload,
 	AgentUiEventEnvelope,
+	AskQuestion,
 	ChatAttachmentDto,
 	ChatResponseDto,
 	FileDto,
@@ -26,7 +27,7 @@ import { resolveAttachmentsDisplayUrls } from '../media/attachment'
 type DispatcherOptions = {
 	messageContext: Ref<MessageDto[]>
 	isNewLlmResponse: Ref<boolean>
-	/** 当前界面会话 ID；与信封 `contextId` 一致时才应用「建议追问」，避免换会话/新对话后迟到 NOTICE 污染 UI。 */
+	/** 当前界面会话 ID；用于过滤迟到的会话级 NOTICE。 */
 	sessionContextId?: Ref<string | undefined>
 	/** 将 errorCode / errorMessage 转为展示文案（通常对接 i18n）。 */
 	resolveTurnErrorMessage?: (
@@ -51,17 +52,6 @@ const isChatResponsePayload = (
 	payload: unknown
 ): payload is ChatResponseDto => {
 	return !!payload && typeof payload === 'object' && 'message' in payload
-}
-
-/** 是否为「建议追问」NOTICE 载荷（与后端 payload.notice 一致）。 */
-const isSuggestedFollowUpsNotice = (event: AgentUiEventEnvelope) => {
-	if (event.eventType !== 'NOTICE') {
-		return false
-	}
-	const payload = (event.payload || {}) as Record<string, unknown>
-	return (
-		payload.notice === 'suggested-follow-ups' && Array.isArray(payload.items)
-	)
 }
 
 /** 用户图片已上传 OSS，回传稳定直链供气泡展示。 */
@@ -122,8 +112,8 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 	const isBusyByState = computed(() =>
 		isBusyAgentState(currentAgentState.value)
 	)
-	/** 回合结束后展示在输入框上方的建议追问（由 NOTICE 事件填充）。 */
-	const suggestedFollowUps = ref<string[]>([])
+	/** 当前等待用户回答的 agent 提问。 */
+	const pendingQuestion = ref<AskQuestion | null>(null)
 	/** 最近一轮整轮失败的展示文案（供输入区上方等扩展展示）。 */
 	const lastTurnFailureMessage = ref<string | null>(null)
 	// 输入框上方状态链路：优先展示当前轮实时轨迹；无实时轨迹时回退上一轮结果。
@@ -372,9 +362,8 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 	/**
 	 * 识别新轮次并重置实时轨迹。
 	 */
-	/** 清空建议追问（新轮次、中断或手动重置时调用）。 */
-	const clearSuggestedFollowUps = () => {
-		suggestedFollowUps.value = []
+	const clearPendingQuestion = () => {
+		pendingQuestion.value = null
 	}
 
 	const clearTurnFailureMessage = () => {
@@ -391,7 +380,7 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 				currentTurnStates.value = []
 				clearActiveTurnAssistantIndex()
 			}
-			clearSuggestedFollowUps()
+			clearPendingQuestion()
 			clearTurnFailureMessage()
 		}
 	}
@@ -499,6 +488,10 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		if (serverMessage.srcFile?.length) {
 			msg.srcFile = mergeSrcFiles(msg.srcFile, serverMessage.srcFile)
 		}
+		if (serverMessage.pendingQuestion) {
+			msg.pendingQuestion = serverMessage.pendingQuestion
+			pendingQuestion.value = serverMessage.pendingQuestion
+		}
 		if (serverMessage.reasoningContent) {
 			msg.reasoningContent =
 				(msg.reasoningContent ?? '') + serverMessage.reasoningContent
@@ -539,29 +532,6 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		return [...map.values()]
 	}
 
-	/**
-	 * 解析服务端下发的建议追问列表，写入输入框上方展示用状态。
-	 */
-	const applySuggestedFollowUps = (event: AgentUiEventEnvelope) => {
-		const expectedCtx = sessionContextId?.value
-		if (
-			!expectedCtx ||
-			!event.contextId ||
-			event.contextId !== expectedCtx
-		) {
-			return
-		}
-		const payload = (event.payload || {}) as Record<string, unknown>
-		const raw = payload.items as unknown[]
-		const maxLen = 120
-		suggestedFollowUps.value = raw
-			.filter((x): x is string => typeof x === 'string')
-			.map((s) => s.trim())
-			.filter(Boolean)
-			.slice(0, 5)
-			.map((s) => (s.length > maxLen ? `${s.slice(0, maxLen)}…` : s))
-	}
-
 	const applyUserAttachmentsReady = (event: AgentUiEventEnvelope) => {
 		const expectedCtx = sessionContextId?.value
 		if (
@@ -595,12 +565,14 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		const hasTurnSteps = (tail?.turnSteps?.length ?? 0) > 0
 		const hasReasoning = !!tail?.reasoningContent?.trim()
 		const hasSrcFile = (tail?.srcFile?.length ?? 0) > 0
+		const hasPendingQuestion = !!tail?.pendingQuestion
 		if (
 			tail?.role === 'assistant' &&
 			!tail.content?.trim() &&
 			!hasTurnSteps &&
 			!hasReasoning &&
-			!hasSrcFile
+			!hasSrcFile &&
+			!hasPendingQuestion
 		) {
 			const popIdx = messageContext.value.length - 1
 			messageContext.value.pop()
@@ -643,7 +615,7 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		if (!notice || key === 'ignore') {
 			return
 		}
-		// NOTICE 由 suggestedFollowUps / 专用组件承接，不写入 messageContext 气泡列表。
+		// 普通 NOTICE 不写入 messageContext 气泡列表。
 	}
 
 	/**
@@ -659,9 +631,7 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 			}
 		}
 		flushLastTurnStates()
-		// 不清空锚点：终态后可能仍有跟随事件（如建议追问 NOTICE），需复用同一气泡；
 		// 锚点会在下一轮 beginOptimisticTurn / resetTurnStates 时重置。
-		clearSuggestedFollowUps()
 	}
 
 	/**
@@ -684,7 +654,7 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		currentTurnStates.value = []
 		lastTurnStates.value = []
 		clearActiveTurnAssistantIndex()
-		clearSuggestedFollowUps()
+		clearPendingQuestion()
 		clearTurnFailureMessage()
 	}
 
@@ -695,8 +665,6 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		const payload = event.payload
 		if (event.eventType === 'MESSAGE' && isChatResponsePayload(payload)) {
 			applyMessageDelta(payload)
-		} else if (isSuggestedFollowUpsNotice(event)) {
-			applySuggestedFollowUps(event)
 		} else if (isUserAttachmentsReadyNotice(event)) {
 			applyUserAttachmentsReady(event)
 		} else {
@@ -712,8 +680,7 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 			ensureTurnAssistant()
 		}
 		if (isTerminalEvent(event)) {
-			// 冻结轨迹但保留锚点：终态后的跟随事件（建议追问 NOTICE 等）仍写入同一 bubble，
-			// 避免生成只含步骤的孤儿气泡。锚点在下一轮发送时重置。
+			// 冻结轨迹；锚点在下一轮发送时重置。
 			flushLastTurnStates()
 			coalesceOrphanTurnStepAssistants()
 		}
@@ -744,8 +711,8 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		getDisplayTurnSteps: toTurnSteps,
 		isBusyByState,
 		isTerminalState,
-		suggestedFollowUps,
-		clearSuggestedFollowUps,
+		pendingQuestion,
+		clearPendingQuestion,
 		lastTurnFailureMessage,
 		clearTurnFailureMessage
 	}
