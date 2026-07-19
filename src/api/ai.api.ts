@@ -48,10 +48,23 @@ export const getAgentPlugins = () => {
 }
 
 /**
- * 重新加载插件目录下的 Agent JAR
+ * 重新加载插件目录下的 Agent JAR（可选重建全部 SimpleRag 向量）
  */
-export const reloadAgentPlugins = () => {
-	return http.post<AgentReloadResult>(`/v1${globalUrlPrefix}rest/${programTag}/agents/reload`)
+export const reloadAgentPlugins = (rebuildSimpleRag = false) => {
+	return http.post<AgentReloadResult>(`/v1${globalUrlPrefix}rest/${programTag}/agents/reload`, undefined, {
+		params: { rebuildSimpleRag }
+	})
+}
+
+/**
+ * 重新加载单个 Agent 插件包（可选重建 SimpleRag 向量）
+ */
+export const reloadAgentPackage = (agentDir: string, rebuildSimpleRag = false) => {
+	return http.post<AgentReloadResult>(
+		`/v1${globalUrlPrefix}rest/${programTag}/plugins/agents/${encodeURIComponent(agentDir)}/reload`,
+		undefined,
+		{ params: { rebuildSimpleRag } }
+	)
 }
 
 /**
