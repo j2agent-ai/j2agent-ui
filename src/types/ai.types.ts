@@ -89,7 +89,7 @@ export type ChatRequestDto = {
 export type MessageFeedbackRequest = {
 	// 上下文ID
 	contextId: string
-	// 智能体ID（与记忆隔离一致；可与后端空串 legacy 对齐）
+	// 智能体ID（与记忆隔离一致，必填非空）
 	agentId?: string
 	// 消息序号
 	index: number
