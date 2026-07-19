@@ -349,82 +349,82 @@
             @click="imageInputRef?.click()"
           />
           <div
-            v-if="showManualDispatchBar"
-            ref="manualDispatchRef"
-            class="manual-dispatch"
-            :class="{ 'is-disabled': manualDispatchDisabled }"
+            v-if="showManualOrchestrateBar"
+            ref="manualOrchestrateRef"
+            class="manual-orchestrate"
+            :class="{ 'is-disabled': manualOrchestrateDisabled }"
           >
             <ElTooltip
-              v-for="agent in visibleManualDispatchAgents"
+              v-for="agent in visibleManualOrchestrateAgents"
               :key="agent.agentId"
               placement="top"
               :show-after="250"
             >
               <template #content>
-                <div class="manual-dispatch-tooltip">
-                  <div class="manual-dispatch-tooltip-title">
+                <div class="manual-orchestrate-tooltip">
+                  <div class="manual-orchestrate-tooltip-title">
                     {{ agent.name || agent.agentId }}
                   </div>
-                  <div v-if="agent.description" class="manual-dispatch-tooltip-desc">
+                  <div v-if="agent.description" class="manual-orchestrate-tooltip-desc">
                     {{ agent.description }}
                   </div>
                 </div>
               </template>
               <button
                 type="button"
-                class="manual-dispatch-chip"
-                :class="{ active: isManualDispatchSelected(agent.agentId) }"
-                :disabled="manualDispatchDisabled"
-                @click="toggleManualDispatchAgent(agent.agentId)"
+                class="manual-orchestrate-chip"
+                :class="{ active: isManualOrchestrateSelected(agent.agentId) }"
+                :disabled="manualOrchestrateDisabled"
+                @click="toggleManualOrchestrateAgent(agent.agentId)"
               >
-                <span class="manual-dispatch-logo">{{ agent.logo || '🤖' }}</span>
-                <span class="manual-dispatch-name">{{ agent.name || agent.agentId }}</span>
+                <span class="manual-orchestrate-logo">{{ agent.logo || '🤖' }}</span>
+                <span class="manual-orchestrate-name">{{ agent.name || agent.agentId }}</span>
                 <span
-                  v-if="isManualDispatchSelected(agent.agentId)"
-                  class="manual-dispatch-clear"
-                  @click.stop="clearManualDispatchSelection"
+                  v-if="isManualOrchestrateSelected(agent.agentId)"
+                  class="manual-orchestrate-clear"
+                  @click.stop="clearManualOrchestrateSelection"
                 >
                   ×
                 </span>
               </button>
             </ElTooltip>
             <ElDropdown
-              v-if="overflowManualDispatchAgents.length"
+              v-if="overflowManualOrchestrateAgents.length"
               trigger="click"
               placement="top-start"
-              popper-class="manual-dispatch-popper"
-              :disabled="manualDispatchDisabled"
-              @command="selectManualDispatchAgent"
+              popper-class="manual-orchestrate-popper"
+              :disabled="manualOrchestrateDisabled"
+              @command="selectManualOrchestrateAgent"
             >
               <button
                 type="button"
-                class="manual-dispatch-chip manual-dispatch-more"
-                :disabled="manualDispatchDisabled"
-                :title="t('ai.manual.dispatch.more')"
+                class="manual-orchestrate-chip manual-orchestrate-more"
+                :disabled="manualOrchestrateDisabled"
+                :title="t('ai.manual.orchestrate.more')"
               >
                 ...
               </button>
               <template #dropdown>
-                <ElDropdownMenu class="manual-dispatch-menu">
+                <ElDropdownMenu class="manual-orchestrate-menu">
                   <ElDropdownItem
-                    v-for="agent in overflowManualDispatchAgents"
+                    v-for="agent in overflowManualOrchestrateAgents"
                     :key="agent.agentId"
                     :command="agent.agentId"
                   >
                     <ElTooltip placement="top" :show-after="250">
                       <template #content>
-                        <div class="manual-dispatch-tooltip">
-                          <div class="manual-dispatch-tooltip-title">
+                        <div class="manual-orchestrate-tooltip">
+                          <div class="manual-orchestrate-tooltip-title">
                             {{ agent.name || agent.agentId }}
                           </div>
-                          <div v-if="agent.description" class="manual-dispatch-tooltip-desc">
+                          <div v-if="agent.description" class="manual-orchestrate-tooltip-desc">
                             {{ agent.description }}
                           </div>
                         </div>
                       </template>
-                      <span class="manual-dispatch-menu-item">
-                        <span class="manual-dispatch-logo">{{ agent.logo || '🤖' }}</span>
-                        <span class="manual-dispatch-menu-name">{{ agent.name || agent.agentId }}</span>
+                      <span class="manual-orchestrate-menu-item">
+                        <span class="manual-orchestrate-logo">{{ agent.logo || '🤖' }}</span>
+                        <span class="manual-orchestrate-menu-name">{{ agent.name || agent.agentId }}</span>
                       </span>
                     </ElTooltip>
                   </ElDropdownItem>
@@ -586,8 +586,8 @@ const {
   messageContext,
   inputMessage,
   selectedAttachments,
-  manualDispatchEnabled,
-  manualDispatchAgentId,
+  manualOrchestrateEnabled,
+  manualOrchestrateAgentId,
   sendingMessage,
   isBusyByState,
   currentAgentState,
@@ -962,25 +962,35 @@ const effectiveChatLogo = computed(
   () => getAgentLogo(props.agentId) || chatLogoEmoji
 )
 
-const MANUAL_DISPATCH_ORDER_STORAGE_KEY = 'ai-manual-dispatch-agent-order'
-const MANUAL_DISPATCH_MAX_VISIBLE = 3
-const MANUAL_DISPATCH_MEDIUM_VISIBLE = 2
-const MANUAL_DISPATCH_COMPACT_VISIBLE = 1
-const MANUAL_DISPATCH_MEDIUM_WIDTH_PX = 560
-const MANUAL_DISPATCH_COMPACT_WIDTH_PX = 240
+const MANUAL_ORCHESTRATE_ORDER_STORAGE_KEY = 'ai-manual-orchestrate-agent-order'
+const LEGACY_MANUAL_DISPATCH_ORDER_STORAGE_KEY = 'ai-manual-dispatch-agent-order'
+const MANUAL_ORCHESTRATE_MAX_VISIBLE = 3
+const MANUAL_ORCHESTRATE_MEDIUM_VISIBLE = 2
+const MANUAL_ORCHESTRATE_COMPACT_VISIBLE = 1
+const MANUAL_ORCHESTRATE_MEDIUM_WIDTH_PX = 560
+const MANUAL_ORCHESTRATE_COMPACT_WIDTH_PX = 240
 
-const manualDispatchOrder = ref<string[]>([])
-const manualDispatchRef = ref<HTMLElement>()
-const manualDispatchVisibleLimit = ref(MANUAL_DISPATCH_MAX_VISIBLE)
-let manualDispatchResizeObserver: ResizeObserver | undefined
+const manualOrchestrateOrder = ref<string[]>([])
+const manualOrchestrateRef = ref<HTMLElement>()
+const manualOrchestrateVisibleLimit = ref(MANUAL_ORCHESTRATE_MAX_VISIBLE)
+let manualOrchestrateResizeObserver: ResizeObserver | undefined
 
 const isUniversalAssistantPage = computed(
   () => props.agentId === UNIVERSAL_ASSISTANT_ID
 )
 
-const readManualDispatchOrder = (): string[] => {
+const readManualOrchestrateOrder = (): string[] => {
   try {
-    const raw = localStorage.getItem(MANUAL_DISPATCH_ORDER_STORAGE_KEY)
+    let raw = localStorage.getItem(MANUAL_ORCHESTRATE_ORDER_STORAGE_KEY)
+    // 迁移旧 localStorage key（manual-dispatch → manual-orchestrate）
+    if (!raw) {
+      const legacy = localStorage.getItem(LEGACY_MANUAL_DISPATCH_ORDER_STORAGE_KEY)
+      if (legacy) {
+        raw = legacy
+        localStorage.setItem(MANUAL_ORCHESTRATE_ORDER_STORAGE_KEY, legacy)
+        localStorage.removeItem(LEGACY_MANUAL_DISPATCH_ORDER_STORAGE_KEY)
+      }
+    }
     if (!raw) {
       return []
     }
@@ -994,10 +1004,10 @@ const readManualDispatchOrder = (): string[] => {
   }
 }
 
-const writeManualDispatchOrder = (order: string[]) => {
+const writeManualOrchestrateOrder = (order: string[]) => {
   try {
     localStorage.setItem(
-      MANUAL_DISPATCH_ORDER_STORAGE_KEY,
+      MANUAL_ORCHESTRATE_ORDER_STORAGE_KEY,
       JSON.stringify([...new Set(order.filter(Boolean))])
     )
   } catch {
@@ -1005,21 +1015,21 @@ const writeManualDispatchOrder = (order: string[]) => {
   }
 }
 
-const syncManualDispatchOrderWithAgents = () => {
+const syncManualOrchestrateOrderWithAgents = () => {
   const ids = new Set(registeredAgents.value.map((agent) => agent.agentId))
-  const next = manualDispatchOrder.value.filter((agentId) => ids.has(agentId))
-  if (next.length !== manualDispatchOrder.value.length) {
-    manualDispatchOrder.value = next
-    writeManualDispatchOrder(next)
+  const next = manualOrchestrateOrder.value.filter((agentId) => ids.has(agentId))
+  if (next.length !== manualOrchestrateOrder.value.length) {
+    manualOrchestrateOrder.value = next
+    writeManualOrchestrateOrder(next)
   }
 }
 
-const orderedManualDispatchAgents = computed<AgentInfoDto[]>(() => {
+const orderedManualOrchestrateAgents = computed<AgentInfoDto[]>(() => {
   const agents = registeredAgents.value
   const byId = new Map(agents.map((agent) => [agent.agentId, agent]))
   const ordered: AgentInfoDto[] = []
   const seen = new Set<string>()
-  for (const agentId of manualDispatchOrder.value) {
+  for (const agentId of manualOrchestrateOrder.value) {
     const agent = byId.get(agentId)
     if (agent && !seen.has(agentId)) {
       ordered.push(agent)
@@ -1035,101 +1045,101 @@ const orderedManualDispatchAgents = computed<AgentInfoDto[]>(() => {
   return ordered
 })
 
-const visibleManualDispatchAgents = computed(() =>
-  orderedManualDispatchAgents.value.slice(0, manualDispatchVisibleLimit.value)
+const visibleManualOrchestrateAgents = computed(() =>
+  orderedManualOrchestrateAgents.value.slice(0, manualOrchestrateVisibleLimit.value)
 )
 
-const overflowManualDispatchAgents = computed(() =>
-  orderedManualDispatchAgents.value.slice(manualDispatchVisibleLimit.value)
+const overflowManualOrchestrateAgents = computed(() =>
+  orderedManualOrchestrateAgents.value.slice(manualOrchestrateVisibleLimit.value)
 )
 
-const showManualDispatchBar = computed(
-  () => isUniversalAssistantPage.value && orderedManualDispatchAgents.value.length > 0
+const showManualOrchestrateBar = computed(
+  () => isUniversalAssistantPage.value && orderedManualOrchestrateAgents.value.length > 0
 )
 
-const manualDispatchDisabled = computed(
+const manualOrchestrateDisabled = computed(
   () => isBusyByState.value || sendingMessage.value
 )
 
-const updateManualDispatchVisibleLimit = () => {
-  const width = manualDispatchRef.value?.clientWidth ?? 0
-  if (width > 0 && width < MANUAL_DISPATCH_COMPACT_WIDTH_PX) {
-    manualDispatchVisibleLimit.value = MANUAL_DISPATCH_COMPACT_VISIBLE
+const updateManualOrchestrateVisibleLimit = () => {
+  const width = manualOrchestrateRef.value?.clientWidth ?? 0
+  if (width > 0 && width < MANUAL_ORCHESTRATE_COMPACT_WIDTH_PX) {
+    manualOrchestrateVisibleLimit.value = MANUAL_ORCHESTRATE_COMPACT_VISIBLE
     return
   }
-  if (width > 0 && width < MANUAL_DISPATCH_MEDIUM_WIDTH_PX) {
-    manualDispatchVisibleLimit.value = MANUAL_DISPATCH_MEDIUM_VISIBLE
+  if (width > 0 && width < MANUAL_ORCHESTRATE_MEDIUM_WIDTH_PX) {
+    manualOrchestrateVisibleLimit.value = MANUAL_ORCHESTRATE_MEDIUM_VISIBLE
     return
   }
-  manualDispatchVisibleLimit.value = MANUAL_DISPATCH_MAX_VISIBLE
+  manualOrchestrateVisibleLimit.value = MANUAL_ORCHESTRATE_MAX_VISIBLE
 }
 
-const reconnectManualDispatchResizeObserver = () => {
-  manualDispatchResizeObserver?.disconnect()
-  manualDispatchResizeObserver = undefined
-  const el = manualDispatchRef.value
+const reconnectManualOrchestrateResizeObserver = () => {
+  manualOrchestrateResizeObserver?.disconnect()
+  manualOrchestrateResizeObserver = undefined
+  const el = manualOrchestrateRef.value
   if (!el || typeof ResizeObserver === 'undefined') {
-    updateManualDispatchVisibleLimit()
+    updateManualOrchestrateVisibleLimit()
     return
   }
-  manualDispatchResizeObserver = new ResizeObserver(updateManualDispatchVisibleLimit)
-  manualDispatchResizeObserver.observe(el)
-  updateManualDispatchVisibleLimit()
+  manualOrchestrateResizeObserver = new ResizeObserver(updateManualOrchestrateVisibleLimit)
+  manualOrchestrateResizeObserver.observe(el)
+  updateManualOrchestrateVisibleLimit()
 }
 
-const isManualDispatchSelected = (agentId: string) =>
-  manualDispatchEnabled.value && manualDispatchAgentId.value === agentId
+const isManualOrchestrateSelected = (agentId: string) =>
+  manualOrchestrateEnabled.value && manualOrchestrateAgentId.value === agentId
 
-const promoteManualDispatchAgent = (agentId: string) => {
-  const next = [agentId, ...manualDispatchOrder.value.filter((id) => id !== agentId)]
-  manualDispatchOrder.value = next
-  syncManualDispatchOrderWithAgents()
-  writeManualDispatchOrder(manualDispatchOrder.value)
+const promoteManualOrchestrateAgent = (agentId: string) => {
+  const next = [agentId, ...manualOrchestrateOrder.value.filter((id) => id !== agentId)]
+  manualOrchestrateOrder.value = next
+  syncManualOrchestrateOrderWithAgents()
+  writeManualOrchestrateOrder(manualOrchestrateOrder.value)
 }
 
-const clearManualDispatchSelection = () => {
-  manualDispatchEnabled.value = false
-  manualDispatchAgentId.value = ''
+const clearManualOrchestrateSelection = () => {
+  manualOrchestrateEnabled.value = false
+  manualOrchestrateAgentId.value = ''
 }
 
-const selectManualDispatchAgent = (command: string | number | object) => {
-  if (manualDispatchDisabled.value || typeof command !== 'string') {
+const selectManualOrchestrateAgent = (command: string | number | object) => {
+  if (manualOrchestrateDisabled.value || typeof command !== 'string') {
     return
   }
-  manualDispatchEnabled.value = true
-  manualDispatchAgentId.value = command
-  promoteManualDispatchAgent(command)
+  manualOrchestrateEnabled.value = true
+  manualOrchestrateAgentId.value = command
+  promoteManualOrchestrateAgent(command)
 }
 
-const toggleManualDispatchAgent = (agentId: string) => {
-  if (manualDispatchDisabled.value) {
+const toggleManualOrchestrateAgent = (agentId: string) => {
+  if (manualOrchestrateDisabled.value) {
     return
   }
-  if (isManualDispatchSelected(agentId)) {
-    clearManualDispatchSelection()
+  if (isManualOrchestrateSelected(agentId)) {
+    clearManualOrchestrateSelection()
     return
   }
-  manualDispatchEnabled.value = true
-  manualDispatchAgentId.value = agentId
+  manualOrchestrateEnabled.value = true
+  manualOrchestrateAgentId.value = agentId
 }
 
-const hasManualDispatchAgent = (agentId: string) =>
+const hasManualOrchestrateAgent = (agentId: string) =>
   registeredAgents.value.some((agent) => agent.agentId === agentId)
 
-const resolveManualDispatchAgentIdForRequest = (session: {
-  manualDispatchEnabled: { value: boolean }
-  manualDispatchAgentId: { value: string }
+const resolveManualOrchestrateAgentIdForRequest = (session: {
+  manualOrchestrateEnabled: { value: boolean }
+  manualOrchestrateAgentId: { value: string }
 }) => {
-  if (!isUniversalAssistantPage.value || !session.manualDispatchEnabled.value) {
+  if (!isUniversalAssistantPage.value || !session.manualOrchestrateEnabled.value) {
     return ''
   }
-  const agentId = session.manualDispatchAgentId.value.trim()
+  const agentId = session.manualOrchestrateAgentId.value.trim()
   if (!agentId) {
     return ''
   }
-  if (!hasManualDispatchAgent(agentId)) {
-    clearManualDispatchSelection()
-    ElMessage.info(t('ai.manual.dispatch.agent.removed'))
+  if (!hasManualOrchestrateAgent(agentId)) {
+    clearManualOrchestrateSelection()
+    ElMessage.info(t('ai.manual.orchestrate.agent.removed'))
     return ''
   }
   return agentId
@@ -1196,7 +1206,7 @@ const startUserMessageTurn = async (
   session: ChatSessionRuntime,
   message: MessageDto,
   pendingImages: PendingChatImage[],
-  manualDispatchAgentId?: string
+  manualOrchestrateAgentId?: string
 ) => {
   const activeContextId = session.contextId.value
   if (!activeContextId) {
@@ -1231,8 +1241,8 @@ const startUserMessageTurn = async (
       retrievalKb: true,
       systemPrompt: 'GENERAL_ASSISTANT'
     }
-    if (manualDispatchAgentId) {
-      chatRequestDto.manualDispatchAgentId = manualDispatchAgentId
+    if (manualOrchestrateAgentId) {
+      chatRequestDto.manualOrchestrateAgentId = manualOrchestrateAgentId
     }
     startTurn(session, chatRequestDto, {
       onScrollRequest: () => {
@@ -1269,7 +1279,7 @@ const sendMessage = async (msg?: string) => {
   if (!activeContextId) {
     return
   }
-  const manualDispatchTarget = resolveManualDispatchAgentIdForRequest(session)
+  const manualOrchestrateTarget = resolveManualOrchestrateAgentIdForRequest(session)
   if (session.dispatcher.isBusyByState.value || session.sendingMessage.value) {
     ElMessage.info(t('ai.assistant.waiting'))
     return
@@ -1284,7 +1294,7 @@ const sendMessage = async (msg?: string) => {
   session.messageContext.value.push(message)
   session.inputMessage.value = ''
   session.selectedAttachments.value = []
-  await startUserMessageTurn(session, message, pendingImages, manualDispatchTarget)
+  await startUserMessageTurn(session, message, pendingImages, manualOrchestrateTarget)
 }
 
 const appendPendingAskQuestionAnswerBubble = (
@@ -2415,16 +2425,16 @@ watch(
 watch(
   () => registeredAgents.value.map((agent) => agent.agentId).join('\u0001'),
   () => {
-    syncManualDispatchOrderWithAgents()
+    syncManualOrchestrateOrderWithAgents()
     if (
       isUniversalAssistantPage.value &&
-      manualDispatchEnabled.value &&
-      manualDispatchAgentId.value &&
+      manualOrchestrateEnabled.value &&
+      manualOrchestrateAgentId.value &&
       registeredAgents.value.length > 0 &&
-      !hasManualDispatchAgent(manualDispatchAgentId.value)
+      !hasManualOrchestrateAgent(manualOrchestrateAgentId.value)
     ) {
-      clearManualDispatchSelection()
-      ElMessage.info(t('ai.manual.dispatch.agent.removed'))
+      clearManualOrchestrateSelection()
+      ElMessage.info(t('ai.manual.orchestrate.agent.removed'))
     }
   }
 )
@@ -2457,10 +2467,10 @@ watch(scrollbarRef, () => {
 })
 
 watch(
-  [manualDispatchRef, showManualDispatchBar],
+  [manualOrchestrateRef, showManualOrchestrateBar],
   () => {
     nextTick(() => {
-      reconnectManualDispatchResizeObserver()
+      reconnectManualOrchestrateResizeObserver()
     })
   },
   { flush: 'post' }
@@ -2687,13 +2697,13 @@ onMounted(async () => {
   registerSessionRenderCacheEvict(evictSessionRenderCache)
   isChatViewActive.value = true
   preloadDiagramRuntimes()
-  manualDispatchOrder.value = readManualDispatchOrder()
-  syncManualDispatchOrderWithAgents()
+  manualOrchestrateOrder.value = readManualOrchestrateOrder()
+  syncManualOrchestrateOrderWithAgents()
   await bootstrapAgentSession()
   nextTick(() => {
     chatManageRef.value?.getHistoryListData()
     bindUserScrollIntent()
-    reconnectManualDispatchResizeObserver()
+    reconnectManualOrchestrateResizeObserver()
   })
 })
 
@@ -2753,8 +2763,8 @@ onUnmounted(() => {
   closeDiagramPreview()
   closeImagePreview()
   closeHtmlPreview()
-  manualDispatchResizeObserver?.disconnect()
-  manualDispatchResizeObserver = undefined
+  manualOrchestrateResizeObserver?.disconnect()
+  manualOrchestrateResizeObserver = undefined
 })
 
 defineExpose({
@@ -3747,7 +3757,7 @@ defineExpose({
     }
   }
 
-  .manual-dispatch {
+  .manual-orchestrate {
     position: absolute;
     left: calc(
       var(--chat-input-inset-x) + var(--chat-input-action-size) + var(--chat-input-action-gap)
@@ -3768,7 +3778,7 @@ defineExpose({
     }
   }
 
-  .manual-dispatch-chip {
+  .manual-orchestrate-chip {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -3799,19 +3809,19 @@ defineExpose({
     }
   }
 
-  .manual-dispatch-logo {
+  .manual-orchestrate-logo {
     flex: 0 0 auto;
     line-height: 1;
   }
 
-  .manual-dispatch-name {
+  .manual-orchestrate-name {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .manual-dispatch-clear {
+  .manual-orchestrate-clear {
     display: inline-flex;
     flex: 0 0 auto;
     align-items: center;
@@ -3831,7 +3841,7 @@ defineExpose({
     }
   }
 
-  .manual-dispatch-more {
+  .manual-orchestrate-more {
     flex: 0 0 auto;
     width: 34px;
     padding: 0;
@@ -4037,7 +4047,7 @@ defineExpose({
   }
 
   .chat-container {
-    .manual-dispatch {
+    .manual-orchestrate {
       right: 120px;
     }
   }
@@ -4047,17 +4057,17 @@ defineExpose({
 
 @media only screen and (max-width: 360px) {
   .chat-container.is-mobile .input-area {
-    .manual-dispatch {
+    .manual-orchestrate {
       right: 96px;
       gap: 5px;
     }
 
-    .manual-dispatch-chip {
+    .manual-orchestrate-chip {
       max-width: 96px;
       padding: 0 6px;
     }
 
-    .manual-dispatch-more {
+    .manual-orchestrate-more {
       width: 28px;
     }
   }
@@ -4145,7 +4155,7 @@ defineExpose({
 }
 
 
-:global(.manual-dispatch-menu-item) {
+:global(.manual-orchestrate-menu-item) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -4160,7 +4170,7 @@ defineExpose({
   line-height: 24px;
 }
 
-:global(.manual-dispatch-menu-name) {
+:global(.manual-orchestrate-menu-name) {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -4169,16 +4179,16 @@ defineExpose({
   line-height: 24px;
 }
 
-:global(.manual-dispatch-popper) {
+:global(.manual-orchestrate-popper) {
   min-width: 180px !important;
 }
 
-:global(.manual-dispatch-popper .el-dropdown-menu) {
+:global(.manual-orchestrate-popper .el-dropdown-menu) {
   min-width: 180px;
   padding: 6px;
 }
 
-:global(.manual-dispatch-popper .el-dropdown-menu__item) {
+:global(.manual-orchestrate-popper .el-dropdown-menu__item) {
   display: flex;
   align-items: center;
   min-width: 168px;
@@ -4191,7 +4201,7 @@ defineExpose({
   overflow: visible;
 }
 
-:global(.manual-dispatch-popper .el-tooltip__trigger) {
+:global(.manual-orchestrate-popper .el-tooltip__trigger) {
   display: flex;
   align-items: center;
   width: 100%;
@@ -4200,16 +4210,16 @@ defineExpose({
   line-height: 24px;
 }
 
-:global(.manual-dispatch-tooltip) {
+:global(.manual-orchestrate-tooltip) {
   max-width: 320px;
 }
 
-:global(.manual-dispatch-tooltip-title) {
+:global(.manual-orchestrate-tooltip-title) {
   font-weight: 600;
   line-height: 1.4;
 }
 
-:global(.manual-dispatch-tooltip-desc) {
+:global(.manual-orchestrate-tooltip-desc) {
   margin-top: 4px;
   line-height: 1.45;
   opacity: 0.86;

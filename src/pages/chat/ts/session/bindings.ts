@@ -48,22 +48,22 @@ export const useActiveChatSessionBindings = () => {
 		}
 	})
 
-	const manualDispatchEnabled = computed({
-		get: () => activeSession.value?.manualDispatchEnabled.value ?? false,
+	const manualOrchestrateEnabled = computed({
+		get: () => activeSession.value?.manualOrchestrateEnabled.value ?? false,
 		set: (value: boolean) => {
 			const session = activeSession.value
 			if (session) {
-				session.manualDispatchEnabled.value = value
+				session.manualOrchestrateEnabled.value = value
 			}
 		}
 	})
 
-	const manualDispatchAgentId = computed({
-		get: () => activeSession.value?.manualDispatchAgentId.value ?? '',
+	const manualOrchestrateAgentId = computed({
+		get: () => activeSession.value?.manualOrchestrateAgentId.value ?? '',
 		set: (value: string) => {
 			const session = activeSession.value
 			if (session) {
-				session.manualDispatchAgentId.value = value
+				session.manualOrchestrateAgentId.value = value
 			}
 		}
 	})
@@ -108,8 +108,8 @@ export const useActiveChatSessionBindings = () => {
 		messageContext,
 		inputMessage,
 		selectedAttachments,
-		manualDispatchEnabled,
-		manualDispatchAgentId,
+		manualOrchestrateEnabled,
+		manualOrchestrateAgentId,
 		sendingMessage,
 		isNewLlmResponse,
 		isBusyByState,

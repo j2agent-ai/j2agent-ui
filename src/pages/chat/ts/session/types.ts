@@ -24,8 +24,8 @@ export type ChatSessionRuntime = {
 	messageContext: Ref<MessageDto[]>
 	inputMessage: Ref<string>
 	selectedAttachments: Ref<PendingChatImage[]>
-	manualDispatchEnabled: Ref<boolean>
-	manualDispatchAgentId: Ref<string>
+	manualOrchestrateEnabled: Ref<boolean>
+	manualOrchestrateAgentId: Ref<string>
 	sendingMessage: Ref<boolean>
 	isNewLlmResponse: Ref<boolean>
 	loadedFromServer: Ref<boolean>
