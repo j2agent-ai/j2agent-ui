@@ -641,6 +641,134 @@ const normalizeMidlineFlowKeywords = (source: string) => {
 }
 
 /**
+ * sequenceDiagram 块级语句关键词（挤扁时需拆到新行）。
+ * `end`/`and` 另做前瞻，避免拆开英文消息里的同形词。
+ */
+const SEQUENCE_STMT_KEYWORD_PATTERN =
+  /^(participant|actor|alt|else|opt|loop|par|critical|option|break|rect|autonumber|activate|deactivate|note)\b/i
+
+/**
+ * sequenceDiagram 箭头消息起始：Actor->>Actor（冒号可后置，消息文本到下一语句边界）。
+ */
+const SEQUENCE_ARROW_START_PATTERN =
+  /^([A-Za-z_][\w]*)\s*(<<->>|<<-->>|<<-|<<-->|->>|-->>|-->|->|--x|-x|--\)|-\))\s*([A-Za-z_][\w]*)/
+
+/**
+ * 判断当前位置是否应作为 sequenceDiagram 新语句起点拆行。
+ * @param rest 从候选起点到行尾的剩余文本
+ * @param linePrefix 本行已输出前缀（含先前拆出的换行），用于判断是否已有未闭合块
+ */
+const isSequenceStatementBoundary = (rest: string, linePrefix: string) => {
+  // end：仅当本行此前已出现 alt/loop 等块关键词，且 end 后为空或下一语句时才拆
+  // （避免 "send end signal" / "noop end"；跨行的 `alt` + `noop end` 不拆，Mermaid 可接受）
+  const endMatch = rest.match(/^end\b/i)
+  if (endMatch) {
+    const hasOpenBlock = /\b(alt|opt|loop|par|rect|critical|break)\b/i.test(linePrefix)
+    if (!hasOpenBlock) {
+      return false
+    }
+    const after = rest.slice(endMatch[0].length)
+    if (/^\s*$/.test(after)) {
+      return true
+    }
+    if (!/^\s+/.test(after)) {
+      return false
+    }
+    const next = after.trimStart()
+    return (
+      SEQUENCE_STMT_KEYWORD_PATTERN.test(next) ||
+      SEQUENCE_ARROW_START_PATTERN.test(next) ||
+      /^end\b/i.test(next)
+    )
+  }
+  // and：避免 "save and sync"；真正的 par/and 其后多为描述或箭头
+  const andMatch = rest.match(/^and\b/i)
+  if (andMatch) {
+    const after = rest.slice(andMatch[0].length)
+    if (/^\s*$/.test(after)) {
+      return true
+    }
+    if (!/^\s+/.test(after)) {
+      return false
+    }
+    const next = after.trimStart()
+    if (
+      SEQUENCE_STMT_KEYWORD_PATTERN.test(next) ||
+      SEQUENCE_ARROW_START_PATTERN.test(next)
+    ) {
+      return true
+    }
+    if (/[^\u0000-\u007f]/.test(next)) {
+      return true
+    }
+    return SEQUENCE_ARROW_START_PATTERN.test(next) || /\s+[A-Za-z_][\w]*\s*(->>|-->>|-->|->)/.test(next)
+  }
+  return (
+    SEQUENCE_STMT_KEYWORD_PATTERN.test(rest) ||
+    SEQUENCE_ARROW_START_PATTERN.test(rest)
+  )
+}
+
+/**
+ * 把 sequenceDiagram 同行内的 participant / 箭头消息 / alt|else|end 等拆成多行。
+ * 应对 LLM 或管道丢换行后 `end` 落在消息旁导致的 Parse error。
+ */
+const splitSequenceDiagramCrowdedLine = (line: string) => {
+  const indent = line.match(/^[\t ]*/)?.[0] ?? ''
+  const trimmed = line.trimStart()
+  if (!trimmed || trimmed.startsWith('%%')) {
+    return line
+  }
+
+  let inQuote: '"' | '\'' | null = null
+  let out = ''
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i]
+    if (inQuote) {
+      out += ch
+      if (ch === inQuote && trimmed[i - 1] !== '\\') {
+        inQuote = null
+      }
+      continue
+    }
+    if (ch === '"' || ch === '\'') {
+      inQuote = ch
+      out += ch
+      continue
+    }
+
+    // 语句边界：前导空白后跟关键词或箭头消息时插入换行
+    if (
+      i > 0 &&
+      /\s/.test(trimmed[i - 1]) &&
+      isSequenceStatementBoundary(trimmed.slice(i), out)
+    ) {
+      out = out.replace(/\s+$/, '') + '\n' + indent
+    }
+    out += ch
+  }
+
+  if (out === trimmed) {
+    return line
+  }
+  return indent + out
+}
+
+/**
+ * sequenceDiagram 同行关键词/箭头拆行（与 flowchart 的 midline 修复对称）。
+ */
+const normalizeMidlineSequenceKeywords = (source: string) => {
+  if (!/^\s*sequenceDiagram\b/im.test(source)) {
+    return source
+  }
+  return source
+    .split('\n')
+    .map((line) => splitSequenceDiagramCrowdedLine(line))
+    .join('\n')
+}
+
+/**
  * 标签（引号 / [] / () / {}）内的真实换行转为 Mermaid 认可的 <br/>。
  */
 const normalizeLabelHardBreaks = (source: string) => {
@@ -827,6 +955,7 @@ const normalizeMermaidSourceBase = (source: string) => {
   text = normalizeFlowchartSubgraphInlineBody(text)
   text = normalizeFlowchartMultilineNodeDefs(text)
   text = normalizeFlowchartMultilineEdges(text)
+  text = normalizeMidlineSequenceKeywords(text)
   text = normalizeLabelHardBreaks(text)
   text = normalizePieMultilineSlices(text)
   text = quotePieSliceLines(text)
