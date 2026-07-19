@@ -154,7 +154,8 @@ const quotePieSliceLines = (source: string) => {
       }
       const [, indent, label, value] = match
       const trimmed = label.trim()
-      if (/^title\b/i.test(trimmed)) {
+      // title / title粘连 行不当扇区处理（title\\b 在 title15 处不生效）
+      if (/^title(?:\b|(?=[\d\u0080-\uffff]))/i.test(trimmed)) {
         return line
       }
       const unquoted = trimmed.replace(/^\\?["']|["']$/g, '').trim()
@@ -165,6 +166,49 @@ const quotePieSliceLines = (source: string) => {
     })
     .join('\n')
 }
+
+/**
+ * 修复 LLM 常见的 title 粘连，并为含中文 / 空白 / 数字开头的标题补引号。
+ * 典型坏例：`title15趟列车余票状态分布` → `title "15趟列车余票状态分布"`
+ */
+const normalizeDiagramTitleLines = (source: string) =>
+  source
+    .split('\n')
+    .map((line) => {
+      if (line.trimStart().startsWith('%%')) {
+        return line
+      }
+      // title 关键字与正文粘连（title15 / title武汉）；数字仍是 word char，\\b 无法切开
+      let fixed = line.replace(
+        /^(\s*)title(?![ \t"'\r\n])(\S.*)$/i,
+        '$1title $2'
+      )
+      const match = fixed.match(/^(\s*)title\s+(.+)$/i)
+      if (!match) {
+        return fixed
+      }
+      const indent = match[1]
+      const text = match[2].trim()
+      if (!text) {
+        return fixed
+      }
+      if (
+        (text.startsWith('"') && text.endsWith('"') && text.length >= 2) ||
+        (text.startsWith("'") && text.endsWith("'") && text.length >= 2)
+      ) {
+        return fixed
+      }
+      // 中文、空白、或以数字开头：必须加引号，否则 lexer 把 15 当独立 token
+      if (/[^\u0000-\u007F]/.test(text) || /\s/.test(text) || /^\d/.test(text)) {
+        const unquoted = text
+          .replace(/^["']|["']$/g, '')
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+        return `${indent}title "${unquoted}"`
+      }
+      return fixed
+    })
+    .join('\n')
 
 /** 统计方括号列表中的项数（尊重引号内的逗号）。 */
 const countBracketListItems = (listContent: string) => {
@@ -266,13 +310,31 @@ export const isXychartHorizontal = (source: string) =>
   isXychartSource(source) &&
   /\bhorizontal\b/i.test(getXychartDeclarationLine(source))
 
+const FLOWCHART_ARROW =
+  '(?:-->|---|===|-\\.->|==>|--o|--x)'
+
 const splitChainedFlowchartEdgesOnLine = (line: string) => {
   const indent = line.match(/^[\t ]*/)?.[0] ?? ''
-  const splitOnce = (input: string) =>
-    input.replace(
-      /([\]\)\}])([ \t]+)([A-Za-z_][\w-]*)([ \t]+(?:-->|---|===|-\.->|==>|--o|--x)(?:\|[^|\n]+\|)?)/g,
-      '$1\n$3$4'
+  const splitOnce = (input: string) => {
+    let cur = input
+    // 形状闭合后接下一边：B["x"] C --> D / B["x"] C["y"] --> D
+    cur = cur.replace(
+      new RegExp(
+        `([\\]\\)\\}])([ \\t]+)([A-Za-z_][\\w-]*(?:\\[[^\\]]*\\]|\\([^)]*\\)|\\{[^}]*\\})?)([ \\t]*)(${FLOWCHART_ARROW}(?:\\|[^|\\n]+\\|)?)`,
+        'g'
+      ),
+      '$1\n$3$4$5'
     )
+    // 裸节点 ID 结束一边后接下一边：Pass --> Enriched Enriched --> CQT
+    cur = cur.replace(
+      new RegExp(
+        `((?:${FLOWCHART_ARROW})(?:\\|[^|\\n]+\\|)?[ \\t]+[A-Za-z_][\\w-]*)([ \\t]+)(?=[A-Za-z_][\\w-]*[ \\t]*${FLOWCHART_ARROW})`,
+        'g'
+      ),
+      '$1\n'
+    )
+    return cur
+  }
 
   let cur = line
   let prev = ''
@@ -473,10 +535,277 @@ const normalizeFlowchartSubgraphLabels = (source: string) => {
   )
 }
 
+/** flowchart/graph 方向声明后同行还有内容时拆成两行（LLM 常挤扁）。 */
+const normalizeFlowchartHeaderLine = (source: string) => {
+  if (!/^\s*(?:graph|flowchart)\s/im.test(source)) {
+    return source
+  }
+  return source.replace(
+    /^(\s*(?:flowchart|graph)\s+(?:TB|TD|BT|LR|RL))\b([ \t]+)(\S[^\n]*)$/gim,
+    '$1\n$3'
+  )
+}
+
 /**
- * 规范化 LLM 生成的 Mermaid 源码，修复弯引号、全角冒号、转义引号等常见导致解析失败的问题。
+ * 在 flowchart 同行中把 subgraph / end 拆到新行。
+ * 尊重引号与括号内的文本，避免拆坏标签。
  */
-export const normalizeMermaidSource = (source: string) => {
+const normalizeMidlineFlowKeywords = (source: string) => {
+  if (!/^\s*(?:graph|flowchart)\s/im.test(source)) {
+    return source
+  }
+  return source
+    .split('\n')
+    .map((line) => {
+      const indent = line.match(/^[\t ]*/)?.[0] ?? ''
+      const trimmed = line.trimStart()
+      if (!trimmed || trimmed.startsWith('%%')) {
+        return line
+      }
+
+      let inQuote: '"' | '\'' | null = null
+      let bracketDepth = 0
+      let parenDepth = 0
+      let braceDepth = 0
+      let out = ''
+
+      for (let i = 0; i < trimmed.length; i++) {
+        const ch = trimmed[i]
+        if (inQuote) {
+          out += ch
+          if (ch === inQuote && trimmed[i - 1] !== '\\') {
+            inQuote = null
+          }
+          continue
+        }
+        if (ch === '"' || ch === '\'') {
+          inQuote = ch
+          out += ch
+          continue
+        }
+        if (ch === '[') {
+          bracketDepth++
+          out += ch
+          continue
+        }
+        if (ch === ']') {
+          bracketDepth = Math.max(0, bracketDepth - 1)
+          out += ch
+          continue
+        }
+        if (ch === '(') {
+          parenDepth++
+          out += ch
+          continue
+        }
+        if (ch === ')') {
+          parenDepth = Math.max(0, parenDepth - 1)
+          out += ch
+          continue
+        }
+        if (ch === '{') {
+          braceDepth++
+          out += ch
+          continue
+        }
+        if (ch === '}') {
+          braceDepth = Math.max(0, braceDepth - 1)
+          out += ch
+          continue
+        }
+
+        const insideShape = bracketDepth > 0 || parenDepth > 0 || braceDepth > 0
+        if (!insideShape) {
+          const kw = trimmed.slice(i).match(/^(subgraph|end)\b/i)
+          if (
+            kw &&
+            i > 0 &&
+            /[\s;]/.test(trimmed[i - 1]) &&
+            !/(?:^|\n)\s*$/.test(out)
+          ) {
+            out = out.replace(/\s+$/, '') + '\n' + indent
+            out += kw[0]
+            i += kw[0].length - 1
+            continue
+          }
+        }
+        out += ch
+      }
+
+      if (out === trimmed) {
+        return line
+      }
+      return indent + out
+    })
+    .join('\n')
+}
+
+/**
+ * 标签（引号 / [] / () / {}）内的真实换行转为 Mermaid 认可的 <br/>。
+ */
+const normalizeLabelHardBreaks = (source: string) => {
+  let result = ''
+  let inQuote: '"' | '\'' | null = null
+  let bracketDepth = 0
+  let parenDepth = 0
+  let braceDepth = 0
+
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i]
+    if (inQuote) {
+      if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && source[i + 1] === '\n') {
+          i++
+        }
+        result += '<br/>'
+        continue
+      }
+      result += ch
+      if (ch === inQuote && source[i - 1] !== '\\') {
+        inQuote = null
+      }
+      continue
+    }
+
+    if (ch === '"' || ch === '\'') {
+      inQuote = ch
+      result += ch
+      continue
+    }
+
+    const inShape = bracketDepth > 0 || parenDepth > 0 || braceDepth > 0
+    if (inShape && (ch === '\n' || ch === '\r')) {
+      if (ch === '\r' && source[i + 1] === '\n') {
+        i++
+      }
+      result += '<br/>'
+      continue
+    }
+
+    if (ch === '[') {
+      bracketDepth++
+    } else if (ch === ']') {
+      bracketDepth = Math.max(0, bracketDepth - 1)
+    } else if (ch === '(') {
+      parenDepth++
+    } else if (ch === ')') {
+      parenDepth = Math.max(0, parenDepth - 1)
+    } else if (ch === '{') {
+      braceDepth++
+    } else if (ch === '}') {
+      braceDepth = Math.max(0, braceDepth - 1)
+    }
+    result += ch
+  }
+  return result
+}
+
+/** flowchart/graph 末尾未闭合的引号/括号软闭合，救活 LLM 截断图。 */
+const softCloseUnbalancedDelimiters = (source: string) => {
+  if (!/^\s*(?:graph|flowchart)\s/im.test(source)) {
+    return source
+  }
+  const closers: string[] = []
+  let inQuote: '"' | '\'' | null = null
+  let bracketDepth = 0
+  let parenDepth = 0
+  let braceDepth = 0
+
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i]
+    if (inQuote) {
+      if (ch === inQuote && source[i - 1] !== '\\') {
+        inQuote = null
+      }
+      continue
+    }
+    if (ch === '"' || ch === '\'') {
+      inQuote = ch
+      continue
+    }
+    if (ch === '[') {
+      bracketDepth++
+    } else if (ch === ']') {
+      bracketDepth = Math.max(0, bracketDepth - 1)
+    } else if (ch === '(') {
+      parenDepth++
+    } else if (ch === ')') {
+      parenDepth = Math.max(0, parenDepth - 1)
+    } else if (ch === '{') {
+      braceDepth++
+    } else if (ch === '}') {
+      braceDepth = Math.max(0, braceDepth - 1)
+    }
+  }
+
+  if (inQuote) {
+    closers.push(inQuote)
+  }
+  while (braceDepth-- > 0) {
+    closers.push('}')
+  }
+  while (parenDepth-- > 0) {
+    closers.push(')')
+  }
+  while (bracketDepth-- > 0) {
+    closers.push(']')
+  }
+  if (closers.length === 0) {
+    return source
+  }
+  return source.replace(/\s*$/, '') + closers.join('')
+}
+
+/** subgraph 标签闭合后同行正文拆到下一行：`subgraph a [标签] A-->B`。 */
+const normalizeFlowchartSubgraphInlineBody = (source: string) => {
+  if (!/^\s*(?:graph|flowchart)\s/im.test(source)) {
+    return source
+  }
+  return source.replace(
+    /^(\s*subgraph\b[^\n\[]*\[[^\]]*\])[ \t]+(\S[^\n]*)$/gim,
+    (_match, head: string, rest: string) => {
+      const indent = head.match(/^[\t ]*/)?.[0] ?? ''
+      return `${head}\n${indent}${rest}`
+    }
+  )
+}
+
+/** 去掉 flowchart 尾部明显半截行（未闭合括号/引号、悬挂箭头）。 */
+const dropIncompleteFlowchartTrailingLines = (source: string) => {
+  if (!/^\s*(?:graph|flowchart)\s/im.test(source)) {
+    return source
+  }
+  const lines = source.split('\n')
+  while (lines.length > 1) {
+    const last = lines[lines.length - 1].trim()
+    if (
+      !last ||
+      /^%%/.test(last) ||
+      /(?:-->|---|===|-\.->|==>|--o|--x)\s*$/.test(last) ||
+      /\[[^\]]*$/.test(last) ||
+      /\([^)]*$/.test(last) ||
+      /\{[^}]*$/.test(last) ||
+      /"[^"]*$/.test(last) ||
+      /'[^']*$/.test(last)
+    ) {
+      lines.pop()
+      continue
+    }
+    break
+  }
+  return lines.join('\n')
+}
+
+/** 激进修复：从「未软闭合」底稿去掉半截行后再软闭合。 */
+const aggressiveRepairMermaidSource = (baseWithoutSoftClose: string) => {
+  const dropped = dropIncompleteFlowchartTrailingLines(baseWithoutSoftClose)
+  return softCloseUnbalancedDelimiters(normalizeLabelHardBreaks(dropped))
+}
+
+/**
+ * 规范化底稿（不含软闭合），供标准路径与激进候选共用。
+ */
+const normalizeMermaidSourceBase = (source: string) => {
   let text = source
     .replace(/\r\n/g, '\n')
     .replace(/&quot;/gi, '"')
@@ -490,12 +819,40 @@ export const normalizeMermaidSource = (source: string) => {
     .replace(/：/g, ':')
     .replace(/\u00a0/g, ' ')
   text = normalizeMindmapIndentation(text)
+  // title 粘连/中文引号须在 pie 拆分前处理，否则 title15... 不会被识别为标题行
+  text = normalizeDiagramTitleLines(text)
+  text = normalizeFlowchartHeaderLine(text)
+  text = normalizeMidlineFlowKeywords(text)
   text = normalizeFlowchartSubgraphLabels(text)
+  text = normalizeFlowchartSubgraphInlineBody(text)
   text = normalizeFlowchartMultilineNodeDefs(text)
   text = normalizeFlowchartMultilineEdges(text)
+  text = normalizeLabelHardBreaks(text)
   text = normalizePieMultilineSlices(text)
   text = quotePieSliceLines(text)
+  // pie/xychart 拆分后又可能冒出未加引号 title，再跑一次保证幂等
+  text = normalizeDiagramTitleLines(text)
   return normalizeXychartOrientation(text)
+}
+
+/**
+ * 规范化 LLM 生成的 Mermaid 源码，修复弯引号、全角冒号、转义引号等常见导致解析失败的问题。
+ */
+export const normalizeMermaidSource = (source: string) =>
+  softCloseUnbalancedDelimiters(normalizeMermaidSourceBase(source))
+
+/**
+ * 生成 Mermaid 渲染候选（标准归一化 + 激进修复），供 Worker/主线程依次试渲染。
+ */
+export const buildMermaidRenderCandidates = (source: string): string[] => {
+  const base = normalizeMermaidSourceBase(source)
+  const primary = softCloseUnbalancedDelimiters(base)
+  const aggressive = aggressiveRepairMermaidSource(base)
+  const candidates = [primary]
+  if (aggressive !== primary) {
+    candidates.push(aggressive)
+  }
+  return candidates
 }
 
 /**

@@ -26,7 +26,7 @@ const MARKDOWN_OFFSCREEN_ATTR = 'data-md-offscreen'
  * 图表后处理逻辑变更时递增，用于让历史气泡在 SPA 内重新渲染（非 Mermaid 缓存）。
  * 与 ChatView 中 v-html 的 :key 保持一致。
  */
-export const MARKDOWN_RENDERER_REVISION = '28'
+export const MARKDOWN_RENDERER_REVISION = '31'
 /** 与 markdown.scss 中 --md-diagram-max-height 回退值保持一致 */
 const MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK = 360
 /** 与 markdown.scss 中 --md-html-preview-max-height 回退值保持一致 */
@@ -1987,15 +1987,41 @@ const setBlockError = (block: Element, error: unknown) => {
   block.classList.add('md-diagram-error')
   if (body) {
     clearDiagramBodyPending(body)
-    // 用原生 details/summary 展示长错误，避免被容器 overflow 裁切后“看不见”
-    body.innerHTML = [
-      '<div class="md-diagram-error-title"><strong>图表渲染失败</strong></div>',
+    const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
+    const rawSource = getSourceFromBlock(block).trim()
+    const detailsParts = [
       '<details class="md-diagram-error-details">',
       '<summary class="md-diagram-error-summary">查看错误详情</summary>',
       `<pre class="md-diagram-error-pre"><code>${escapeHtml(
         message
-      )}</code></pre>`,
-      '</details>'
+      )}</code></pre>`
+    ]
+    // Mermaid：附带规范化前后源码，便于对照 LLM 产出与修复结果
+    if (type === 'mermaid' && rawSource) {
+      const normalizedSource = normalizeMermaidSource(rawSource)
+      detailsParts.push(
+        '<details class="md-diagram-error-source">',
+        '<summary class="md-diagram-error-summary">规范化前源码</summary>',
+        `<pre class="md-diagram-error-pre"><code>${escapeHtml(
+          rawSource
+        )}</code></pre>`,
+        '</details>'
+      )
+      if (normalizedSource !== rawSource) {
+        detailsParts.push(
+          '<details class="md-diagram-error-source">',
+          '<summary class="md-diagram-error-summary">规范化后源码</summary>',
+          `<pre class="md-diagram-error-pre"><code>${escapeHtml(
+            normalizedSource
+          )}</code></pre>`,
+          '</details>'
+        )
+      }
+    }
+    detailsParts.push('</details>')
+    body.innerHTML = [
+      '<div class="md-diagram-error-title"><strong>图表渲染失败</strong></div>',
+      ...detailsParts
     ].join('')
   }
   block.setAttribute(MARKDOWN_RENDERED_ATTR, 'true')
