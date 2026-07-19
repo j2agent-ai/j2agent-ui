@@ -63,12 +63,22 @@
 							</el-tag>
 						</template>
 					</el-table-column>
-					<el-table-column :label="t('common.action')" width="100" align="center">
+					<el-table-column :label="t('common.action')" width="180" align="center">
 						<template #default="{ row }">
+							<el-button
+								type="primary"
+								link
+								:loading="reloadingDir === row.agentDir"
+								:disabled="!!deletingDir || (!!reloadingDir && reloadingDir !== row.agentDir)"
+								@click="handleReloadPackage(row)"
+							>
+								{{ t('settings.agentPlugin.reloadOne') }}
+							</el-button>
 							<el-button
 								type="danger"
 								link
 								:loading="deletingDir === row.agentDir"
+								:disabled="!!reloadingDir || (!!deletingDir && deletingDir !== row.agentDir)"
 								@click="handleDelete(row.agentDir)"
 							>
 								{{ t('common.delete') }}
@@ -93,9 +103,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
 import {
 	ElButton,
+	ElCheckbox,
 	ElForm,
 	ElFormItem,
 	ElIcon,
@@ -116,9 +127,15 @@ import {
 	deleteAgentPackage,
 	getAgentPlugins,
 	installAgentPackage,
+	reloadAgentPackage,
 	reloadAgentPlugins
 } from '@/api/ai.api'
-import type { AgentInstallResult, AgentPluginStatus, AgentReloadResult } from '@/types/ai.types'
+import type {
+	AgentInstallResult,
+	AgentPluginPackage,
+	AgentPluginStatus,
+	AgentReloadResult
+} from '@/types/ai.types'
 
 const MAX_UPLOAD_COUNT = 20
 
@@ -131,6 +148,7 @@ const loading = ref(false)
 const reloading = ref(false)
 const installing = ref(false)
 const deletingDir = ref<string | null>(null)
+const reloadingDir = ref<string | null>(null)
 const selectedFiles = ref<File[]>([])
 const fileList = ref<UploadFile[]>([])
 const uploadRef = ref<UploadInstance>()
@@ -171,10 +189,56 @@ const loadStatus = async () => {
 	}
 }
 
+const confirmReloadWithRebuildOption = async (
+	title: string,
+	confirmText: string,
+	rebuildLabel: string,
+	okButtonText: string
+): Promise<boolean | null> => {
+	const rebuildSimpleRag = ref(false)
+	try {
+		await ElMessageBox({
+			title,
+			customClass: 'agent-plugin-reload-msgbox',
+			message: () =>
+				h('div', { class: 'agent-plugin-reload-confirm' }, [
+					h('p', confirmText),
+					h(
+						ElCheckbox,
+						{
+							class: 'agent-plugin-rebuild-checkbox',
+							modelValue: rebuildSimpleRag.value,
+							'onUpdate:modelValue': (value: boolean | string | number) => {
+								rebuildSimpleRag.value = Boolean(value)
+							}
+						},
+						() => rebuildLabel
+					)
+				]),
+			showCancelButton: true,
+			confirmButtonText: okButtonText,
+			cancelButtonText: t('common.cancel'),
+			type: 'warning'
+		})
+		return rebuildSimpleRag.value
+	} catch {
+		return null
+	}
+}
+
 const handleReload = async () => {
+	const rebuild = await confirmReloadWithRebuildOption(
+		t('settings.agentPlugin.reload.title'),
+		t('settings.agentPlugin.reload.confirm'),
+		t('settings.agentPlugin.reload.rebuildVectors'),
+		t('settings.agentPlugin.reload')
+	)
+	if (rebuild === null) {
+		return
+	}
 	reloading.value = true
 	try {
-		const res = await reloadAgentPlugins()
+		const res = await reloadAgentPlugins(rebuild)
 		const result: AgentReloadResult = res.data ?? { success: false }
 		if (result.success) {
 			ElMessage.success(t('settings.agentPlugin.reload.success'))
@@ -187,6 +251,38 @@ const handleReload = async () => {
 		ElMessage.error(data?.message || t('settings.agentPlugin.reload.failed'))
 	} finally {
 		reloading.value = false
+	}
+}
+
+const handleReloadPackage = async (row: AgentPluginPackage) => {
+	const agentDir = row.agentDir
+	if (!agentDir) {
+		return
+	}
+	const rebuild = await confirmReloadWithRebuildOption(
+		t('settings.agentPlugin.reloadOne.title'),
+		t('settings.agentPlugin.reloadOne.confirm', { dir: agentDir }),
+		t('settings.agentPlugin.reloadOne.rebuildVectors'),
+		t('settings.agentPlugin.reloadOne')
+	)
+	if (rebuild === null) {
+		return
+	}
+	reloadingDir.value = agentDir
+	try {
+		const res = await reloadAgentPackage(agentDir, rebuild)
+		const result: AgentReloadResult = res.data ?? { success: false }
+		if (result.success) {
+			ElMessage.success(t('settings.agentPlugin.reloadOne.success'))
+			await loadStatus()
+		} else {
+			ElMessage.error(result.message || t('settings.agentPlugin.reloadOne.failed'))
+		}
+	} catch (err: unknown) {
+		const data = (err as { response?: { data?: AgentReloadResult } })?.response?.data
+		ElMessage.error(data?.message || t('settings.agentPlugin.reloadOne.failed'))
+	} finally {
+		reloadingDir.value = null
 	}
 }
 
@@ -380,5 +476,33 @@ onMounted(() => {
 
 .settings-actions {
 	margin-top: 16px;
+}
+</style>
+
+<!-- MessageBox 挂到 body，需非 scoped 才能作用到勾选框 -->
+<style lang="scss">
+.agent-plugin-reload-msgbox {
+	.agent-plugin-reload-confirm {
+		p {
+			margin: 0 0 12px;
+			line-height: 1.5;
+		}
+
+		.agent-plugin-rebuild-checkbox {
+			display: flex;
+			align-items: center;
+			width: 100%;
+			box-sizing: border-box;
+			margin: 0;
+			padding: 10px 12px;
+			border: 1px solid var(--el-border-color);
+			border-radius: 6px;
+			background: var(--el-fill-color-blank);
+		}
+
+		.agent-plugin-rebuild-checkbox .el-checkbox__inner {
+			border-color: var(--el-border-color-darker);
+		}
+	}
 }
 </style>

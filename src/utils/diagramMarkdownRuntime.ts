@@ -5,8 +5,8 @@ import {
   injectPlantUmlTheme
 } from './diagramTheme'
 import {
+  buildMermaidRenderCandidates,
   isMermaidErrorSvg,
-  normalizeMermaidSource,
   parseVegaLiteSpec,
   type DiagramRenderType
 } from './diagramSourceNormalize'
@@ -106,14 +106,24 @@ const getVegaEmbed = async (): Promise<VegaEmbedFn> => {
 }
 
 const renderMermaidMarkupFallback = async (source: string) => {
-  const normalized = normalizeMermaidSource(source)
+  const candidates = buildMermaidRenderCandidates(source)
   const mermaid = await getMermaidApi()
-  const id = `md-mermaid-${Date.now()}-${++mermaidSeq}`
-  const { svg } = await mermaid.render(id, normalized)
-  if (isMermaidErrorSvg(svg)) {
-    throw new Error('Mermaid 图表语法无效')
+  let lastError: unknown
+  for (const candidate of candidates) {
+    try {
+      const id = `md-mermaid-${Date.now()}-${++mermaidSeq}`
+      const { svg } = await mermaid.render(id, candidate)
+      if (isMermaidErrorSvg(svg)) {
+        throw new Error('Mermaid 图表语法无效')
+      }
+      return svg
+    } catch (error) {
+      lastError = error
+    }
   }
-  return svg
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(String(lastError || 'Mermaid 图表语法无效'))
 }
 
 const renderPlantUmlMarkupFallback = async (source: string) => {
