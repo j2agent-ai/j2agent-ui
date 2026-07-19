@@ -82,8 +82,8 @@ export type ChatRequestDto = {
 	retrievalKb: boolean;
 	// 系统提示词
 	systemPrompt: 'GENERAL_ASSISTANT' | 'TOOL_USE';
-	// 通用助手手动直连子智能体；传入后跳过调度器
-	manualDispatchAgentId?: string
+	// 通用助手手动直连子智能体；传入后跳过编排决策
+	manualOrchestrateAgentId?: string
 }
 
 export type MessageFeedbackRequest = {
@@ -117,7 +117,7 @@ export type WsResponse = {
 
 export type AgentState =
 	| 'IDLE'
-	| 'AGENT_DISPATCHING'
+	| 'AGENT_ORCHESTRATING'
 	| 'THINKING'
 	| 'STREAMING_TEXT'
 	| 'CALLING_TOOL'

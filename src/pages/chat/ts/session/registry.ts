@@ -88,8 +88,8 @@ class ChatSessionRegistry {
 			messageContext,
 			inputMessage: ref(''),
 			selectedAttachments: ref<PendingChatImage[]>([]),
-			manualDispatchEnabled: ref(false),
-			manualDispatchAgentId: ref(''),
+			manualOrchestrateEnabled: ref(false),
+			manualOrchestrateAgentId: ref(''),
 			sendingMessage: ref(false),
 			isNewLlmResponse,
 			loadedFromServer: ref(false),
@@ -132,8 +132,8 @@ class ChatSessionRegistry {
 		session.messageContext.value = []
 		session.inputMessage.value = ''
 		session.selectedAttachments.value = []
-		session.manualDispatchEnabled.value = false
-		session.manualDispatchAgentId.value = ''
+		session.manualOrchestrateEnabled.value = false
+		session.manualOrchestrateAgentId.value = ''
 		session.loadedFromServer.value = false
 		session.dispatcher.resetTurnStates()
 		this.activeSessionKey.value = session.key
