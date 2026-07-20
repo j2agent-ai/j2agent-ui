@@ -374,10 +374,12 @@ defineExpose({ refresh })
 
 <style scoped lang="scss">
 .kb-maintenance-status {
+	height: 100%;
+	min-height: 0;
 	display: flex;
 	flex-direction: column;
 	gap: 12px;
-	margin-bottom: 12px;
+	overflow-y: auto;
 	padding: 12px;
 	border: 1px solid var(--n-color-border-soft);
 	border-radius: 8px;

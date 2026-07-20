@@ -2,12 +2,15 @@
 	<SidebarPageLayout v-model:active="activeMenuItem" @select="handleMenuSelect">
 		<template #menu>
 			<el-menu-item index="1">
-				{{ t('kb.knowledge.list') }}
+				{{ t('kb.repository.list') }}
 			</el-menu-item>
 			<el-menu-item index="2">
-				{{ t('kb.knowledge.hit.test') }}
+				{{ t('kb.knowledge.list') }}
 			</el-menu-item>
 			<el-menu-item index="3">
+				{{ t('kb.knowledge.hit.test') }}
+			</el-menu-item>
+			<el-menu-item index="4">
 				{{ t('settings.rag.section') }}
 			</el-menu-item>
 		</template>
@@ -30,27 +33,33 @@ const KnowledgeBaseList = defineAsyncComponent(
 const HitTest = defineAsyncComponent(
 	() => import('@/pages/kb/pages/HitTest.vue')
 )
+const KnowledgeRepositoryList = defineAsyncComponent(
+	() => import('@/pages/kb/pages/KnowledgeRepositoryList.vue')
+)
 const RagSettings = defineAsyncComponent(
 	() => import('@/pages/kb/pages/RagSettings.vue')
 )
 
 const activeMenuItem = ref('1')
-const currentComponent = shallowRef<Component>(KnowledgeBaseList)
+const currentComponent = shallowRef<Component>(KnowledgeRepositoryList)
 
 const handleMenuSelect = (key: string) => {
 	activeMenuItem.value = key
 	switch (key) {
 		case '1':
-			currentComponent.value = KnowledgeBaseList
+			currentComponent.value = KnowledgeRepositoryList
 			break
 		case '2':
-			currentComponent.value = HitTest
+			currentComponent.value = KnowledgeBaseList
 			break
 		case '3':
+			currentComponent.value = HitTest
+			break
+		case '4':
 			currentComponent.value = RagSettings
 			break
 		default:
-			currentComponent.value = KnowledgeBaseList
+			currentComponent.value = KnowledgeRepositoryList
 	}
 }
 </script>

@@ -9,6 +9,7 @@ export default {
 	'kb.textChunk': 'Text Chunk',
 	'kb.outline': 'Embedding Text',
 	'kb.knowledge.list': 'Knowledge List',
+	'kb.repository.list': 'Knowledge Repositories',
 	'kb.knowledge.rebuild': 'Sync Knowledge Base',
 	'kb.knowledge.rebuild.confirm.title': 'Sync Knowledge Base',
 	'kb.knowledge.rebuild.confirm': 'Scan Markdown under the knowledge repo root and incrementally sync changes to Milvus (existing collections are not dropped). Continue?',

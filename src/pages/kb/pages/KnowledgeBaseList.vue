@@ -42,133 +42,147 @@
 				</el-button>
 			</div>
 		</div>
-		<KnowledgeMaintenanceStatusPanel
-			ref="maintenanceStatusRef"
-			@completed="handleSyncCompleted"
-			@maintenance-change="syncMaintenanceActive = $event"
-		/>
-		<div class="table-wrapper">
-			<el-table
-				ref="tableRef"
-				:data="knowledgeList"
-				class="kb-data-table"
-				style="width: 100%; height: 100%"
-				v-loading="loading"
-				stripe
-			>
-				<el-table-column :label="t('kb.outline')" width="300" align="center">
-					<template #default="scope">
-						<template v-if="!isTableCellEmpty(scope.row.outline)">
-							<el-popover effect="dark" trigger="hover" placement="top" width="400">
-								<template #reference>
-									<div class="outline-preview">
-										{{ getOutlineDisplay(scope.row.outline) }}
-									</div>
+		<el-tabs v-model="activeTab" class="kb-tabs">
+			<el-tab-pane label="知识数据" name="knowledge">
+				<div class="knowledge-pane">
+					<div class="table-wrapper">
+						<el-table
+							ref="tableRef"
+							:data="knowledgeList"
+							class="kb-data-table"
+							style="width: 100%; height: 100%"
+							v-loading="loading"
+							stripe
+						>
+							<el-table-column :label="t('kb.outline')" width="300" align="center">
+								<template #default="scope">
+									<template v-if="!isTableCellEmpty(scope.row.outline)">
+										<el-popover effect="dark" trigger="hover" placement="top" width="400">
+											<template #reference>
+												<div class="outline-preview">
+													{{ getOutlineDisplay(scope.row.outline) }}
+												</div>
+											</template>
+											<div class="outline-full">
+												<div v-for="(item, index) in scope.row.outline" :key="index">
+													{{ index + 1 }}. {{ item }}
+												</div>
+											</div>
+										</el-popover>
+									</template>
+									<span v-else class="empty-text">-</span>
 								</template>
-								<div class="outline-full">
-									<div v-for="(item, index) in scope.row.outline" :key="index">
-										{{ index + 1 }}. {{ item }}
-									</div>
-								</div>
-							</el-popover>
-						</template>
-						<span v-else class="empty-text">-</span>
-					</template>
-				</el-table-column>
-				<el-table-column :label="t('kb.textChunk')" width="300">
-					<template #default="scope">
-						<template v-if="!isTableCellEmpty(scope.row.textChunk)">
-							<el-popover
-								effect="dark"
-								trigger="hover"
-								placement="top"
-								width="400"
+							</el-table-column>
+							<el-table-column :label="t('kb.textChunk')" width="300">
+								<template #default="scope">
+									<template v-if="!isTableCellEmpty(scope.row.textChunk)">
+										<el-popover
+											effect="dark"
+											trigger="hover"
+											placement="top"
+											width="400"
+										>
+											<template #reference>
+												<div class="text-chunk-preview">{{ scope.row.textChunk }}</div>
+											</template>
+											<div class="text-chunk-full">{{ scope.row.textChunk }}</div>
+										</el-popover>
+									</template>
+									<span v-else class="empty-text">-</span>
+								</template>
+							</el-table-column>
+							<el-table-column
+								:label="t('kb.description')"
+								min-width="150"
+								show-overflow-tooltip
 							>
-								<template #reference>
-									<div class="text-chunk-preview">{{ scope.row.textChunk }}</div>
+								<template #default="{ row }">
+									<span v-if="isTableCellEmpty(row.description)" class="empty-text">-</span>
+									<span v-else>{{ row.description }}</span>
 								</template>
-								<div class="text-chunk-full">{{ scope.row.textChunk }}</div>
-							</el-popover>
-						</template>
-						<span v-else class="empty-text">-</span>
-					</template>
-				</el-table-column>
-				<el-table-column
-					:label="t('kb.description')"
-					min-width="150"
-					show-overflow-tooltip
-				>
-					<template #default="{ row }">
-						<span v-if="isTableCellEmpty(row.description)" class="empty-text">-</span>
-						<span v-else>{{ row.description }}</span>
-					</template>
-				</el-table-column>
-				<el-table-column :label="t('kb.dimension')" width="130" align="center">
-					<template #default="{ row }">
-						<span v-if="isTableCellEmpty(row.dimension)" class="empty-text">-</span>
-						<span v-else>{{ row.dimension }}</span>
-					</template>
-				</el-table-column>
-				<el-table-column :label="t('kb.embeddingModel')" width="150">
-					<template #default="{ row }">
-						<span v-if="isTableCellEmpty(row.embeddingModel)" class="empty-text">-</span>
-						<span v-else>{{ row.embeddingModel }}</span>
-					</template>
-				</el-table-column>
-				<el-table-column :label="t('kb.embeddingProvider')" width="150">
-					<template #default="{ row }">
-						<span v-if="isTableCellEmpty(row.embeddingProvider)" class="empty-text">-</span>
-						<span v-else>{{ row.embeddingProvider }}</span>
-					</template>
-				</el-table-column>
-				<el-table-column label="源文件" min-width="220" show-overflow-tooltip>
-					<template #default="{ row }">
-						<span v-if="isTableCellEmpty(row.sourceFile)" class="empty-text">-</span>
-						<span v-else>{{ row.sourceFile }}</span>
-					</template>
-				</el-table-column>
-				<el-table-column
-					:label="t('common.create.time')"
-					width="180"
-					align="center"
-				>
-					<template #default="scope">
-						<span v-if="!formatDateTime(scope.row.createTime)" class="empty-text">-</span>
-						<span v-else>{{ formatDateTime(scope.row.createTime) }}</span>
-					</template>
-				</el-table-column>
-				<el-table-column
-					:label="t('common.update.time')"
-					width="180"
-					align="center"
-				>
-					<template #default="scope">
-						<span v-if="!formatDateTime(scope.row.updateTime)" class="empty-text">-</span>
-						<span v-else>{{ formatDateTime(scope.row.updateTime) }}</span>
-					</template>
-				</el-table-column>
-				<el-table-column :label="t('kb.create.username')" width="150">
-					<template #default="{ row }">
-						<span v-if="isTableCellEmpty(row.createUsername)" class="empty-text">-</span>
-						<span v-else>{{ row.createUsername }}</span>
-					</template>
-				</el-table-column>
-				<template #empty>
-					<span class="table-empty-hint">{{ emptyTableMessage }}</span>
+							</el-table-column>
+							<el-table-column :label="t('kb.dimension')" width="130" align="center">
+								<template #default="{ row }">
+									<span v-if="isTableCellEmpty(row.dimension)" class="empty-text">-</span>
+									<span v-else>{{ row.dimension }}</span>
+								</template>
+							</el-table-column>
+							<el-table-column :label="t('kb.embeddingModel')" width="150">
+								<template #default="{ row }">
+									<span v-if="isTableCellEmpty(row.embeddingModel)" class="empty-text">-</span>
+									<span v-else>{{ row.embeddingModel }}</span>
+								</template>
+							</el-table-column>
+							<el-table-column :label="t('kb.embeddingProvider')" width="150">
+								<template #default="{ row }">
+									<span v-if="isTableCellEmpty(row.embeddingProvider)" class="empty-text">-</span>
+									<span v-else>{{ row.embeddingProvider }}</span>
+								</template>
+							</el-table-column>
+							<el-table-column label="源文件" min-width="220" show-overflow-tooltip>
+								<template #default="{ row }">
+									<span v-if="isTableCellEmpty(row.sourceFile)" class="empty-text">-</span>
+									<span v-else>{{ row.sourceFile }}</span>
+								</template>
+							</el-table-column>
+							<el-table-column
+								:label="t('common.create.time')"
+								width="180"
+								align="center"
+							>
+								<template #default="scope">
+									<span v-if="!formatDateTime(scope.row.createTime)" class="empty-text">-</span>
+									<span v-else>{{ formatDateTime(scope.row.createTime) }}</span>
+								</template>
+							</el-table-column>
+							<el-table-column
+								:label="t('common.update.time')"
+								width="180"
+								align="center"
+							>
+								<template #default="scope">
+									<span v-if="!formatDateTime(scope.row.updateTime)" class="empty-text">-</span>
+									<span v-else>{{ formatDateTime(scope.row.updateTime) }}</span>
+								</template>
+							</el-table-column>
+							<el-table-column :label="t('kb.create.username')" width="150">
+								<template #default="{ row }">
+									<span v-if="isTableCellEmpty(row.createUsername)" class="empty-text">-</span>
+									<span v-else>{{ row.createUsername }}</span>
+								</template>
+							</el-table-column>
+							<template #empty>
+								<span class="table-empty-hint">{{ emptyTableMessage }}</span>
+							</template>
+						</el-table>
+					</div>
+					<div class="pagination-wrapper">
+						<el-pagination
+							v-model:current-page="currentPage"
+							v-model:page-size="pageSize"
+							:page-sizes="[10, 20, 50, 100]"
+							:total="total"
+							layout="total, sizes, prev, pager, next, jumper"
+							@size-change="handleSizeChange"
+							@current-change="handleCurrentChange"
+						/>
+					</div>
+				</div>
+			</el-tab-pane>
+			<el-tab-pane name="maintenance">
+				<template #label>
+					<span class="tab-label">
+						同步状态
+						<el-tag v-if="syncMaintenanceActive" size="small" type="warning">运行中</el-tag>
+					</span>
 				</template>
-			</el-table>
-		</div>
-		<div class="pagination-wrapper">
-			<el-pagination
-				v-model:current-page="currentPage"
-				v-model:page-size="pageSize"
-				:page-sizes="[10, 20, 50, 100]"
-				:total="total"
-				layout="total, sizes, prev, pager, next, jumper"
-				@size-change="handleSizeChange"
-				@current-change="handleCurrentChange"
-			/>
-		</div>
+				<KnowledgeMaintenanceStatusPanel
+					ref="maintenanceStatusRef"
+					@completed="handleSyncCompleted"
+					@maintenance-change="syncMaintenanceActive = $event"
+				/>
+			</el-tab-pane>
+		</el-tabs>
 		<el-dialog
 			v-model="rebuildDialogVisible"
 			:title="t('kb.knowledge.rebuild.confirm.title')"
@@ -235,8 +249,11 @@ import {
 	ElPopover,
 	ElSelect,
 	ElSwitch,
+	ElTabPane,
 	ElTable,
-	ElTableColumn
+	ElTableColumn,
+	ElTabs,
+	ElTag
 } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { getKnowledge, getKnowledgeCollections, syncKnowledge } from '@/api/kb/kb.api'
@@ -260,6 +277,7 @@ const collectionOptions = ref<string[]>([])
 const rebuildDialogVisible = ref(false)
 const fullRebuildEnabled = ref(false)
 const fullRebuildConfirmText = ref('')
+const activeTab = ref('knowledge')
 const FULL_REBUILD_CONFIRM_TEXT = '完全重建'
 
 const emptyTableMessage = computed(() =>
@@ -502,5 +520,46 @@ onMounted(() => {
 		max-height: 300px;
 		overflow-y: auto;
 	}
+}
+
+.kb-tabs {
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+
+	:deep(.el-tabs__header) {
+		flex-shrink: 0;
+		margin: 0 0 12px;
+	}
+
+	:deep(.el-tabs__content) {
+		flex: 1;
+		min-height: 0;
+		min-width: 0;
+		display: flex;
+	}
+
+	:deep(.el-tab-pane) {
+		flex: 1;
+		min-height: 0;
+		min-width: 0;
+		overflow: hidden;
+	}
+}
+
+.knowledge-pane {
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+.tab-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 }
 </style>
