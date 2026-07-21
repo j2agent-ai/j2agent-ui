@@ -6,6 +6,63 @@ export interface KnowledgeCollectionListDto {
 	data?: string[]
 }
 
+export type KnowledgeRepositoryType = 'LOCAL_FILE' | 'REMOTE'
+export type KnowledgeRepositoryProtocol = 'GIT'
+export type KnowledgeRepositoryStatus = 'IDLE' | 'SYNCING' | 'SYNCED' | 'FAILED' | 'DIRECTORY_MISSING'
+
+export interface KnowledgeRepositoryCredentialConfig {
+	username?: string
+	password?: string
+	token?: string
+	accessKey?: string
+	secretKey?: string
+}
+
+export interface KnowledgeRepositoryDto {
+	id?: string
+	repoCode?: string
+	type?: KnowledgeRepositoryType
+	protocol?: KnowledgeRepositoryProtocol
+	enabled?: boolean
+	readonly?: boolean
+	localPath?: string
+	updateIntervalMinutes?: number
+	status?: KnowledgeRepositoryStatus
+	remoteUrl?: string
+	defaultBranch?: string
+	lastRevision?: string
+	lastRevisionMessage?: string
+	lastRevisionAuthor?: string
+	lastRevisionTime?: number
+	lastSyncTime?: number
+	lastError?: string
+	protocolConfig?: Record<string, unknown>
+	hasCredential?: boolean
+	collections?: string[]
+	minHeadingLevel?: number
+	filenameAsTitle?: boolean
+}
+
+export interface KnowledgeRepositoryListDto {
+	data?: KnowledgeRepositoryDto[]
+}
+
+export interface KnowledgeRepositoryUpsertDto {
+	repoCode?: string
+	protocol?: KnowledgeRepositoryProtocol
+	enabled?: boolean
+	updateIntervalMinutes?: number
+	remoteUrl?: string
+	defaultBranch?: string
+	protocolConfig?: Record<string, unknown>
+	credentialConfig?: KnowledgeRepositoryCredentialConfig
+}
+
+export interface KnowledgeRepositorySyncResult {
+	success?: boolean
+	message?: string
+}
+
 /** 知识库目录同步提交结果 */
 export interface KnowledgeSyncResult {
 	success?: boolean

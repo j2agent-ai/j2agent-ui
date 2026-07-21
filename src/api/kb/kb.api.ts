@@ -3,6 +3,10 @@ import {
 	KnowledgeAddDto,
 	KnowledgeCollectionListDto,
 	KnowledgeGetListDto,
+	KnowledgeRepositoryDto,
+	KnowledgeRepositoryListDto,
+	KnowledgeRepositorySyncResult,
+	KnowledgeRepositoryUpsertDto,
 	KnowledgeRetrieveResponseDto,
 	KnowledgeSyncResult,
 	KnowledgeSyncStatusDto
@@ -32,6 +36,44 @@ export const getKnowledge = (
 export const getKnowledgeCollections = () => {
 	return http.get<KnowledgeCollectionListDto>(
 		`/v1${globalUrlPrefix}rest/${programTag}/knowledge/collections`
+	)
+}
+
+export const getKnowledgeRepositories = () => {
+	return http.get<KnowledgeRepositoryListDto>(
+		`/v1${globalUrlPrefix}rest/${programTag}/knowledge/repositories`
+	)
+}
+
+export const getKnowledgeRepository = (id: string) => {
+	return http.get<KnowledgeRepositoryDto>(
+		`/v1${globalUrlPrefix}rest/${programTag}/knowledge/repositories/${id}`
+	)
+}
+
+export const createKnowledgeRepository = (payload: KnowledgeRepositoryUpsertDto) => {
+	return http.post<KnowledgeRepositoryDto>(
+		`/v1${globalUrlPrefix}rest/${programTag}/knowledge/repositories`,
+		payload
+	)
+}
+
+export const updateKnowledgeRepository = (id: string, payload: KnowledgeRepositoryUpsertDto) => {
+	return http.put<KnowledgeRepositoryDto>(
+		`/v1${globalUrlPrefix}rest/${programTag}/knowledge/repositories/${id}`,
+		payload
+	)
+}
+
+export const deleteKnowledgeRepository = (id: string) => {
+	return http.delete<void>(
+		`/v1${globalUrlPrefix}rest/${programTag}/knowledge/repositories/${id}`
+	)
+}
+
+export const syncKnowledgeRepository = (id: string) => {
+	return http.post<KnowledgeRepositorySyncResult>(
+		`/v1${globalUrlPrefix}rest/${programTag}/knowledge/repositories/${id}/sync`
 	)
 }
 

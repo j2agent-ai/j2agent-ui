@@ -23,6 +23,7 @@ import {
 } from './agent-ui'
 import { getAgentDisplayName } from '../agent/name-registry'
 import { resolveAttachmentsDisplayUrls } from '../media/attachment'
+import { relativePathFromRepoFileUrl } from '@/utils/repoFileUrl'
 
 type DispatcherOptions = {
 	messageContext: Ref<MessageDto[]>
@@ -504,9 +505,13 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 	}
 
 	const srcFileKey = (file: FileDto) => {
-		const path = file.relativePath?.trim()
+		const path = file.relativePath?.trim().replace(/\\/g, '/')
 		if (path) {
-			return path.replace(/\\/g, '/')
+			return path
+		}
+		const fromUrl = relativePathFromRepoFileUrl(file.url ?? '')
+		if (fromUrl) {
+			return fromUrl.replace(/\\/g, '/')
 		}
 		return file.url?.trim() ?? file.fullFileName?.trim() ?? ''
 	}

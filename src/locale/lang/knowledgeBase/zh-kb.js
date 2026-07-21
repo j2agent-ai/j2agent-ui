@@ -9,6 +9,7 @@ export default {
 	'kb.textChunk': '文本块',
 	'kb.outline': '嵌入文本值',
 	'kb.knowledge.list': '知识列表',
+	'kb.repository.list': '知识库列表',
 	'kb.knowledge.rebuild': '重建知识库',
 	'kb.knowledge.rebuild.confirm.title': '重建知识库确认',
 	'kb.knowledge.rebuild.confirm': '将扫描知识库根目录下的 Markdown，按变更增量同步到 Milvus（不会清空已有 collection）。是否继续？',
