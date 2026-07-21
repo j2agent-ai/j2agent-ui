@@ -38,7 +38,7 @@ export function isOssPresignedUrl(url?: string): boolean {
 	return !!url && (url.includes('X-Amz-Algorithm=') || url.includes('X-Amz-Signature='))
 }
 
-/** 浏览器无法直连的内网 OSS 地址（如 Docker 内 minio:9000、127.0.0.1） */
+/** 浏览器无法直连的内网 OSS 地址（如 Docker 内 minio/rustfs:9000、127.0.0.1） */
 export function isUnreachableOssUrl(url?: string): boolean {
 	if (!url || isChatAttachmentContentUrl(url) || isObjectFileContentUrl(url) || isObjectFileUploadContentUrl(url)) {
 		return false
@@ -49,7 +49,8 @@ export function isUnreachableOssUrl(url?: string): boolean {
 			return (
 				hostname === '127.0.0.1' ||
 				hostname === 'localhost' ||
-				hostname === 'minio'
+				hostname === 'minio' ||
+				hostname === 'rustfs'
 			)
 		} catch {
 			return true
