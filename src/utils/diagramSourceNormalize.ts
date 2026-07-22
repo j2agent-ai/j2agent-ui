@@ -663,7 +663,7 @@ const isSequenceStatementBoundary = (rest: string, linePrefix: string) => {
   // （避免 "send end signal" / "noop end"；跨行的 `alt` + `noop end` 不拆，Mermaid 可接受）
   const endMatch = rest.match(/^end\b/i)
   if (endMatch) {
-    const hasOpenBlock = /\b(alt|opt|loop|par|rect|critical|break)\b/i.test(linePrefix)
+    const hasOpenBlock = /\b(alt|else|opt|loop|par|rect|critical|break)\b/i.test(linePrefix)
     if (!hasOpenBlock) {
       return false
     }
