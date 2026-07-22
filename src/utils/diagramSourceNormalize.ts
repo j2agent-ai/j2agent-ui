@@ -713,7 +713,7 @@ const isSequenceStatementBoundary = (rest: string, linePrefix: string) => {
  * 把 sequenceDiagram 同行内的 participant / 箭头消息 / alt|else|end 等拆成多行。
  * 应对 LLM 或管道丢换行后 `end` 落在消息旁导致的 Parse error。
  */
-const splitSequenceDiagramCrowdedLine = (line: string) => {
+const splitSequenceDiagramCrowdedLine = (line: string, lineContext = '') => {
   const indent = line.match(/^[\t ]*/)?.[0] ?? ''
   const trimmed = line.trimStart()
   if (!trimmed || trimmed.startsWith('%%')) {
@@ -742,7 +742,7 @@ const splitSequenceDiagramCrowdedLine = (line: string) => {
     if (
       i > 0 &&
       /\s/.test(trimmed[i - 1]) &&
-      isSequenceStatementBoundary(trimmed.slice(i), out)
+      isSequenceStatementBoundary(trimmed.slice(i), `${lineContext}\n${out}`)
     ) {
       out = out.replace(/\s+$/, '') + '\n' + indent
     }
@@ -762,10 +762,19 @@ const normalizeMidlineSequenceKeywords = (source: string) => {
   if (!/^\s*sequenceDiagram\b/im.test(source)) {
     return source
   }
-  return source
-    .split('\n')
-    .map((line) => splitSequenceDiagramCrowdedLine(line))
-    .join('\n')
+  const lines = source.split('\n')
+  const out: string[] = []
+  let lineContext = ''
+  for (const line of lines) {
+    const normalizedLine = splitSequenceDiagramCrowdedLine(line, lineContext)
+    out.push(normalizedLine)
+    if (/(?:^|\n)\s*end\s*(?:\n|$)/i.test(normalizedLine)) {
+      lineContext = ''
+    } else if (/\belse\b/i.test(normalizedLine)) {
+      lineContext += `\n${normalizedLine}`
+    }
+  }
+  return out.join('\n')
 }
 
 /**

@@ -51,6 +51,31 @@ const cases = [
     alt direct 模式 UI->>OSS: 气泡 <img> 直连预签名 URL
     else proxy 模式 UI->>API: 气泡 <img> GET /chat/files/content end`,
   },
+  {
+    name: 'attachment-flow-crowded-header-and-cross-line-end',
+    input: `sequenceDiagram participant UI as 浏览器
+    participant API as J2Agent
+    participant OSS as 对象存储
+    participant LLM as 视觉 LLM UI->>UI: 本地预览（blob URL，仅输入区）
+    UI->>API: WebSocket ChatRequestDto + attachments.data（Base64）
+    API->>OSS: putObject chat/userId/contextId/uuid_file API-->>UI: NOTICE user-attachments-ready（展示 URL，见 access-mode）
+    API->>API: validateAndReference + object_file_reference API->>OSS: getObject 读字节（仅 LLM 推理）
+    API->>LLM: UserMessage.media（base64/Resource）
+    API->>API: encode 记忆 meta_json.attachments（objectKey，不含 url）
+    alt direct 模式
+        UI->>OSS: 气泡 <img> 直连预签名 URL else proxy 模式
+        UI->>API: 气泡 <img> GET /chat/files/content end`,
+  },
+  {
+    name: 'else-closed-then-send-end-message',
+    input: `sequenceDiagram
+  alt x
+    A->>B: first
+  else y
+    A->>B: second end
+  A->>B: send end
+  B-->>A: ok`,
+  },
 ]
 
 let failed = 0
