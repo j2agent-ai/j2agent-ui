@@ -1,4 +1,4 @@
-import { ROLE_USER } from '@/utils/role'
+import { ROLE_ADMIN, ROLE_USER } from '@/utils/role'
 
 export default [
 	{
