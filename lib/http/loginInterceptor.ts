@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { redirectToLogin } from '@/utils/auth'
 import { getAuthToken } from '@/utils/token'
+import { getLangStorage, resolveLangMode } from '@ai-system/utils'
 
 declare module 'axios' {
 	export interface AxiosRequestConfig {
@@ -15,8 +16,12 @@ const http = axios.create({
 
 http.interceptors.request.use((config) => {
 	const token = getAuthToken()
+	const lang = resolveLangMode(getLangStorage() || window.webApp?.getLang?.() || 'system')
+	const locale = lang === 'en' ? 'en_US' : 'zh_CN'
+	config.headers = config.headers ?? {}
+	config.headers['X-Locale'] = locale
+	config.headers['Accept-Language'] = locale.replace('_', '-')
 	if (token) {
-		config.headers = config.headers ?? {}
 		config.headers.Authorization = `Bearer ${token}`
 	}
 	return config

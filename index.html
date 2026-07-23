@@ -25,8 +25,10 @@
 			}
     </style>
     <script type="text/javascript">
-      var ai_system_language_variable = "zh"
-      localStorage.setItem("lang", ai_system_language_variable)
+      var ai_system_language_variable = "system"
+      if (!localStorage.getItem("lang")) {
+        localStorage.setItem("lang", ai_system_language_variable)
+      }
     </script>
   </head>
   <body >

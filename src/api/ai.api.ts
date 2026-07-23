@@ -12,16 +12,21 @@ import {
 import http from '@ai-system/http/loginInterceptor'
 import { globalUrlPrefix, programTag } from '@/oem.js'
 import { getAuthToken } from '@/utils/token'
+import { getLangStorage, resolveLangMode } from '@ai-system/utils'
 
 export const chatWebsocketClientApi = (contextId: string, agentId: string): WebSocket => {
 	const token = getAuthToken()
+	const lang = resolveLangMode(getLangStorage() || window.webApp?.getLang?.() || 'system')
+	const locale = lang === 'en' ? 'en_US' : 'zh_CN'
 	const authQuery = token ? `&authorization=${encodeURIComponent(token)}` : ''
 	return new WebSocket(
 		window.location.origin.replace('http', 'ws') +
 			`/ws${globalUrlPrefix}rest/${programTag}/chat?context-id=` +
-			contextId +
+			encodeURIComponent(contextId) +
 			'&agent-id=' +
-			agentId +
+			encodeURIComponent(agentId) +
+			'&locale=' +
+			encodeURIComponent(locale) +
 			authQuery
 	)
 }

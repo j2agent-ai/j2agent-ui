@@ -16,12 +16,14 @@
 					@click="openChat(item.agentId)"
 				>
 					<div class="card-icon">{{ item.logo || '🤖' }}</div>
-					<h3>{{ item.name }}</h3>
+					<h3>{{ resolveAgentInfoName(item) }}</h3>
 					<p class="meta">
 						<span class="label">ID : </span>
 						<code>{{ item.agentId }}</code>
 					</p>
-					<p v-if="item.description" class="desc">{{ item.description }}</p>
+					<p v-if="resolveAgentInfoDescription(item)" class="desc">
+						{{ resolveAgentInfoDescription(item) }}
+					</p>
 				</div>
 			</div>
 		</div>
@@ -37,6 +39,10 @@ import topBar from '@/pages/components/topBar.vue'
 import { getAgentList } from '@/api/ai.api'
 import { goTo, setForceNewChatFlag } from '@/routes'
 import type { AgentInfoDto } from '@/types/ai.types'
+import {
+	resolveAgentInfoDescription,
+	resolveAgentInfoName
+} from '@/pages/chat/ts/agent/name-registry'
 
 const route = useRoute()
 const isFullscreen = ref(true)

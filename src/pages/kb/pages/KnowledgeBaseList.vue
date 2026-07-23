@@ -278,7 +278,9 @@ const rebuildDialogVisible = ref(false)
 const fullRebuildEnabled = ref(false)
 const fullRebuildConfirmText = ref('')
 const activeTab = ref('knowledge')
-const FULL_REBUILD_CONFIRM_TEXT = '完全重建'
+const fullRebuildConfirmExpectedText = computed(() =>
+	t('kb.knowledge.rebuild.full.confirm.text')
+)
 
 const emptyTableMessage = computed(() =>
 	selectedCollection.value ? '暂无数据' : '请先选择 Collection'
@@ -392,7 +394,9 @@ const handleSearch = () => {
 }
 
 const isRebuildSubmitDisabled = computed(
-	() => fullRebuildEnabled.value && fullRebuildConfirmText.value.trim() !== FULL_REBUILD_CONFIRM_TEXT
+	() =>
+		fullRebuildEnabled.value &&
+		fullRebuildConfirmText.value.trim() !== fullRebuildConfirmExpectedText.value
 )
 
 // 打开重建弹窗

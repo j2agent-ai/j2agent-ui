@@ -261,13 +261,28 @@
 		margin-bottom: 14px;
 	}
 
+	.rebuild-form .el-form-item:has(.full-rebuild-confirm-area) {
+		display: block;
+	}
+
 	.rebuild-form .el-form-item__label {
 		font-weight: 500;
 		color: var(--n-color-text-primary);
 	}
 
+	.rebuild-form .el-form-item:has(.full-rebuild-confirm-area) .el-form-item__label {
+		display: block;
+		width: 100% !important;
+		margin-bottom: 8px;
+		text-align: left;
+	}
+
 	.rebuild-form .el-form-item__content {
 		align-items: flex-start;
+	}
+
+	.rebuild-form .el-form-item:has(.full-rebuild-confirm-area) .el-form-item__content {
+		margin-left: 0 !important;
 	}
 
 	.full-rebuild-confirm-area {
@@ -301,6 +316,8 @@
 
 	.full-rebuild-input {
 		--el-input-placeholder-color: #8f959e;
+		width: 100%;
+		max-width: 100%;
 	}
 }
 
