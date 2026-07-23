@@ -216,9 +216,9 @@
 					>
 						<el-option
 							v-for="collection in collectionOptions"
-							:key="collection"
-							:label="collection"
-							:value="collection"
+							:key="collection.collection"
+							:label="formatCollectionLabel(collection)"
+							:value="collection.collection"
 						/>
 					</el-select>
 				</el-form-item>
@@ -284,7 +284,7 @@ import { computed, onMounted, ref } from 'vue'
 import { getOutlineDisplay, getOutlineItems, isTableCellEmpty, t } from '@ai-system/lib'
 import { getKnowledgeCollections, retrieveKnowledge } from '@/api/kb/kb.api'
 import { getProperties } from '@/api/property.api'
-import { KnowledgeRetrieveItemDto } from '@/types/kb.model'
+import type { KnowledgeCollectionDto, KnowledgeRetrieveItemDto } from '@/types/kb.model'
 import { QuestionFilled } from '@element-plus/icons-vue'
 
 const KEY_RETRIEVE_DENSE_WEIGHT = 'RETRIEVE_DENSE_WEIGHT'
@@ -303,7 +303,7 @@ const formRef = ref<InstanceType<typeof ElForm>>()
 const loading = ref(false)
 const collectionLoading = ref(false)
 const retrieveResultList = ref<KnowledgeRetrieveItemDto[]>([])
-const collectionOptions = ref<string[]>([])
+const collectionOptions = ref<KnowledgeCollectionDto[]>([])
 
 const ragWeights = ref({
 	denseWeight: 0.5,
@@ -354,14 +354,21 @@ const loadCollections = async () => {
 	collectionLoading.value = true
 	try {
 		const response = await getKnowledgeCollections()
-		const body = response.data as { data?: string[] } | undefined
-		collectionOptions.value = body?.data ?? []
+		const body = response.data as { data?: KnowledgeCollectionDto[] } | undefined
+		collectionOptions.value = (body?.data ?? []).filter((item) => Boolean(item.collection?.trim()))
 	} catch (error) {
 		console.error('加载知识库 Collection 失败:', error)
 		collectionOptions.value = []
 	} finally {
 		collectionLoading.value = false
 	}
+}
+
+/** 格式化 collection 下拉展示名 */
+const formatCollectionLabel = (collection: KnowledgeCollectionDto) => {
+	const value = collection.collection?.trim()
+	const name = collection.name?.trim()
+	return name && value && name !== value ? `${name} (${value})` : value || name || ''
 }
 
 const onSubmit = async () => {

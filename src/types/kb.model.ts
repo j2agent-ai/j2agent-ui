@@ -3,7 +3,15 @@ export interface KnowledgeGetListDto {
 }
 
 export interface KnowledgeCollectionListDto {
-	data?: string[]
+	data?: KnowledgeCollectionDto[]
+}
+
+export interface KnowledgeCollectionDto {
+	collection?: string
+	name?: string
+	repoCode?: string
+	repositoryName?: string
+	type?: KnowledgeRepositoryType
 }
 
 export type KnowledgeRepositoryType = 'LOCAL_FILE' | 'REMOTE'

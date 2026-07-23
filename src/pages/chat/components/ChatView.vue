@@ -605,8 +605,8 @@ import {
   getHistoryContext,
   getQaTemplate
 } from '@/api/ai.api'
-import { getKnowledgeCollections, getKnowledgeRepositories } from '@/api/kb/kb.api'
-import type { KnowledgeRepositoryDto } from '@/types/kb.model'
+import { getKnowledgeCollections } from '@/api/kb/kb.api'
+import type { KnowledgeCollectionDto } from '@/types/kb.model'
 import { chatActivityStore } from '../ts/activity/store'
 import { isContextStreaming } from '../ts/activity/live'
 import { chatSessionRegistry } from '../ts/session/registry'
@@ -984,6 +984,7 @@ type PendingAskQuestionAnswer = {
   questionMessageIndex: number
   userMessageIndex: number
   answer: string
+  knowledgeCollections: string[]
 }
 
 const pendingAskQuestionAnswer = ref<PendingAskQuestionAnswer | null>(null)
@@ -1119,22 +1120,27 @@ const syncSelectedKnowledgeCollections = () => {
   }
 }
 
-const unwrapKnowledgeRepositories = (response: unknown): KnowledgeRepositoryDto[] =>
-  (response as { data?: { data?: KnowledgeRepositoryDto[] } })?.data?.data ?? []
+/** 格式化 knowledge collection 展示标签 */
+const formatKnowledgeCollectionLabel = (item: KnowledgeCollectionDto) => {
+  const collection = item.collection?.trim()
+  const name = item.name?.trim()
+  return name && collection && name !== collection ? `${name} (${collection})` : collection || name || ''
+}
 
-const buildKnowledgeCollectionLabelMap = (repositories: KnowledgeRepositoryDto[]) => {
+/** 应用后端返回的 collection 选项与标签映射 */
+const applyKnowledgeCollectionOptions = (items: KnowledgeCollectionDto[]) => {
+  knowledgeCollections.value = items
+    .map((item) => item.collection?.trim())
+    .filter((collection): collection is string => Boolean(collection))
   const next: Record<string, string> = {}
-  for (const repository of repositories) {
-    if (repository.type !== 'REMOTE') {
+  for (const item of items) {
+    const collection = item.collection?.trim()
+    if (!collection) {
       continue
     }
-    const aliases = repository.collectionAliases || {}
-    const repositoryDisplayName = repository.displayName?.trim()
-    for (const collection of repository.collections || []) {
-      const alias = aliases[collection]?.trim() || repositoryDisplayName
-      if (alias) {
-        next[collection] = `${alias} (${collection})`
-      }
+    const label = formatKnowledgeCollectionLabel(item)
+    if (label) {
+      next[collection] = label
     }
   }
   knowledgeCollectionLabelMap.value = next
@@ -1151,20 +1157,9 @@ const ensureKnowledgeCollectionsLoaded = async () => {
   knowledgeCollectionsLoadFailed.value = false
   knowledgeCollectionsLoaded.value = false
   try {
-    const [collectionsResult, repositoriesResult] = await Promise.allSettled([
-      getKnowledgeCollections(),
-      getKnowledgeRepositories()
-    ])
-    if (collectionsResult.status === 'rejected') {
-      throw collectionsResult.reason
-    }
-    knowledgeCollections.value = collectionsResult.value.data?.data ?? []
+    const response = await getKnowledgeCollections()
+    applyKnowledgeCollectionOptions(response.data?.data ?? [])
     knowledgeCollectionsLoaded.value = true
-    if (repositoriesResult.status === 'fulfilled') {
-      buildKnowledgeCollectionLabelMap(unwrapKnowledgeRepositories(repositoriesResult.value))
-    } else {
-      knowledgeCollectionLabelMap.value = {}
-    }
     syncSelectedKnowledgeCollections()
   } catch {
     knowledgeCollectionsLoadFailed.value = true
@@ -1487,6 +1482,24 @@ const startUserMessageTurn = async (
   }
 }
 
+/** 解析本次请求应携带的 knowledge collections */
+const resolveKnowledgeCollectionsForRequest = (session: ChatSessionRuntime) => {
+  if (!isKnowledgeQaAssistantPage.value) {
+    return []
+  }
+  return [...session.selectedKnowledgeCollections.value]
+}
+
+/** 校验并返回请求用 knowledge collections；未选中时提示并返回 null */
+const ensureKnowledgeCollectionsForRequest = (session: ChatSessionRuntime) => {
+  const knowledgeCollectionsForRequest = resolveKnowledgeCollectionsForRequest(session)
+  if (isKnowledgeQaAssistantPage.value && knowledgeCollectionsForRequest.length === 0) {
+    ElMessage.warning(t('ai.knowledge.collections.required'))
+    return null
+  }
+  return knowledgeCollectionsForRequest
+}
+
 const sendMessage = async (msg?: string) => {
   let session = requireActiveSession()
   if (!session) {
@@ -1513,11 +1526,8 @@ const sendMessage = async (msg?: string) => {
     ElMessage.info(t('ai.assistant.waiting'))
     return
   }
-  const knowledgeCollectionsForRequest = isKnowledgeQaAssistantPage.value
-    ? [...session.selectedKnowledgeCollections.value]
-    : []
-  if (isKnowledgeQaAssistantPage.value && knowledgeCollectionsForRequest.length === 0) {
-    ElMessage.warning(t('ai.knowledge.collections.required'))
+  const knowledgeCollectionsForRequest = ensureKnowledgeCollectionsForRequest(session)
+  if (!knowledgeCollectionsForRequest) {
     return
   }
   const displayAttachments = buildDisplayAttachments(pendingImages)
@@ -1543,7 +1553,8 @@ const appendPendingAskQuestionAnswerBubble = (
   session: ChatSessionRuntime,
   targetContextId: string,
   questionMessageIndex: number,
-  answer: string
+  answer: string,
+  knowledgeCollectionsForRequest: string[]
 ) => {
   const message: MessageDto = {
     index: session.messageContext.value.length,
@@ -1558,7 +1569,8 @@ const appendPendingAskQuestionAnswerBubble = (
     contextId: targetContextId,
     questionMessageIndex,
     userMessageIndex: message.index,
-    answer
+    answer,
+    knowledgeCollections: knowledgeCollectionsForRequest
   }
   isAtBottom.value = true
   scrollToBottomAfterMessageFlush()
@@ -1577,12 +1589,17 @@ const sendAskQuestionAnswer = async (
     props.agentId,
     targetContextId
   )
+  const knowledgeCollectionsForRequest = ensureKnowledgeCollectionsForRequest(targetSession)
+  if (!knowledgeCollectionsForRequest) {
+    return
+  }
   if (targetSession.dispatcher.isBusyByState.value || targetSession.sendingMessage.value) {
     appendPendingAskQuestionAnswerBubble(
       targetSession,
       targetContextId,
       message.index,
-      normalized
+      normalized,
+      knowledgeCollectionsForRequest
     )
     return
   }
@@ -1597,7 +1614,13 @@ const sendAskQuestionAnswer = async (
     attachments: []
   }
   targetSession.messageContext.value.push(userMessage)
-  await startUserMessageTurn(targetSession, userMessage, [], undefined)
+  await startUserMessageTurn(
+    targetSession,
+    userMessage,
+    [],
+    undefined,
+    knowledgeCollectionsForRequest
+  )
 }
 
 const flushPendingAskQuestionAnswer = async () => {
@@ -1629,7 +1652,13 @@ const flushPendingAskQuestionAnswer = async () => {
     chatSessionRegistry.activateSession(pending.agentId, pending.contextId)
     await nextTick()
   }
-  await startUserMessageTurn(session, userMessage, [], undefined)
+  await startUserMessageTurn(
+    session,
+    userMessage,
+    [],
+    undefined,
+    pending.knowledgeCollections
+  )
 }
 
 const handleImageSelect = async (event: Event) => {
