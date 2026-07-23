@@ -202,60 +202,60 @@
                       !!message.attachments?.length && !message.content?.trim()
                   }"
                 >
-                <div
-                  v-if="message.attachments?.length"
-                  class="message-images"
-                  :class="getAttachmentGalleryClass(message.attachments.length)"
-                >
-                  <template v-if="message.attachments.length === 1">
-                    <img
-                      :key="message.attachments[0].objectKey || message.attachments[0].url || 0"
-                      :src="resolveAttachmentImageSrc(message.attachments[0])"
-                      :alt="message.attachments[0].name"
-                      class="message-image message-image--solo"
-                      @error="handleAttachmentImageError(message.attachments[0])"
-                      @click.stop="openAttachmentPreview(message.attachments, 0)"
-                    />
-                  </template>
-                  <template v-else>
-                    <div
-                      v-for="(image, imageIndex) in message.attachments"
-                      :key="image.objectKey || image.url || imageIndex"
-                      class="message-image-wrap"
-                    >
+                  <div
+                    v-if="message.attachments?.length"
+                    class="message-images"
+                    :class="getAttachmentGalleryClass(message.attachments.length)"
+                  >
+                    <template v-if="message.attachments.length === 1">
                       <img
-                        :src="resolveAttachmentImageSrc(image)"
-                        :alt="image.name"
-                        class="message-image"
-                        @error="handleAttachmentImageError(image)"
-                        @click.stop="openAttachmentPreview(message.attachments!, imageIndex)"
+                        :key="message.attachments[0].objectKey || message.attachments[0].url || 0"
+                        :src="resolveAttachmentImageSrc(message.attachments[0])"
+                        :alt="message.attachments[0].name"
+                        class="message-image message-image--solo"
+                        @error="handleAttachmentImageError(message.attachments[0])"
+                        @click.stop="openAttachmentPreview(message.attachments, 0)"
                       />
-                    </div>
-                  </template>
-                </div>
-                <div
-                  v-if="message.content"
-                  class="message-md"
-                  v-html="userMessageHtmlMap.get(message.index) ?? ''"
-                ></div>
-                <div
-                  v-if="message.messageKind === 'queued_user'"
-                  class="queued-message-status"
-                >
-                  <ElIcon>
-                    <Clock />
-                  </ElIcon>
-                  <span>{{ t('ai.queue.waiting') }}</span>
-                </div>
-                <div v-show="message?.content" class="message-actions">
-                  <el-button
-                    class="copy-button"
-                    text
-                    size="small"
-                    :icon="DocumentCopy"
-                    @click="copyMessage(message.content)"
-                  />
-                </div>
+                    </template>
+                    <template v-else>
+                      <div
+                        v-for="(image, imageIndex) in message.attachments"
+                        :key="image.objectKey || image.url || imageIndex"
+                        class="message-image-wrap"
+                      >
+                        <img
+                          :src="resolveAttachmentImageSrc(image)"
+                          :alt="image.name"
+                          class="message-image"
+                          @error="handleAttachmentImageError(image)"
+                          @click.stop="openAttachmentPreview(message.attachments!, imageIndex)"
+                        />
+                      </div>
+                    </template>
+                  </div>
+                  <div
+                    v-if="message.content"
+                    class="message-md"
+                    v-html="userMessageHtmlMap.get(message.index) ?? ''"
+                  ></div>
+                  <div
+                    v-if="message.messageKind === 'queued_user'"
+                    class="queued-message-status"
+                  >
+                    <ElIcon>
+                      <Clock />
+                    </ElIcon>
+                    <span>{{ t('ai.queue.waiting') }}</span>
+                  </div>
+                  <div v-show="message?.content" class="message-actions">
+                    <el-button
+                      class="copy-button"
+                      text
+                      size="small"
+                      :icon="DocumentCopy"
+                      @click="copyMessage(message.content)"
+                    />
+                  </div>
                 </div>
               </div>
               <div class="avatar-wrap">
@@ -329,7 +329,7 @@
             type="textarea"
             :autosize="chatInputAutosize"
             :maxlength="32768"
-            show-word-limit
+            :show-word-limit="false"
             @touchstart.passive="ensureInputExpanded"
             @pointerdown="ensureInputExpanded"
             @focus="onChatInputFocus"
@@ -341,184 +341,191 @@
           <div class="chat-input-disclaimer">
             {{ t('ai.input.disclaimer') }}
           </div>
-          <ElButton
-            class="image-button"
-            text
-            :icon="Picture"
-            :disabled="isBusyByState || sendingMessage || isProcessingImages || selectedAttachments.length >= 4"
-            @click="imageInputRef?.click()"
-          />
-          <div
-            v-if="showManualOrchestrateBar"
-            ref="manualOrchestrateRef"
-            class="manual-orchestrate"
-            :class="{ 'is-disabled': manualOrchestrateDisabled }"
-          >
-            <ElTooltip
-              v-for="agent in visibleManualOrchestrateAgents"
-              :key="agent.agentId"
-              placement="top"
-              :show-after="250"
-            >
-              <template #content>
-                <div class="manual-orchestrate-tooltip">
-                  <div class="manual-orchestrate-tooltip-title">
-                    {{ agent.name || agent.agentId }}
-                  </div>
-                  <div v-if="agent.description" class="manual-orchestrate-tooltip-desc">
-                    {{ agent.description }}
-                  </div>
-                </div>
-              </template>
-              <button
-                type="button"
-                class="manual-orchestrate-chip"
-                :class="{ active: isManualOrchestrateSelected(agent.agentId) }"
-                :disabled="manualOrchestrateDisabled"
-                @click="toggleManualOrchestrateAgent(agent.agentId)"
+          <div class="chat-input-toolbar">
+            <div class="chat-input-tools">
+              <ElButton
+                class="image-button"
+                text
+                :icon="Picture"
+                :disabled="isBusyByState || sendingMessage || isProcessingImages || selectedAttachments.length >= 4"
+                @click="imageInputRef?.click()"
+              />
+              <div
+                v-if="showManualOrchestrateBar"
+                ref="manualOrchestrateRef"
+                class="manual-orchestrate"
+                :class="{ 'is-disabled': manualOrchestrateDisabled }"
               >
-                <span class="manual-orchestrate-logo">{{ agent.logo || '🤖' }}</span>
-                <span class="manual-orchestrate-name">{{ agent.name || agent.agentId }}</span>
-                <span
-                  v-if="isManualOrchestrateSelected(agent.agentId)"
-                  class="manual-orchestrate-clear"
-                  @click.stop="clearManualOrchestrateSelection"
+                <ElTooltip
+                  v-for="agent in visibleManualOrchestrateAgents"
+                  :key="agent.agentId"
+                  placement="top"
+                  :show-after="250"
                 >
-                  ×
-                </span>
-              </button>
-            </ElTooltip>
-            <ElDropdown
-              v-if="overflowManualOrchestrateAgents.length"
-              trigger="click"
-              placement="top-start"
-              popper-class="manual-orchestrate-popper"
-              :disabled="manualOrchestrateDisabled"
-              @command="selectManualOrchestrateAgent"
-            >
-              <button
-                type="button"
-                class="manual-orchestrate-chip manual-orchestrate-more"
-                :disabled="manualOrchestrateDisabled"
-                :title="t('ai.manual.orchestrate.more')"
-              >
-                ...
-              </button>
-              <template #dropdown>
-                <ElDropdownMenu class="manual-orchestrate-menu">
-                  <ElDropdownItem
-                    v-for="agent in overflowManualOrchestrateAgents"
-                    :key="agent.agentId"
-                    :command="agent.agentId"
-                  >
-                    <ElTooltip placement="top" :show-after="250">
-                      <template #content>
-                        <div class="manual-orchestrate-tooltip">
-                          <div class="manual-orchestrate-tooltip-title">
-                            {{ agent.name || agent.agentId }}
-                          </div>
-                          <div v-if="agent.description" class="manual-orchestrate-tooltip-desc">
-                            {{ agent.description }}
-                          </div>
-                        </div>
-                      </template>
-                      <span class="manual-orchestrate-menu-item">
-                        <span class="manual-orchestrate-logo">{{ agent.logo || '🤖' }}</span>
-                        <span class="manual-orchestrate-menu-name">{{ agent.name || agent.agentId }}</span>
-                      </span>
-                    </ElTooltip>
-                  </ElDropdownItem>
-                </ElDropdownMenu>
-              </template>
-            </ElDropdown>
-          </div>
-          <div
-            v-if="showKnowledgeCollectionsSelector"
-            class="knowledge-collections"
-            :class="{ 'is-disabled': knowledgeCollectionsDisabled }"
-          >
-            <ElDropdown
-              trigger="click"
-              placement="top-start"
-              popper-class="knowledge-collections-popper"
-              :hide-on-click="false"
-              :disabled="knowledgeCollectionsDisabled"
-              @command="toggleKnowledgeCollection"
-            >
-              <button
-                type="button"
-                class="manual-orchestrate-chip manual-orchestrate-more knowledge-collections-more"
-                :class="{ active: selectedKnowledgeCollections.length > 0 }"
-                :disabled="knowledgeCollectionsDisabled"
-                :title="knowledgeCollectionsTriggerTitle"
-              >
-                <span class="knowledge-collections-more-dots">...</span>
-                <span
-                  v-if="selectedKnowledgeCollections.length > 0"
-                  class="knowledge-collections-more-count"
-                >
-                  {{ selectedKnowledgeCollections.length }}
-                </span>
-              </button>
-              <template #dropdown>
-                <ElDropdownMenu class="knowledge-collections-menu">
-                  <ElDropdownItem
-                    v-if="knowledgeCollectionsLoading"
-                    disabled
-                  >
-                    {{ t('ai.knowledge.collections.loading') }}
-                  </ElDropdownItem>
-                  <ElDropdownItem
-                    v-else-if="knowledgeCollectionsLoadFailed"
-                    disabled
-                  >
-                    {{ t('ai.knowledge.collections.load.failed') }}
-                  </ElDropdownItem>
-                  <ElDropdownItem
-                    v-else-if="knowledgeCollections.length === 0"
-                    disabled
-                  >
-                    {{ t('ai.knowledge.collections.empty') }}
-                  </ElDropdownItem>
-                  <template v-else>
-                    <ElDropdownItem
-                      v-for="collection in knowledgeCollections"
-                      :key="collection"
-                      :command="collection"
-                    >
-                      <span class="knowledge-collections-menu-item">
-                        <ElCheckbox
-                          :model-value="isKnowledgeCollectionSelected(collection)"
-                          @click.stop
-                          @change="() => toggleKnowledgeCollection(collection)"
-                        />
-                        <span class="knowledge-collections-name">{{ getKnowledgeCollectionLabel(collection) }}</span>
-                      </span>
-                    </ElDropdownItem>
+                  <template #content>
+                    <div class="manual-orchestrate-tooltip">
+                      <div class="manual-orchestrate-tooltip-title">
+                        {{ agent.name || agent.agentId }}
+                      </div>
+                      <div v-if="agent.description" class="manual-orchestrate-tooltip-desc">
+                        {{ agent.description }}
+                      </div>
+                    </div>
                   </template>
-                </ElDropdownMenu>
-              </template>
-            </ElDropdown>
+                  <button
+                    type="button"
+                    class="manual-orchestrate-chip"
+                    :class="{ active: isManualOrchestrateSelected(agent.agentId) }"
+                    :disabled="manualOrchestrateDisabled"
+                    @click="toggleManualOrchestrateAgent(agent.agentId)"
+                  >
+                    <span class="manual-orchestrate-logo">{{ agent.logo || '🤖' }}</span>
+                    <span class="manual-orchestrate-name">{{ agent.name || agent.agentId }}</span>
+                    <span
+                      v-if="isManualOrchestrateSelected(agent.agentId)"
+                      class="manual-orchestrate-clear"
+                      @click.stop="clearManualOrchestrateSelection"
+                    >
+                      ×
+                    </span>
+                  </button>
+                </ElTooltip>
+                <ElDropdown
+                  v-if="overflowManualOrchestrateAgents.length"
+                  trigger="click"
+                  placement="top-start"
+                  popper-class="manual-orchestrate-popper"
+                  :disabled="manualOrchestrateDisabled"
+                  @command="selectManualOrchestrateAgent"
+                >
+                  <button
+                    type="button"
+                    class="manual-orchestrate-chip manual-orchestrate-more"
+                    :disabled="manualOrchestrateDisabled"
+                    :title="t('ai.manual.orchestrate.more')"
+                  >
+                    ...
+                  </button>
+                  <template #dropdown>
+                    <ElDropdownMenu class="manual-orchestrate-menu">
+                      <ElDropdownItem
+                        v-for="agent in overflowManualOrchestrateAgents"
+                        :key="agent.agentId"
+                        :command="agent.agentId"
+                      >
+                        <ElTooltip placement="top" :show-after="250">
+                          <template #content>
+                            <div class="manual-orchestrate-tooltip">
+                              <div class="manual-orchestrate-tooltip-title">
+                                {{ agent.name || agent.agentId }}
+                              </div>
+                              <div v-if="agent.description" class="manual-orchestrate-tooltip-desc">
+                                {{ agent.description }}
+                              </div>
+                            </div>
+                          </template>
+                          <span class="manual-orchestrate-menu-item">
+                            <span class="manual-orchestrate-logo">{{ agent.logo || '🤖' }}</span>
+                            <span class="manual-orchestrate-menu-name">{{ agent.name || agent.agentId }}</span>
+                          </span>
+                        </ElTooltip>
+                      </ElDropdownItem>
+                    </ElDropdownMenu>
+                  </template>
+                </ElDropdown>
+              </div>
+              <div
+                v-if="showKnowledgeCollectionsSelector"
+                class="knowledge-collections"
+                :class="{ 'is-disabled': knowledgeCollectionsDisabled }"
+              >
+                <ElDropdown
+                  trigger="click"
+                  placement="top-start"
+                  popper-class="knowledge-collections-popper"
+                  :hide-on-click="false"
+                  :disabled="knowledgeCollectionsDisabled"
+                  @command="toggleKnowledgeCollection"
+                >
+                  <button
+                    type="button"
+                    class="manual-orchestrate-chip manual-orchestrate-more knowledge-collections-more"
+                    :class="{ active: selectedKnowledgeCollections.length > 0 }"
+                    :disabled="knowledgeCollectionsDisabled"
+                    :title="knowledgeCollectionsTriggerTitle"
+                  >
+                    <span class="knowledge-collections-more-dots">...</span>
+                    <span
+                      v-if="selectedKnowledgeCollections.length > 0"
+                      class="knowledge-collections-more-count"
+                    >
+                      {{ selectedKnowledgeCollections.length }}
+                    </span>
+                  </button>
+                  <template #dropdown>
+                    <ElDropdownMenu class="knowledge-collections-menu">
+                      <ElDropdownItem
+                        v-if="knowledgeCollectionsLoading"
+                        disabled
+                      >
+                        {{ t('ai.knowledge.collections.loading') }}
+                      </ElDropdownItem>
+                      <ElDropdownItem
+                        v-else-if="knowledgeCollectionsLoadFailed"
+                        disabled
+                      >
+                        {{ t('ai.knowledge.collections.load.failed') }}
+                      </ElDropdownItem>
+                      <ElDropdownItem
+                        v-else-if="knowledgeCollections.length === 0"
+                        disabled
+                      >
+                        {{ t('ai.knowledge.collections.empty') }}
+                      </ElDropdownItem>
+                      <template v-else>
+                        <ElDropdownItem
+                          v-for="collection in knowledgeCollections"
+                          :key="collection"
+                          :command="collection"
+                        >
+                          <span class="knowledge-collections-menu-item">
+                            <ElCheckbox
+                              :model-value="isKnowledgeCollectionSelected(collection)"
+                              @click.stop
+                              @change="() => toggleKnowledgeCollection(collection)"
+                            />
+                            <span class="knowledge-collections-name">{{ getKnowledgeCollectionLabel(collection) }}</span>
+                          </span>
+                        </ElDropdownItem>
+                      </template>
+                    </ElDropdownMenu>
+                  </template>
+                </ElDropdown>
+              </div>
+            </div>
+            <div class="chat-input-actions">
+              <span class="chat-input-count">{{ inputMessage.length }} / 32768</span>
+              <ElButton
+                :type="isBusyByState ? 'danger' : 'primary'"
+                class="chat-button"
+                circle
+                :disabled="
+                  !isBusyByState &&
+                  ((!inputMessage.trim() && !readyAttachments.length) ||
+                    sendingMessage ||
+                    isProcessingImages)
+                "
+                @click="isBusyByState ? interruptChat() : sendMessage()"
+              >
+                <ElIcon v-if="isBusyByState">
+                  <span class="stop-square"></span>
+                </ElIcon>
+                <ElIcon v-else>
+                  <Position />
+                </ElIcon>
+              </ElButton>
+            </div>
           </div>
-          <ElButton
-            :type="isBusyByState ? 'danger' : 'primary'"
-            class="chat-button"
-            circle
-            :disabled="
-              !isBusyByState &&
-              ((!inputMessage.trim() && !readyAttachments.length) ||
-                sendingMessage ||
-                isProcessingImages)
-            "
-            @click="isBusyByState ? interruptChat() : sendMessage()"
-          >
-            <ElIcon v-if="isBusyByState">
-              <span class="stop-square"></span>
-            </ElIcon>
-            <ElIcon v-else>
-              <Position />
-            </ElIcon>
-          </ElButton>
         </div>
       </div>
     </div>
@@ -588,7 +595,6 @@ import MdViewerOverlay, {
   type MdViewerSource
 } from './MdViewerOverlay.vue'
 import {
-  AgentInfoDto,
   ChatAttachmentDto,
   ChatRequestDto,
   FileDto,
@@ -681,7 +687,6 @@ let userScrollIdleTimer: ReturnType<typeof setTimeout> | null = null
 const USER_SCROLL_IDLE_MS = 200
 /** 自动下滚的统一条件：处于贴底区域（按钮已隐藏）且用户当前没有在滚动 */
 const shouldAutoScroll = () => isAtBottom.value && !userScrolling
-
 const isHiddenAuditMessage = (message: { role?: string; content?: string }) => {
   if (message.role !== 'assistant' || !message.content?.trim().startsWith('{')) {
     return false
@@ -848,7 +853,7 @@ const ensureContextId = async (): Promise<string | undefined> => {
 const uploadImageFiles = async (files: File[]) => {
   if (!files.length) return
   if (isBusyByState.value || sendingMessage.value || isProcessingImages.value) {
-    ElMessage.info(t('ai.assistant.waiting'))
+    ElMessage.info(isProcessingImages.value ? t('ai.image.processing') : t('ai.assistant.waiting'))
     return
   }
   const remaining = 4 - selectedAttachments.value.length
@@ -1038,6 +1043,11 @@ const effectiveChatLogo = computed(
   () => getAgentLogo(props.agentId) || chatLogoEmoji
 )
 
+const assistantGreeting = computed(() => {
+  agentNameMap.value
+  return t('ai.hi.assistant', { name: getAgentDisplayName(props.agentId) })
+})
+
 const MANUAL_ORCHESTRATE_ORDER_STORAGE_KEY = 'ai-manual-orchestrate-agent-order'
 const LEGACY_MANUAL_DISPATCH_ORDER_STORAGE_KEY = 'ai-manual-dispatch-agent-order'
 const MANUAL_ORCHESTRATE_MAX_VISIBLE = 3
@@ -1120,14 +1130,12 @@ const syncSelectedKnowledgeCollections = () => {
   }
 }
 
-/** 格式化 knowledge collection 展示标签 */
 const formatKnowledgeCollectionLabel = (item: KnowledgeCollectionDto) => {
   const collection = item.collection?.trim()
   const name = item.name?.trim()
   return name && collection && name !== collection ? `${name} (${collection})` : collection || name || ''
 }
 
-/** 应用后端返回的 collection 选项与标签映射 */
 const applyKnowledgeCollectionOptions = (items: KnowledgeCollectionDto[]) => {
   knowledgeCollections.value = items
     .map((item) => item.collection?.trim())
@@ -1197,7 +1205,6 @@ const hydrateKnowledgeCollectionSelection = () => {
   selectedKnowledgeCollections.value = readStoredKnowledgeCollections()
   syncSelectedKnowledgeCollections()
 }
-
 
 const readManualOrchestrateOrder = (): string[] => {
   try {
@@ -1365,12 +1372,6 @@ const resolveManualOrchestrateAgentIdForRequest = (session: {
   return agentId
 }
 
-
-const assistantGreeting = computed(() => {
-  agentNameMap.value
-  return t('ai.hi.assistant', { name: getAgentDisplayName(props.agentId) })
-})
-
 const chatInputRef = ref<InstanceType<typeof ElInput> | null>(null)
 const inputFocused = ref(false)
 
@@ -1482,7 +1483,6 @@ const startUserMessageTurn = async (
   }
 }
 
-/** 解析本次请求应携带的 knowledge collections */
 const resolveKnowledgeCollectionsForRequest = (session: ChatSessionRuntime) => {
   if (!isKnowledgeQaAssistantPage.value) {
     return []
@@ -1490,7 +1490,6 @@ const resolveKnowledgeCollectionsForRequest = (session: ChatSessionRuntime) => {
   return [...session.selectedKnowledgeCollections.value]
 }
 
-/** 校验并返回请求用 knowledge collections；未选中时提示并返回 null */
 const ensureKnowledgeCollectionsForRequest = (session: ChatSessionRuntime) => {
   const knowledgeCollectionsForRequest = resolveKnowledgeCollectionsForRequest(session)
   if (isKnowledgeQaAssistantPage.value && knowledgeCollectionsForRequest.length === 0) {
@@ -2697,23 +2696,6 @@ watch(
   }
 )
 
-watch(
-  () => registeredAgents.value.map((agent) => agent.agentId).join('\u0001'),
-  () => {
-    syncManualOrchestrateOrderWithAgents()
-    if (
-      isUniversalAssistantPage.value &&
-      manualOrchestrateEnabled.value &&
-      manualOrchestrateAgentId.value &&
-      registeredAgents.value.length > 0 &&
-      !hasManualOrchestrateAgent(manualOrchestrateAgentId.value)
-    ) {
-      clearManualOrchestrateSelection()
-      ElMessage.info(t('ai.manual.orchestrate.agent.removed'))
-    }
-  }
-)
-
 /** Agent 元数据异步到达后补拉热门问题 */
 watch(
   () => props.showHotQuestions,
@@ -2724,6 +2706,26 @@ watch(
       hotQuestions.value = []
     }
   }
+)
+
+watch(
+  () => registeredAgents.value.map((agent) => agent.agentId).join('\u0001'),
+  (_ids, prevIds) => {
+    syncManualOrchestrateOrderWithAgents()
+    if (
+      isUniversalAssistantPage.value &&
+      manualOrchestrateEnabled.value &&
+      manualOrchestrateAgentId.value &&
+      registeredAgents.value.length > 0 &&
+      !hasManualOrchestrateAgent(manualOrchestrateAgentId.value)
+    ) {
+      clearManualOrchestrateSelection()
+      if (prevIds !== undefined) {
+        ElMessage.info(t('ai.manual.orchestrate.agent.removed'))
+      }
+    }
+  },
+  { immediate: true }
 )
 
 /**
@@ -2750,7 +2752,6 @@ watch(
   },
   { flush: 'post' }
 )
-
 
 watch(
   isKnowledgeQaAssistantPage,
@@ -2989,15 +2990,15 @@ watch(
 
 onMounted(async () => {
   registerSessionRenderCacheEvict(evictSessionRenderCache)
-  isChatViewActive.value = true
-  preloadDiagramRuntimes()
   manualOrchestrateOrder.value = readManualOrchestrateOrder()
   syncManualOrchestrateOrderWithAgents()
+  isChatViewActive.value = true
+  preloadDiagramRuntimes()
   await bootstrapAgentSession()
+  reconnectManualOrchestrateResizeObserver()
   nextTick(() => {
     chatManageRef.value?.getHistoryListData()
     bindUserScrollIntent()
-    reconnectManualOrchestrateResizeObserver()
   })
 })
 
@@ -3054,11 +3055,11 @@ onDeactivated(() => {
 
 onUnmounted(() => {
   suspendChatViewUi()
+  manualOrchestrateResizeObserver?.disconnect()
+  manualOrchestrateResizeObserver = undefined
   closeDiagramPreview()
   closeImagePreview()
   closeHtmlPreview()
-  manualOrchestrateResizeObserver?.disconnect()
-  manualOrchestrateResizeObserver = undefined
 })
 
 defineExpose({
@@ -3295,6 +3296,24 @@ defineExpose({
     .input-area {
       --chat-input-inset-x: 14px;
       --chat-input-inset-y: 12px;
+      --chat-input-toolbar-height: calc(
+        var(--chat-input-action-size) * 2 + var(--chat-input-action-gap)
+      );
+
+      .manual-orchestrate {
+        gap: 6px;
+      }
+
+      .manual-orchestrate-chip {
+        max-width: 132px;
+        height: 28px;
+        padding: 0 7px;
+        font-size: 11px;
+      }
+
+      .manual-orchestrate-more {
+        width: 30px;
+      }
     }
   }
 
@@ -3515,6 +3534,111 @@ defineExpose({
       }
     }
   }
+
+}
+
+:global(.manual-orchestrate-menu-item) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 24px;
+  min-width: 0;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 24px;
+}
+
+:global(.manual-orchestrate-menu-name) {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 24px;
+}
+
+:global(.manual-orchestrate-popper) {
+  min-width: 180px !important;
+}
+
+:global(.manual-orchestrate-popper .el-dropdown-menu) {
+  min-width: 180px;
+  padding: 6px;
+}
+
+:global(.manual-orchestrate-popper .el-dropdown-menu__item) {
+  display: flex;
+  align-items: center;
+  min-width: 168px;
+  max-width: 280px;
+  min-height: 36px;
+  height: 36px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  line-height: 24px;
+  overflow: visible;
+}
+
+:global(.manual-orchestrate-popper .el-tooltip__trigger) {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  line-height: 24px;
+}
+
+:global(.knowledge-collections-popper .el-dropdown-menu) {
+  min-width: 220px;
+  max-width: min(360px, calc(100vw - 32px));
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+:global(.knowledge-collections-popper .el-dropdown-menu__item) {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  height: auto;
+  padding: 4px 10px;
+  border-radius: 6px;
+  line-height: 1.3;
+}
+
+:global(.knowledge-collections-menu-item) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+:global(.knowledge-collections-name) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.manual-orchestrate-tooltip) {
+  max-width: 320px;
+}
+
+:global(.manual-orchestrate-tooltip-title) {
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+:global(.manual-orchestrate-tooltip-desc) {
+  margin-top: 4px;
+  line-height: 1.45;
+  opacity: 0.86;
+  white-space: normal;
 }
 
 .message-list {
@@ -3925,16 +4049,16 @@ defineExpose({
   --chat-input-inset-y: 14px;
   --chat-input-action-size: 32px;
   --chat-input-action-gap: 8px;
-  --chat-input-pad-end: calc(
-    var(--chat-input-inset-x) + var(--chat-input-action-size) + var(--chat-input-action-gap)
-  );
+  --chat-input-toolbar-height: var(--chat-input-action-size);
+  --chat-input-toolbar-gap: 6px;
+  --chat-input-pad-end: var(--chat-input-inset-x);
   --chat-input-pad-bottom: calc(
-    var(--chat-input-inset-y) + var(--chat-input-action-size) + 2px
+    var(--chat-input-inset-y) + var(--chat-input-toolbar-height) + var(--chat-input-toolbar-gap) + 2px
   );
 
   &:not(.is-input-editing) {
     --chat-input-pad-bottom: calc(
-      var(--chat-input-inset-y) + var(--chat-input-action-size) + 2px
+      var(--chat-input-inset-y) + var(--chat-input-toolbar-height) + var(--chat-input-toolbar-gap) + 2px
     );
   }
 
@@ -4030,11 +4154,60 @@ defineExpose({
     }
   }
 
-  .el-button.image-button {
+  .chat-input-toolbar {
     position: absolute;
     left: var(--chat-input-inset-x);
+    right: var(--chat-input-inset-x);
     bottom: var(--chat-input-inset-y);
     z-index: 2;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--chat-input-action-gap);
+    min-width: 0;
+    min-height: var(--chat-input-action-size);
+    pointer-events: none;
+  }
+
+  .chat-input-tools {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    align-content: flex-end;
+    gap: var(--chat-input-action-gap);
+    min-width: 0;
+    max-width: calc(
+      100% - var(--chat-input-actions-width, 118px) - var(--chat-input-action-gap)
+    );
+    pointer-events: auto;
+  }
+
+  .chat-input-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--chat-input-action-gap);
+    min-width: 0;
+    pointer-events: auto;
+  }
+
+  .chat-input-count {
+    flex: 0 0 auto;
+    min-width: 68px;
+    padding: 2px 8px;
+    border-radius: 8px;
+    color: var(--n-color-text-muted);
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: center;
+    white-space: nowrap;
+    @include n-glass-surface(1);
+  }
+
+  .el-button.image-button {
+    flex: 0 0 var(--chat-input-action-size);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -4052,20 +4225,16 @@ defineExpose({
   }
 
   .manual-orchestrate {
-    position: absolute;
-    left: calc(
-      var(--chat-input-inset-x) + var(--chat-input-action-size) + var(--chat-input-action-gap)
-    );
-    right: 132px;
-    bottom: var(--chat-input-inset-y);
-    z-index: 3;
     display: flex;
+    flex: 1 1 220px;
     align-items: center;
     gap: 8px;
     min-width: 0;
+    max-width: 100%;
     height: var(--chat-input-action-size);
     overflow: hidden;
     color: var(--n-color-text-primary);
+    pointer-events: auto;
 
     &.is-disabled {
       opacity: 0.72;
@@ -4073,15 +4242,12 @@ defineExpose({
   }
 
   .knowledge-collections {
-    position: absolute;
-    left: var(--chat-input-inset-x);
-    right: 132px;
-    bottom: var(--chat-input-inset-y);
-    z-index: 3;
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
     min-width: 0;
     height: var(--chat-input-action-size);
+    pointer-events: auto;
 
     &.is-disabled {
       opacity: 0.72;
@@ -4226,20 +4392,14 @@ defineExpose({
       width: 100%;
 
       :deep(.el-input__count) {
-        right: var(--chat-input-pad-end);
-        bottom: var(--chat-input-inset-y);
-        z-index: 2;
-        padding: 2px 8px;
-        border-radius: 8px;
-        line-height: 1.4;
-        @include n-glass-surface(1);
+        display: none;
       }
 
       :deep(.el-textarea__inner) {
         @include n-glass-surface(2);
         box-sizing: border-box;
         padding: var(--chat-input-inset-y) var(--chat-input-pad-end) var(--chat-input-pad-bottom)
-          var(--chat-input-inset-x);
+        var(--chat-input-inset-x);
         line-height: 1.5;
         font-size: var(--n-font-size-2);
         border-radius: 15px;
@@ -4249,9 +4409,9 @@ defineExpose({
         outline: none;
         box-shadow: 0 0 12px rgba(0, 0, 0, 0.08);
         transition: box-shadow 0.2s ease,
-          min-height 0.2s ease,
-          height 0.2s ease,
-          max-height 0.2s ease;
+        min-height 0.2s ease,
+        height 0.2s ease,
+        max-height 0.2s ease;
       }
 
       :deep(.el-textarea__inner::placeholder) {
@@ -4267,14 +4427,13 @@ defineExpose({
   }
 
   .el-button.chat-button {
-    position: absolute;
-    right: var(--chat-input-inset-x);
-    bottom: var(--chat-input-inset-y);
-    z-index: 2;
+    flex: 0 0 var(--chat-input-action-size);
     width: var(--chat-input-action-size);
     height: var(--chat-input-action-size);
     padding: 0;
     border: none;
+    margin: 0;
+    pointer-events: auto;
     @include n-glass-surface(1);
 
     &.el-button--primary:not(.is-disabled) {
@@ -4394,21 +4553,13 @@ defineExpose({
       width: var(--chat-hot-questions-width, 80%);
       max-width: var(--chat-hot-questions-width, 80%);
     }
-  }
 
-  .chat-container {
-    .manual-orchestrate {
-      right: 120px;
-    }
   }
-
 }
-
 
 @media only screen and (max-width: 360px) {
   .chat-container.is-mobile .input-area {
     .manual-orchestrate {
-      right: 96px;
       gap: 5px;
     }
 
@@ -4425,6 +4576,12 @@ defineExpose({
 
 /* 手机紧凑：与 layout.ts CHAT_MOBILE_COMPACT_MEDIA_MAX_PX（599）同步 */
 @media only screen and (max-width: 600px) {
+  .input-area {
+    --chat-input-toolbar-height: calc(
+      var(--chat-input-action-size) * 2 + var(--chat-input-action-gap)
+    );
+  }
+
   .chat-container.is-mobile {
     --chat-content-h-pad: 12px;
     --chat-init-top-gap: 48px;
@@ -4473,6 +4630,7 @@ defineExpose({
           }
         }
       }
+
     }
 
     .message-init .sub-tip {
@@ -4492,6 +4650,13 @@ defineExpose({
       --chat-input-inset-x: 12px;
       --chat-input-inset-y: 10px;
       --chat-input-action-size: 28px;
+      --chat-input-actions-width: 102px;
+
+      .chat-input-count {
+        min-width: 58px;
+        padding: 2px 6px;
+        font-size: 11px;
+      }
 
       &:not(.is-input-editing) .el-textarea.chat-input {
         :deep(.el-textarea__inner) {
@@ -4502,111 +4667,6 @@ defineExpose({
       }
     }
   }
-}
-
-
-:global(.manual-orchestrate-menu-item) {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  height: 24px;
-  min-width: 0;
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  line-height: 24px;
-}
-
-:global(.manual-orchestrate-menu-name) {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 24px;
-}
-
-:global(.manual-orchestrate-popper) {
-  min-width: 180px !important;
-}
-
-:global(.manual-orchestrate-popper .el-dropdown-menu) {
-  min-width: 180px;
-  padding: 6px;
-}
-
-:global(.manual-orchestrate-popper .el-dropdown-menu__item) {
-  display: flex;
-  align-items: center;
-  min-width: 168px;
-  max-width: 280px;
-  min-height: 36px;
-  height: 36px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  line-height: 24px;
-  overflow: visible;
-}
-
-:global(.manual-orchestrate-popper .el-tooltip__trigger) {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-  height: 24px;
-  line-height: 24px;
-}
-
-:global(.knowledge-collections-popper .el-dropdown-menu) {
-  min-width: 220px;
-  max-width: min(360px, calc(100vw - 32px));
-  max-height: 320px;
-  overflow-y: auto;
-  padding: 6px;
-}
-
-:global(.knowledge-collections-popper .el-dropdown-menu__item) {
-  display: flex;
-  align-items: center;
-  min-height: 34px;
-  height: auto;
-  padding: 4px 10px;
-  border-radius: 6px;
-  line-height: 1.3;
-}
-
-:global(.knowledge-collections-menu-item) {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-}
-
-:global(.knowledge-collections-name) {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-:global(.manual-orchestrate-tooltip) {
-  max-width: 320px;
-}
-
-:global(.manual-orchestrate-tooltip-title) {
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-:global(.manual-orchestrate-tooltip-desc) {
-  margin-top: 4px;
-  line-height: 1.45;
-  opacity: 0.86;
-  white-space: normal;
 }
 
 /* ElImageViewer 挂载到 body，需 :global 穿透 scoped */
