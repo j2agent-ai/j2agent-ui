@@ -7,6 +7,8 @@ import { getAgentList } from '@/api/ai.api'
 import type { AgentInfoDto } from '@/types/ai.types'
 import { hasRoleAccess, ROLE_USER } from '@/utils/role'
 import {
+	KNOWLEDGE_QA_ASSISTANT_DISPLAY_NAME,
+	KNOWLEDGE_QA_ASSISTANT_ID,
 	UNIVERSAL_ASSISTANT_DISPLAY_NAME,
 	UNIVERSAL_ASSISTANT_ID
 } from './universal-assistant'
@@ -31,6 +33,7 @@ const applyAgents = (agents: AgentInfoDto[]) => {
 	registeredAgents.value = agents
 	const map = new Map<string, string>()
 	map.set(UNIVERSAL_ASSISTANT_ID, UNIVERSAL_ASSISTANT_DISPLAY_NAME)
+	map.set(KNOWLEDGE_QA_ASSISTANT_ID, KNOWLEDGE_QA_ASSISTANT_DISPLAY_NAME)
 	for (const agent of agents) {
 		map.set(agent.agentId, agent.name?.trim() || agent.agentId)
 	}
@@ -69,8 +72,15 @@ export const refreshAgentNames = async () => {
 }
 
 /** 获取智能体展示名称，未加载时回退 agentId */
-export const getAgentDisplayName = (agentId: string) =>
-	agentNameMap.value.get(agentId) ?? agentId
+export const getAgentDisplayName = (agentId: string) => {
+	if (agentId === UNIVERSAL_ASSISTANT_ID) {
+		return UNIVERSAL_ASSISTANT_DISPLAY_NAME
+	}
+	if (agentId === KNOWLEDGE_QA_ASSISTANT_ID) {
+		return KNOWLEDGE_QA_ASSISTANT_DISPLAY_NAME
+	}
+	return agentNameMap.value.get(agentId) ?? agentId
+}
 
 export const hasAgentDisplayName = (agentId: string) =>
 	agentNameMap.value.has(agentId)
@@ -79,6 +89,9 @@ const DEFAULT_AGENT_LOGO = '🤖'
 
 /** 获取智能体 emoji logo，未加载或未配置时回退默认 */
 export const getAgentLogo = (agentId: string) => {
+	if (agentId === KNOWLEDGE_QA_ASSISTANT_ID) {
+		return '📚'
+	}
 	const agent = registeredAgents.value.find((a) => a.agentId === agentId)
 	const logo = agent?.logo?.trim()
 	return logo || DEFAULT_AGENT_LOGO

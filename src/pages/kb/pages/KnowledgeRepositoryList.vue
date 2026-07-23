@@ -43,6 +43,11 @@
 						{{ row.protocol || '-' }}
 					</template>
 				</el-table-column>
+				<el-table-column label="知识库名称" min-width="120" show-overflow-tooltip>
+					<template #default="{ row }">
+						{{ row.displayName || '-' }}
+					</template>
+				</el-table-column>
 				<el-table-column label="目录名" min-width="150" prop="repoCode" show-overflow-tooltip />
 				<el-table-column label="Collection" min-width="170" show-overflow-tooltip>
 					<template #default="{ row }">
@@ -135,6 +140,20 @@
 					<el-select v-model="form.protocol" disabled class="form-control">
 						<el-option label="Git" value="GIT" />
 					</el-select>
+				</el-form-item>
+				<el-form-item label="知识库名称">
+					<el-input
+						v-model="form.displayName"
+						maxlength="64"
+						clearable
+						autocomplete="off"
+						:input-attrs="{
+							autocomplete: 'off',
+							spellcheck: 'false',
+							autocorrect: 'off',
+							autocapitalize: 'off'
+						}"
+					/>
 				</el-form-item>
 				<el-form-item label="知识库目录名">
 					<el-input
@@ -233,6 +252,10 @@
 						<div class="detail-row">
 							<span class="field-label">凭据</span>
 							<span class="field-value">{{ detail.hasCredential ? '已配置' : '未配置' }}</span>
+						</div>
+						<div class="detail-row">
+							<span class="field-label">知识库名称</span>
+							<span class="field-value">{{ detail.displayName || '-' }}</span>
 						</div>
 					</div>
 					<div class="detail-path-list">
@@ -347,6 +370,9 @@ type FormState = {
 	password: string
 	updateIntervalMinutes: number
 	enabled: boolean
+	collections: string[]
+	displayName: string
+	collectionAliases: Record<string, string>
 }
 
 const loading = ref(false)
@@ -365,7 +391,10 @@ const form = reactive<FormState>({
 	username: '',
 	password: '',
 	updateIntervalMinutes: 60,
-	enabled: true
+	enabled: true,
+	collections: [],
+	displayName: '',
+	collectionAliases: {}
 })
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
@@ -401,6 +430,9 @@ const openEditDialog = (row: KnowledgeRepositoryDto) => {
 	form.password = ''
 	form.updateIntervalMinutes = row.updateIntervalMinutes || 60
 	form.enabled = row.enabled !== false
+	form.collections = [...(row.collections || [])]
+	form.displayName = row.displayName || ''
+	form.collectionAliases = { ...(row.collectionAliases || {}) }
 	dialogVisible.value = true
 }
 
@@ -414,6 +446,9 @@ const resetForm = () => {
 	form.password = ''
 	form.updateIntervalMinutes = 60
 	form.enabled = true
+	form.collections = []
+	form.displayName = ''
+	form.collectionAliases = {}
 }
 
 const submitForm = async () => {
@@ -455,7 +490,9 @@ const buildPayload = (): KnowledgeRepositoryUpsertDto | null => {
 		defaultBranch: form.defaultBranch.trim() || undefined,
 		updateIntervalMinutes: form.updateIntervalMinutes || 60,
 		enabled: form.enabled,
-		protocolConfig: {}
+		protocolConfig: {},
+		displayName: form.displayName.trim() || undefined,
+		collectionAliases: normalizeCollectionAliases(form.collectionAliases, form.collections)
 	}
 	if (form.username.trim() || form.password.trim()) {
 		payload.credentialConfig = {
@@ -517,7 +554,30 @@ const shortRevision = (revision?: string) => {
 }
 
 const collectionText = (repository: KnowledgeRepositoryDto) => {
-	return (repository.collections || []).join(', ') || '-'
+	return (repository.collections || [])
+		.map((collection) => collectionDisplayName(repository, collection))
+		.join(', ') || '-'
+}
+
+const collectionDisplayName = (repository: KnowledgeRepositoryDto, collection: string) => {
+	const alias = repository.type === 'REMOTE'
+		? repository.collectionAliases?.[collection]?.trim() || repository.displayName?.trim()
+		: ''
+	return alias ? `${alias} (${collection})` : collection
+}
+
+const normalizeCollectionAliases = (
+	aliases: Record<string, string>,
+	collections: string[]
+) => {
+	const next: Record<string, string> = {}
+	for (const collection of collections) {
+		const alias = aliases[collection]?.trim()
+		if (collection && alias) {
+			next[collection] = alias
+		}
+	}
+	return next
 }
 
 const typeLabel = (type?: KnowledgeRepositoryType) => {

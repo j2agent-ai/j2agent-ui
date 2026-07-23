@@ -2,8 +2,10 @@ import { aiIntroducePrefixEn, webTitleEn } from '@/oem.js'
 
 export default {
 	'ai.title': webTitleEn,
-	'ai.hub': 'AI Assistant',
+	'ai.hub': 'General AI Assistant',
 	'ai.hub.desc': 'Recognize intent and route to specialist agents',
+	'ai.knowledge.qa': 'General Knowledge Base Q&A Assistant',
+	'ai.knowledge.qa.desc': 'Choose one or more knowledge bases for Q&A',
 	'ai.assistant': 'Agents',
 	'ai.assistant.desc': 'Choose an agent to start chatting',
 	'ai.agent.list.title': 'Choose an agent',
@@ -77,6 +79,11 @@ export default {
 	'ai.manual.orchestrate.title': 'Target agent',
 	'ai.manual.orchestrate.more': 'More agents',
 	'ai.manual.orchestrate.agent.removed': 'The unavailable target agent has been cleared',
+	'ai.knowledge.collections.select': 'Choose knowledge bases',
+	'ai.knowledge.collections.loading': 'Loading knowledge bases',
+	'ai.knowledge.collections.load.failed': 'Failed to load knowledge bases',
+	'ai.knowledge.collections.empty': 'No knowledge bases available',
+	'ai.knowledge.collections.required': 'Select at least one knowledge base',
 	'ai.askQuestion.customPlaceholder': 'Custom answer',
 	'ai.askQuestion.confirm': 'Submit answer',
 	'ai.askQuestion.empty': 'Choose an option or enter a custom answer',

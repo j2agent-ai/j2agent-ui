@@ -30,6 +30,9 @@
 				<li class="menu-card-item" v-if="canAccessChat" @click="goTo(AI_HUB_CHAT_PATH)">
 					{{ '🤖 ' + t('ai.hub') }}
 				</li>
+				<li class="menu-card-item" v-if="canAccessChat" @click="goTo(KNOWLEDGE_QA_CHAT_PATH)">
+					{{ '📚 ' + t('ai.knowledge.qa') }}
+				</li>
 				<li class="menu-card-item" v-if="canAccessChat" @click="goTo('/agents')">
 					{{ '💡 ' + t('ai.assistant') }}
 				</li>
@@ -64,7 +67,10 @@ import { t } from '@ai-system/lib'
 import { ElTooltip } from 'element-plus'
 import { computed, ref, onUnmounted, watch } from 'vue'
 import { goTo, goToLogout } from '@/routes'
-import { AI_HUB_CHAT_PATH } from '@/pages/chat/ts/agent/universal-assistant'
+import {
+	AI_HUB_CHAT_PATH,
+	KNOWLEDGE_QA_CHAT_PATH
+} from '@/pages/chat/ts/agent/universal-assistant'
 import { hasRoleAccess, ROLE_ADMIN, ROLE_USER } from '@/utils/role'
 
 defineExpose({

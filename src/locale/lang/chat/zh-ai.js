@@ -2,8 +2,10 @@ import { aiIntroducePrefixZh, webTitleZh } from '@/oem.js'
 
 export default {
 	'ai.title': webTitleZh,
-	'ai.hub': 'AI助手',
+	'ai.hub': '通用AI助手',
 	'ai.hub.desc': '智能识别意图并自动编排专业智能体',
+	'ai.knowledge.qa': '通用知识库问答助手',
+	'ai.knowledge.qa.desc': '选择一个或多个知识库进行问答',
 	'ai.assistant': '智能体',
 	'ai.assistant.desc': '选择智能体并开始对话',
 	'ai.agent.list.title': '选择智能体',
@@ -76,6 +78,11 @@ export default {
 	'ai.manual.orchestrate.title': '指定智能体',
 	'ai.manual.orchestrate.more': '更多智能体',
 	'ai.manual.orchestrate.agent.removed': '已清除不可用的指定智能体',
+	'ai.knowledge.collections.select': '选择知识库',
+	'ai.knowledge.collections.loading': '知识库加载中',
+	'ai.knowledge.collections.load.failed': '加载知识库失败',
+	'ai.knowledge.collections.empty': '暂无可用知识库',
+	'ai.knowledge.collections.required': '请至少选择一个知识库',
 	'ai.askQuestion.customPlaceholder': '自定义回答',
 	'ai.askQuestion.confirm': '提交回答',
 	'ai.askQuestion.empty': '请选择一个选项或填写自定义回答',
