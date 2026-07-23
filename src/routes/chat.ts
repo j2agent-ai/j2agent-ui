@@ -5,7 +5,7 @@ export default [
 		path: '/agents',
 		name: 'AgentList',
 		component: () => import('@/pages/agents/AgentListPage.vue'),
-		meta: { requiredRole: ROLE_USER }
+		meta: { requiredRole: ROLE_ADMIN }
 	},
 	{
 		path: '/chat/assistant',

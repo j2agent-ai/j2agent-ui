@@ -24,16 +24,16 @@
 				<h3>{{ t('ai.knowledge.qa') }}</h3>
 				<p>{{ t('ai.knowledge.qa.desc') }}</p>
 			</div>
-			<div class="feature-card" v-if="canAccessChat" @click="goTo('/agents')">
-				<div class="card-icon">💡</div>
-				<h3>{{ t('ai.assistant') }}</h3>
-				<p>{{ t('ai.assistant.desc') }}</p>
-			</div>
 			<div class="feature-card" v-if="canAccessAdmin" @click="goTo('/kb')">
 				<div class="card-icon">📚</div>
 				<h3>{{ t('kb.knowledge.base') }}</h3>
 				<p>{{ t('kb.management') }}</p>
 			</div>
+      <div class="feature-card" v-if="canAccessAdmin" @click="goTo('/agents')">
+        <div class="card-icon">💡</div>
+        <h3>{{ t('ai.assistant') }}</h3>
+        <p>{{ t('ai.assistant.desc') }}</p>
+      </div>
 			<div class="feature-card" v-if="canAccessAdmin" @click="goTo('/mcp')">
 				<div class="card-icon">🧩</div>
 				<h3>{{ t('mcp.title') }}</h3>

@@ -33,12 +33,12 @@
 				<li class="menu-card-item" v-if="canAccessChat" @click="goTo(KNOWLEDGE_QA_CHAT_PATH)">
 					{{ '📚 ' + t('ai.knowledge.qa') }}
 				</li>
-				<li class="menu-card-item" v-if="canAccessChat" @click="goTo('/agents')">
-					{{ '💡 ' + t('ai.assistant') }}
-				</li>
 				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/kb')">
 					{{ '📚 ' + t('kb.knowledge.base') }}
 				</li>
+        <li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/agents')">
+          {{ '💡 ' + t('ai.assistant') }}
+        </li>
 				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/mcp')">
 					{{ '🧩 ' + t('mcp.title') }}
 				</li>
