@@ -84,6 +84,8 @@ export type ChatRequestDto = {
 	systemPrompt: 'GENERAL_ASSISTANT' | 'TOOL_USE';
 	// 通用助手手动直连子智能体；传入后跳过编排决策
 	manualOrchestrateAgentId?: string
+	// 通用知识库问答助手本轮选择的知识库 collection 列表
+	knowledgeCollections?: string[]
 }
 
 export type MessageFeedbackRequest = {

@@ -14,9 +14,9 @@
 				>
 					<el-option
 						v-for="collection in collectionOptions"
-						:key="collection"
-						:label="collection"
-						:value="collection"
+						:key="collection.collection"
+						:label="formatCollectionLabel(collection)"
+						:value="collection.collection"
 					/>
 				</el-select>
 				<div class="toolbar-buttons">
@@ -257,7 +257,7 @@ import {
 } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { getKnowledge, getKnowledgeCollections, syncKnowledge } from '@/api/kb/kb.api'
-import type { KnowledgeSyncResult } from '@/types/kb.model'
+import type { KnowledgeCollectionDto, KnowledgeSyncResult } from '@/types/kb.model'
 import { formatDateTime, getOutlineDisplay, isTableCellEmpty, t } from '@ai-system/lib'
 import { KnowledgeDto } from '@/types/kb.model'
 import KnowledgeMaintenanceStatusPanel from '@/pages/kb/components/KnowledgeMaintenanceStatusPanel.vue'
@@ -273,7 +273,7 @@ const pageSize = ref(10)
 const total = ref(0)
 const searchKeyword = ref('') // 搜索关键词
 const selectedCollection = ref('')
-const collectionOptions = ref<string[]>([])
+const collectionOptions = ref<KnowledgeCollectionDto[]>([])
 const rebuildDialogVisible = ref(false)
 const fullRebuildEnabled = ref(false)
 const fullRebuildConfirmText = ref('')
@@ -285,9 +285,16 @@ const emptyTableMessage = computed(() =>
 )
 
 /** 解析 collection 列表响应体 */
-const unwrapCollectionList = (res: unknown): string[] => {
-	const body = (res as { data?: { data?: string[] } })?.data
-	return body?.data ?? []
+const unwrapCollectionList = (res: unknown): KnowledgeCollectionDto[] => {
+	const body = (res as { data?: { data?: KnowledgeCollectionDto[] } })?.data
+	return (body?.data ?? []).filter((item) => Boolean(item.collection?.trim()))
+}
+
+/** 格式化 collection 下拉展示名 */
+const formatCollectionLabel = (collection: KnowledgeCollectionDto) => {
+	const value = collection.collection?.trim()
+	const name = collection.name?.trim()
+	return name && value && name !== value ? `${name} (${value})` : value || name || ''
 }
 
 const rebuildButtonLabel = computed(() => {
@@ -305,7 +312,7 @@ const loadCollections = async () => {
 		const collections = unwrapCollectionList(response)
 		collectionOptions.value = collections
 		if (!selectedCollection.value && collections.length > 0) {
-			selectedCollection.value = collections[0]
+			selectedCollection.value = collections[0].collection || ''
 			await loadKnowledge()
 		}
 	} catch (error) {

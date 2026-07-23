@@ -432,6 +432,74 @@
               </template>
             </ElDropdown>
           </div>
+          <div
+            v-if="showKnowledgeCollectionsSelector"
+            class="knowledge-collections"
+            :class="{ 'is-disabled': knowledgeCollectionsDisabled }"
+          >
+            <ElDropdown
+              trigger="click"
+              placement="top-start"
+              popper-class="knowledge-collections-popper"
+              :hide-on-click="false"
+              :disabled="knowledgeCollectionsDisabled"
+              @command="toggleKnowledgeCollection"
+            >
+              <button
+                type="button"
+                class="manual-orchestrate-chip manual-orchestrate-more knowledge-collections-more"
+                :class="{ active: selectedKnowledgeCollections.length > 0 }"
+                :disabled="knowledgeCollectionsDisabled"
+                :title="knowledgeCollectionsTriggerTitle"
+              >
+                <span class="knowledge-collections-more-dots">...</span>
+                <span
+                  v-if="selectedKnowledgeCollections.length > 0"
+                  class="knowledge-collections-more-count"
+                >
+                  {{ selectedKnowledgeCollections.length }}
+                </span>
+              </button>
+              <template #dropdown>
+                <ElDropdownMenu class="knowledge-collections-menu">
+                  <ElDropdownItem
+                    v-if="knowledgeCollectionsLoading"
+                    disabled
+                  >
+                    {{ t('ai.knowledge.collections.loading') }}
+                  </ElDropdownItem>
+                  <ElDropdownItem
+                    v-else-if="knowledgeCollectionsLoadFailed"
+                    disabled
+                  >
+                    {{ t('ai.knowledge.collections.load.failed') }}
+                  </ElDropdownItem>
+                  <ElDropdownItem
+                    v-else-if="knowledgeCollections.length === 0"
+                    disabled
+                  >
+                    {{ t('ai.knowledge.collections.empty') }}
+                  </ElDropdownItem>
+                  <template v-else>
+                    <ElDropdownItem
+                      v-for="collection in knowledgeCollections"
+                      :key="collection"
+                      :command="collection"
+                    >
+                      <span class="knowledge-collections-menu-item">
+                        <ElCheckbox
+                          :model-value="isKnowledgeCollectionSelected(collection)"
+                          @click.stop
+                          @change="() => toggleKnowledgeCollection(collection)"
+                        />
+                        <span class="knowledge-collections-name">{{ getKnowledgeCollectionLabel(collection) }}</span>
+                      </span>
+                    </ElDropdownItem>
+                  </template>
+                </ElDropdownMenu>
+              </template>
+            </ElDropdown>
+          </div>
           <ElButton
             :type="isBusyByState ? 'danger' : 'primary'"
             class="chat-button"
@@ -499,6 +567,7 @@ import { consumeForceNewChatFlag } from '@/routes'
 import {
   ElAvatar,
   ElButton,
+  ElCheckbox,
   ElDropdown,
   ElDropdownItem,
   ElDropdownMenu,
@@ -536,6 +605,8 @@ import {
   getHistoryContext,
   getQaTemplate
 } from '@/api/ai.api'
+import { getKnowledgeCollections } from '@/api/kb/kb.api'
+import type { KnowledgeCollectionDto } from '@/types/kb.model'
 import { chatActivityStore } from '../ts/activity/store'
 import { isContextStreaming } from '../ts/activity/live'
 import { chatSessionRegistry } from '../ts/session/registry'
@@ -572,7 +643,10 @@ import {
 import { registerSessionRenderCacheEvict } from '../ts/render/session-render-cache'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
 import { getAgentDisplayName, getAgentLogo, agentNameMap, registeredAgents } from '../ts/agent/name-registry'
-import { UNIVERSAL_ASSISTANT_ID } from '../ts/agent/universal-assistant'
+import {
+  KNOWLEDGE_QA_ASSISTANT_ID,
+  UNIVERSAL_ASSISTANT_ID
+} from '../ts/agent/universal-assistant'
 
 const showChatManage = ref(false)
 const chatManageRef = ref(null)
@@ -586,6 +660,7 @@ const {
   messageContext,
   inputMessage,
   selectedAttachments,
+  selectedKnowledgeCollections,
   manualOrchestrateEnabled,
   manualOrchestrateAgentId,
   sendingMessage,
@@ -909,6 +984,7 @@ type PendingAskQuestionAnswer = {
   questionMessageIndex: number
   userMessageIndex: number
   answer: string
+  knowledgeCollections: string[]
 }
 
 const pendingAskQuestionAnswer = ref<PendingAskQuestionAnswer | null>(null)
@@ -978,6 +1054,150 @@ let manualOrchestrateResizeObserver: ResizeObserver | undefined
 const isUniversalAssistantPage = computed(
   () => props.agentId === UNIVERSAL_ASSISTANT_ID
 )
+
+const KNOWLEDGE_COLLECTIONS_STORAGE_KEY = 'ai-knowledge-qa-selected-collections'
+const knowledgeCollections = ref<string[]>([])
+const knowledgeCollectionLabelMap = ref<Record<string, string>>({})
+const knowledgeCollectionsLoading = ref(false)
+const knowledgeCollectionsLoadFailed = ref(false)
+const knowledgeCollectionsLoaded = ref(false)
+
+const isKnowledgeQaAssistantPage = computed(
+  () => props.agentId === KNOWLEDGE_QA_ASSISTANT_ID
+)
+
+const showKnowledgeCollectionsSelector = computed(() => isKnowledgeQaAssistantPage.value)
+
+const knowledgeCollectionsDisabled = computed(
+  () => isBusyByState.value || sendingMessage.value
+)
+
+const knowledgeCollectionsTriggerTitle = computed(() => {
+  if (selectedKnowledgeCollections.value.length === 0) {
+    return t('ai.knowledge.collections.select')
+  }
+  return selectedKnowledgeCollections.value.map(getKnowledgeCollectionLabel).join(', ')
+})
+
+const readStoredKnowledgeCollections = (): string[] => {
+  try {
+    const raw = localStorage.getItem(KNOWLEDGE_COLLECTIONS_STORAGE_KEY)
+    if (!raw) {
+      return []
+    }
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+    return parsed.filter((item): item is string => typeof item === 'string' && !!item.trim())
+  } catch {
+    return []
+  }
+}
+
+const writeStoredKnowledgeCollections = (collections: string[]) => {
+  try {
+    localStorage.setItem(
+      KNOWLEDGE_COLLECTIONS_STORAGE_KEY,
+      JSON.stringify([...new Set(collections.filter(Boolean))])
+    )
+  } catch {
+    /* ignore storage failure */
+  }
+}
+
+const syncSelectedKnowledgeCollections = () => {
+  if (!knowledgeCollectionsLoaded.value) {
+    return
+  }
+  const available = new Set(knowledgeCollections.value)
+  const next = selectedKnowledgeCollections.value.filter((collection) =>
+    available.has(collection)
+  )
+  if (next.length !== selectedKnowledgeCollections.value.length) {
+    selectedKnowledgeCollections.value = next
+    writeStoredKnowledgeCollections(next)
+  }
+}
+
+/** 格式化 knowledge collection 展示标签 */
+const formatKnowledgeCollectionLabel = (item: KnowledgeCollectionDto) => {
+  const collection = item.collection?.trim()
+  const name = item.name?.trim()
+  return name && collection && name !== collection ? `${name} (${collection})` : collection || name || ''
+}
+
+/** 应用后端返回的 collection 选项与标签映射 */
+const applyKnowledgeCollectionOptions = (items: KnowledgeCollectionDto[]) => {
+  knowledgeCollections.value = items
+    .map((item) => item.collection?.trim())
+    .filter((collection): collection is string => Boolean(collection))
+  const next: Record<string, string> = {}
+  for (const item of items) {
+    const collection = item.collection?.trim()
+    if (!collection) {
+      continue
+    }
+    const label = formatKnowledgeCollectionLabel(item)
+    if (label) {
+      next[collection] = label
+    }
+  }
+  knowledgeCollectionLabelMap.value = next
+}
+
+const getKnowledgeCollectionLabel = (collection: string) =>
+  knowledgeCollectionLabelMap.value[collection] || collection
+
+const ensureKnowledgeCollectionsLoaded = async () => {
+  if (!isKnowledgeQaAssistantPage.value || knowledgeCollectionsLoading.value) {
+    return
+  }
+  knowledgeCollectionsLoading.value = true
+  knowledgeCollectionsLoadFailed.value = false
+  knowledgeCollectionsLoaded.value = false
+  try {
+    const response = await getKnowledgeCollections()
+    applyKnowledgeCollectionOptions(response.data?.data ?? [])
+    knowledgeCollectionsLoaded.value = true
+    syncSelectedKnowledgeCollections()
+  } catch {
+    knowledgeCollectionsLoadFailed.value = true
+    knowledgeCollectionsLoaded.value = false
+  } finally {
+    knowledgeCollectionsLoading.value = false
+  }
+}
+
+const isKnowledgeCollectionSelected = (collection: string) =>
+  selectedKnowledgeCollections.value.includes(collection)
+
+const toggleKnowledgeCollection = (command: string | number | object) => {
+  if (knowledgeCollectionsDisabled.value || typeof command !== 'string') {
+    return
+  }
+  const collection = command.trim()
+  if (!collection) {
+    return
+  }
+  const selected = new Set(selectedKnowledgeCollections.value)
+  if (selected.has(collection)) {
+    selected.delete(collection)
+  } else {
+    selected.add(collection)
+  }
+  selectedKnowledgeCollections.value = [...selected]
+  writeStoredKnowledgeCollections(selectedKnowledgeCollections.value)
+}
+
+const hydrateKnowledgeCollectionSelection = () => {
+  if (!isKnowledgeQaAssistantPage.value || selectedKnowledgeCollections.value.length > 0) {
+    return
+  }
+  selectedKnowledgeCollections.value = readStoredKnowledgeCollections()
+  syncSelectedKnowledgeCollections()
+}
+
 
 const readManualOrchestrateOrder = (): string[] => {
   try {
@@ -1206,7 +1426,8 @@ const startUserMessageTurn = async (
   session: ChatSessionRuntime,
   message: MessageDto,
   pendingImages: PendingChatImage[],
-  manualOrchestrateAgentId?: string
+  manualOrchestrateAgentId?: string,
+  knowledgeCollectionsForRequest?: string[]
 ) => {
   const activeContextId = session.contextId.value
   if (!activeContextId) {
@@ -1244,6 +1465,9 @@ const startUserMessageTurn = async (
     if (manualOrchestrateAgentId) {
       chatRequestDto.manualOrchestrateAgentId = manualOrchestrateAgentId
     }
+    if (knowledgeCollectionsForRequest?.length) {
+      chatRequestDto.knowledgeCollections = knowledgeCollectionsForRequest
+    }
     startTurn(session, chatRequestDto, {
       onScrollRequest: () => {
         if (shouldAutoScroll()) {
@@ -1256,6 +1480,24 @@ const startUserMessageTurn = async (
   } finally {
     session.sendingMessage.value = false
   }
+}
+
+/** 解析本次请求应携带的 knowledge collections */
+const resolveKnowledgeCollectionsForRequest = (session: ChatSessionRuntime) => {
+  if (!isKnowledgeQaAssistantPage.value) {
+    return []
+  }
+  return [...session.selectedKnowledgeCollections.value]
+}
+
+/** 校验并返回请求用 knowledge collections；未选中时提示并返回 null */
+const ensureKnowledgeCollectionsForRequest = (session: ChatSessionRuntime) => {
+  const knowledgeCollectionsForRequest = resolveKnowledgeCollectionsForRequest(session)
+  if (isKnowledgeQaAssistantPage.value && knowledgeCollectionsForRequest.length === 0) {
+    ElMessage.warning(t('ai.knowledge.collections.required'))
+    return null
+  }
+  return knowledgeCollectionsForRequest
 }
 
 const sendMessage = async (msg?: string) => {
@@ -1284,6 +1526,10 @@ const sendMessage = async (msg?: string) => {
     ElMessage.info(t('ai.assistant.waiting'))
     return
   }
+  const knowledgeCollectionsForRequest = ensureKnowledgeCollectionsForRequest(session)
+  if (!knowledgeCollectionsForRequest) {
+    return
+  }
   const displayAttachments = buildDisplayAttachments(pendingImages)
   const message: MessageDto = {
     index: session.messageContext.value.length,
@@ -1294,14 +1540,21 @@ const sendMessage = async (msg?: string) => {
   session.messageContext.value.push(message)
   session.inputMessage.value = ''
   session.selectedAttachments.value = []
-  await startUserMessageTurn(session, message, pendingImages, manualOrchestrateTarget)
+  await startUserMessageTurn(
+    session,
+    message,
+    pendingImages,
+    manualOrchestrateTarget,
+    knowledgeCollectionsForRequest
+  )
 }
 
 const appendPendingAskQuestionAnswerBubble = (
   session: ChatSessionRuntime,
   targetContextId: string,
   questionMessageIndex: number,
-  answer: string
+  answer: string,
+  knowledgeCollectionsForRequest: string[]
 ) => {
   const message: MessageDto = {
     index: session.messageContext.value.length,
@@ -1316,7 +1569,8 @@ const appendPendingAskQuestionAnswerBubble = (
     contextId: targetContextId,
     questionMessageIndex,
     userMessageIndex: message.index,
-    answer
+    answer,
+    knowledgeCollections: knowledgeCollectionsForRequest
   }
   isAtBottom.value = true
   scrollToBottomAfterMessageFlush()
@@ -1335,12 +1589,17 @@ const sendAskQuestionAnswer = async (
     props.agentId,
     targetContextId
   )
+  const knowledgeCollectionsForRequest = ensureKnowledgeCollectionsForRequest(targetSession)
+  if (!knowledgeCollectionsForRequest) {
+    return
+  }
   if (targetSession.dispatcher.isBusyByState.value || targetSession.sendingMessage.value) {
     appendPendingAskQuestionAnswerBubble(
       targetSession,
       targetContextId,
       message.index,
-      normalized
+      normalized,
+      knowledgeCollectionsForRequest
     )
     return
   }
@@ -1355,7 +1614,13 @@ const sendAskQuestionAnswer = async (
     attachments: []
   }
   targetSession.messageContext.value.push(userMessage)
-  await startUserMessageTurn(targetSession, userMessage, [], undefined)
+  await startUserMessageTurn(
+    targetSession,
+    userMessage,
+    [],
+    undefined,
+    knowledgeCollectionsForRequest
+  )
 }
 
 const flushPendingAskQuestionAnswer = async () => {
@@ -1387,7 +1652,13 @@ const flushPendingAskQuestionAnswer = async () => {
     chatSessionRegistry.activateSession(pending.agentId, pending.contextId)
     await nextTick()
   }
-  await startUserMessageTurn(session, userMessage, [], undefined)
+  await startUserMessageTurn(
+    session,
+    userMessage,
+    [],
+    undefined,
+    pending.knowledgeCollections
+  )
 }
 
 const handleImageSelect = async (event: Event) => {
@@ -2396,6 +2667,8 @@ const bootstrapAgentSession = async (forceNew = false) => {
   } else {
     await chatSessionRegistry.enterAgent(props.agentId)
   }
+  hydrateKnowledgeCollectionSelection()
+  await ensureKnowledgeCollectionsLoaded()
   isAtBottom.value = true
   getHotQuestions()
   nextTick(() => {
@@ -2406,6 +2679,8 @@ const bootstrapAgentSession = async (forceNew = false) => {
 
 const newChat = async () => {
   await chatSessionRegistry.createNewSession(props.agentId)
+  hydrateKnowledgeCollectionSelection()
+  await ensureKnowledgeCollectionsLoaded()
   isAtBottom.value = true
   getHotQuestions()
   scrollToBottom()
@@ -2474,6 +2749,25 @@ watch(
     })
   },
   { flush: 'post' }
+)
+
+
+watch(
+  isKnowledgeQaAssistantPage,
+  (enabled) => {
+    if (enabled) {
+      hydrateKnowledgeCollectionSelection()
+      void ensureKnowledgeCollectionsLoaded()
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => knowledgeCollections.value.join('\u0001'),
+  () => {
+    syncSelectedKnowledgeCollections()
+  }
 )
 
 /** 流式尾段就地增量更新，保留 pending 图表占位节点以维持流光动画 */
@@ -3778,6 +4072,22 @@ defineExpose({
     }
   }
 
+  .knowledge-collections {
+    position: absolute;
+    left: var(--chat-input-inset-x);
+    right: 132px;
+    bottom: var(--chat-input-inset-y);
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    height: var(--chat-input-action-size);
+
+    &.is-disabled {
+      opacity: 0.72;
+    }
+  }
+
   .manual-orchestrate-chip {
     display: inline-flex;
     align-items: center;
@@ -3847,6 +4157,46 @@ defineExpose({
     padding: 0;
     font-weight: 700;
     letter-spacing: 0;
+  }
+
+  .knowledge-collections-more {
+    width: auto;
+    min-width: 46px;
+    height: 28px;
+    padding: 0 8px;
+    flex-direction: row;
+    gap: 5px;
+    border-color: var(--n-glass-border-1);
+    border-radius: 8px;
+    line-height: 1;
+    @include n-glass-surface(1);
+  }
+
+  .knowledge-collections-more-dots {
+    display: block;
+    height: 12px;
+    line-height: 8px;
+  }
+
+  .knowledge-collections-more-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    color: #fff;
+    background: var(--el-color-primary);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 12px;
+  }
+
+  .knowledge-collections-more.active {
+    color: var(--el-color-primary);
+    border-color: color-mix(in srgb, var(--el-color-primary) 34%, var(--n-glass-border-1));
+    background: color-mix(in srgb, var(--n-color-bg-glass) 80%, var(--el-color-primary) 8%);
   }
 
   .chat-input-disclaimer {
@@ -4208,6 +4558,39 @@ defineExpose({
   min-width: 0;
   height: 24px;
   line-height: 24px;
+}
+
+:global(.knowledge-collections-popper .el-dropdown-menu) {
+  min-width: 220px;
+  max-width: min(360px, calc(100vw - 32px));
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+:global(.knowledge-collections-popper .el-dropdown-menu__item) {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  height: auto;
+  padding: 4px 10px;
+  border-radius: 6px;
+  line-height: 1.3;
+}
+
+:global(.knowledge-collections-menu-item) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+:global(.knowledge-collections-name) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 :global(.manual-orchestrate-tooltip) {

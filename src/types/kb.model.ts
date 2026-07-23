@@ -3,7 +3,15 @@ export interface KnowledgeGetListDto {
 }
 
 export interface KnowledgeCollectionListDto {
-	data?: string[]
+	data?: KnowledgeCollectionDto[]
+}
+
+export interface KnowledgeCollectionDto {
+	collection?: string
+	name?: string
+	repoCode?: string
+	repositoryName?: string
+	type?: KnowledgeRepositoryType
 }
 
 export type KnowledgeRepositoryType = 'LOCAL_FILE' | 'REMOTE'
@@ -39,6 +47,8 @@ export interface KnowledgeRepositoryDto {
 	protocolConfig?: Record<string, unknown>
 	hasCredential?: boolean
 	collections?: string[]
+	displayName?: string
+	collectionAliases?: Record<string, string>
 	minHeadingLevel?: number
 	filenameAsTitle?: boolean
 }
@@ -55,6 +65,8 @@ export interface KnowledgeRepositoryUpsertDto {
 	remoteUrl?: string
 	defaultBranch?: string
 	protocolConfig?: Record<string, unknown>
+	displayName?: string
+	collectionAliases?: Record<string, string>
 	credentialConfig?: KnowledgeRepositoryCredentialConfig
 }
 

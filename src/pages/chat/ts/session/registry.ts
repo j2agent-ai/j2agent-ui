@@ -88,6 +88,7 @@ class ChatSessionRegistry {
 			messageContext,
 			inputMessage: ref(''),
 			selectedAttachments: ref<PendingChatImage[]>([]),
+			selectedKnowledgeCollections: ref<string[]>([]),
 			manualOrchestrateEnabled: ref(false),
 			manualOrchestrateAgentId: ref(''),
 			sendingMessage: ref(false),

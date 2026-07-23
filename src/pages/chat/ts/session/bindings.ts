@@ -9,6 +9,7 @@ import type { PendingChatImage } from './types'
 
 const EMPTY_MESSAGES: MessageDto[] = []
 const EMPTY_ATTACHMENTS: PendingChatImage[] = []
+const EMPTY_KNOWLEDGE_COLLECTIONS: string[] = []
 
 /** 将 Registry 中当前活跃会话的状态暴露为 ChatView 可用的 computed 绑定 */
 export const useActiveChatSessionBindings = () => {
@@ -44,6 +45,18 @@ export const useActiveChatSessionBindings = () => {
 			const session = activeSession.value
 			if (session) {
 				session.selectedAttachments.value = value
+			}
+		}
+	})
+
+	const selectedKnowledgeCollections = computed({
+		get: () =>
+			activeSession.value?.selectedKnowledgeCollections.value ??
+			EMPTY_KNOWLEDGE_COLLECTIONS,
+		set: (value: string[]) => {
+			const session = activeSession.value
+			if (session) {
+				session.selectedKnowledgeCollections.value = value
 			}
 		}
 	})
@@ -108,6 +121,7 @@ export const useActiveChatSessionBindings = () => {
 		messageContext,
 		inputMessage,
 		selectedAttachments,
+		selectedKnowledgeCollections,
 		manualOrchestrateEnabled,
 		manualOrchestrateAgentId,
 		sendingMessage,

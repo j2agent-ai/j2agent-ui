@@ -15,16 +15,25 @@
 				<h3>{{ t('ai.hub') }}</h3>
 				<p>{{ t('ai.hub.desc') }}</p>
 			</div>
-			<div class="feature-card" v-if="canAccessChat" @click="goTo('/agents')">
-				<div class="card-icon">💡</div>
-				<h3>{{ t('ai.assistant') }}</h3>
-				<p>{{ t('ai.assistant.desc') }}</p>
+			<div
+				class="feature-card"
+				v-if="canAccessChat"
+				@click="goTo(KNOWLEDGE_QA_CHAT_PATH)"
+			>
+				<div class="card-icon">📚</div>
+				<h3>{{ t('ai.knowledge.qa') }}</h3>
+				<p>{{ t('ai.knowledge.qa.desc') }}</p>
 			</div>
 			<div class="feature-card" v-if="canAccessAdmin" @click="goTo('/kb')">
 				<div class="card-icon">📚</div>
 				<h3>{{ t('kb.knowledge.base') }}</h3>
 				<p>{{ t('kb.management') }}</p>
 			</div>
+      <div class="feature-card" v-if="canAccessAdmin" @click="goTo('/agents')">
+        <div class="card-icon">💡</div>
+        <h3>{{ t('ai.assistant') }}</h3>
+        <p>{{ t('ai.assistant.desc') }}</p>
+      </div>
 			<div class="feature-card" v-if="canAccessAdmin" @click="goTo('/mcp')">
 				<div class="card-icon">🧩</div>
 				<h3>{{ t('mcp.title') }}</h3>
@@ -50,7 +59,10 @@ import { debounce, t } from '@ai-system/lib'
 import topBar from '@/pages/components/topBar.vue'
 import { getNewContextId } from '@/api/ai.api'
 import { goTo } from '@/routes'
-import { AI_HUB_CHAT_PATH } from '@/pages/chat/ts/agent/universal-assistant'
+import {
+	AI_HUB_CHAT_PATH,
+	KNOWLEDGE_QA_CHAT_PATH
+} from '@/pages/chat/ts/agent/universal-assistant'
 import { hasRoleAccess, ROLE_ADMIN, ROLE_USER } from '@/utils/role'
 import { scheduleDiagramPrefetch } from '@/utils/scheduleDiagramPrefetch'
 
