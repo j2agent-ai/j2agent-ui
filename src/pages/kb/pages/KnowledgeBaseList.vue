@@ -5,7 +5,7 @@
 				<el-select
 					v-model="selectedCollection"
 					class="action-collection"
-					placeholder="请选择 Collection"
+					:placeholder="t('kb.collection.select.placeholder')"
 					clearable
 					filterable
 					:loading="collectionLoading"
@@ -43,7 +43,7 @@
 			</div>
 		</div>
 		<el-tabs v-model="activeTab" class="kb-tabs">
-			<el-tab-pane label="知识数据" name="knowledge">
+			<el-tab-pane :label="t('kb.knowledge.data')" name="knowledge">
 				<div class="knowledge-pane">
 					<div class="table-wrapper">
 						<el-table
@@ -119,7 +119,7 @@
 									<span v-else>{{ row.embeddingProvider }}</span>
 								</template>
 							</el-table-column>
-							<el-table-column label="源文件" min-width="220" show-overflow-tooltip>
+							<el-table-column :label="t('kb.sourceFile')" min-width="220" show-overflow-tooltip>
 								<template #default="{ row }">
 									<span v-if="isTableCellEmpty(row.sourceFile)" class="empty-text">-</span>
 									<span v-else>{{ row.sourceFile }}</span>
@@ -172,8 +172,10 @@
 			<el-tab-pane name="maintenance">
 				<template #label>
 					<span class="tab-label">
-						同步状态
-						<el-tag v-if="syncMaintenanceActive" size="small" type="warning">运行中</el-tag>
+						{{ t('kb.sync.status') }}
+						<el-tag v-if="syncMaintenanceActive" size="small" type="warning">
+							{{ t('kb.sync.running.tag') }}
+						</el-tag>
 					</span>
 				</template>
 				<KnowledgeMaintenanceStatusPanel
@@ -283,7 +285,7 @@ const fullRebuildConfirmExpectedText = computed(() =>
 )
 
 const emptyTableMessage = computed(() =>
-	selectedCollection.value ? '暂无数据' : '请先选择 Collection'
+	selectedCollection.value ? t('kb.knowledge.empty') : t('kb.collection.select.first')
 )
 
 /** 解析 collection 列表响应体 */

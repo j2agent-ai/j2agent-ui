@@ -17,7 +17,7 @@
 				<el-input
 					v-model="loginData.username"
 					autocomplete="username"
-					placeholder="用户名"
+					:placeholder="t('login.username')"
 				></el-input>
 			</el-form-item>
 			<el-form-item prop="password">
@@ -25,7 +25,7 @@
 					v-model="loginData.password"
 					type="password"
 					autocomplete="current-password"
-					placeholder="密码"
+					:placeholder="t('login.password')"
 				></el-input>
 			</el-form-item>
 			<el-form-item prop="captcha">
@@ -151,8 +151,8 @@ const loginData = reactive({
 })
 
 const rules = {
-	username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-	password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+	username: [{ required: true, message: t('login.username.required'), trigger: 'blur' }],
+	password: [{ required: true, message: t('login.password.required'), trigger: 'blur' }],
 	captcha: [
 		{
 			validator: (_rule, _value, callback) => {

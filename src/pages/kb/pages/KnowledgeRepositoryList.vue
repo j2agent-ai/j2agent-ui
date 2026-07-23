@@ -3,7 +3,7 @@
 		<div class="header-actions">
 			<div class="toolbar-primary">
 				<el-button type="primary" :icon="Plus" @click="openCreateDialog">
-					新增远程知识库
+					{{ t('kb.repository.addRemote') }}
 				</el-button>
 				<el-button :icon="Refresh" :loading="loading" @click="loadRepositories">
 					{{ t('common.refresh') }}
@@ -19,73 +19,73 @@
 				v-loading="loading"
 				stripe
 			>
-				<el-table-column label="类型" width="110" align="center">
+				<el-table-column :label="t('kb.repository.type')" width="110" align="center">
 					<template #default="{ row }">
 						<el-tag size="small" :type="row.type === 'LOCAL_FILE' ? 'info' : 'success'">
 							{{ typeLabel(row.type) }}
 						</el-tag>
 					</template>
 				</el-table-column>
-				<el-table-column label="URL / 路径" min-width="260" show-overflow-tooltip>
+				<el-table-column :label="t('kb.repository.urlOrPath')" min-width="260" show-overflow-tooltip>
 					<template #default="{ row }">
 						{{ row.remoteUrl || row.localPath || '-' }}
 					</template>
 				</el-table-column>
-				<el-table-column label="状态" width="110" align="center">
+				<el-table-column :label="t('kb.repository.status')" width="110" align="center">
 					<template #default="{ row }">
 						<el-tag size="small" :type="statusTagType(row.status)">
 							{{ statusLabel(row.status) }}
 						</el-tag>
 					</template>
 				</el-table-column>
-				<el-table-column label="协议" width="90" align="center">
+				<el-table-column :label="t('kb.repository.protocol')" width="90" align="center">
 					<template #default="{ row }">
 						{{ row.protocol || '-' }}
 					</template>
 				</el-table-column>
-				<el-table-column label="知识库名称" min-width="120" show-overflow-tooltip>
+				<el-table-column :label="t('kb.repository.displayName')" min-width="120" show-overflow-tooltip>
 					<template #default="{ row }">
 						{{ row.displayName || '-' }}
 					</template>
 				</el-table-column>
-				<el-table-column label="目录名" min-width="150" prop="repoCode" show-overflow-tooltip />
+				<el-table-column :label="t('kb.repository.repoCode')" min-width="150" prop="repoCode" show-overflow-tooltip />
 				<el-table-column label="Collection" min-width="170" show-overflow-tooltip>
 					<template #default="{ row }">
 						{{ collectionText(row) }}
 					</template>
 				</el-table-column>
-				<el-table-column label="分支" width="120" show-overflow-tooltip>
+				<el-table-column :label="t('kb.repository.branch')" width="120" show-overflow-tooltip>
 					<template #default="{ row }">
 						{{ row.defaultBranch || '-' }}
 					</template>
 				</el-table-column>
-				<el-table-column label="周期" width="100" align="center">
+				<el-table-column :label="t('kb.repository.interval')" width="100" align="center">
 					<template #default="{ row }">
-						<span v-if="row.updateIntervalMinutes">{{ row.updateIntervalMinutes }} 分钟</span>
+						<span v-if="row.updateIntervalMinutes">{{ formatMinutes(row.updateIntervalMinutes) }}</span>
 						<span v-else>-</span>
 					</template>
 				</el-table-column>
-				<el-table-column label="启用" width="90" align="center">
+				<el-table-column :label="t('kb.repository.enabled')" width="90" align="center">
 					<template #default="{ row }">
 						<el-tag size="small" :type="row.enabled ? 'success' : 'info'">
-							{{ row.enabled ? '启用' : '停用' }}
+							{{ row.enabled ? t('common.enabled') : t('common.disabled') }}
 						</el-tag>
 					</template>
 				</el-table-column>
-				<el-table-column label="最近同步" width="180" align="center">
+				<el-table-column :label="t('kb.repository.lastSync')" width="180" align="center">
 					<template #default="{ row }">
 						{{ formatDateTime(row.lastSyncTime) || '-' }}
 					</template>
 				</el-table-column>
-				<el-table-column label="最新 Revision" width="140" show-overflow-tooltip>
+				<el-table-column :label="t('kb.repository.lastRevision')" width="140" show-overflow-tooltip>
 					<template #default="{ row }">
 						{{ shortRevision(row.lastRevision) }}
 					</template>
 				</el-table-column>
-				<el-table-column label="操作" width="260" fixed="right">
+				<el-table-column :label="t('common.action')" width="260" fixed="right">
 					<template #default="{ row }">
 						<el-button link type="primary" :icon="View" @click="openDetail(row)">
-							详情
+							{{ t('common.detail') }}
 						</el-button>
 						<el-button
 							link
@@ -94,7 +94,7 @@
 							:disabled="row.readonly || row.status === 'SYNCING'"
 							@click="handleSync(row)"
 						>
-							更新
+							{{ t('common.update') }}
 						</el-button>
 						<el-button
 							link
@@ -103,7 +103,7 @@
 							:disabled="row.readonly"
 							@click="openEditDialog(row)"
 						>
-							编辑
+							{{ t('common.edit') }}
 						</el-button>
 						<el-button
 							link
@@ -112,19 +112,19 @@
 							:disabled="row.readonly || row.status === 'SYNCING'"
 							@click="handleDelete(row)"
 						>
-							删除
+							{{ t('common.delete') }}
 						</el-button>
 					</template>
 				</el-table-column>
 				<template #empty>
-					<span class="table-empty-hint">暂无知识库仓库</span>
+					<span class="table-empty-hint">{{ t('kb.repository.empty') }}</span>
 				</template>
 			</el-table>
 		</div>
 
 		<el-dialog
 			v-model="dialogVisible"
-			:title="editingId ? '编辑 Git 远程配置' : '新增 Git 知识库'"
+			:title="editingId ? t('kb.repository.dialog.edit') : t('kb.repository.dialog.create')"
 			width="620px"
 			align-center
 			append-to-body
@@ -136,12 +136,12 @@
 			<el-form label-width="120px" autocomplete="off" @submit.prevent="submitForm">
 				<input type="text" class="autofill-trap" tabindex="-1" autocomplete="username" aria-hidden="true" />
 				<input type="password" class="autofill-trap" tabindex="-1" autocomplete="current-password" aria-hidden="true" />
-				<el-form-item label="协议" required>
+				<el-form-item :label="t('kb.repository.protocol')" required>
 					<el-select v-model="form.protocol" disabled class="form-control">
 						<el-option label="Git" value="GIT" />
 					</el-select>
 				</el-form-item>
-				<el-form-item label="知识库名称">
+				<el-form-item :label="t('kb.repository.displayName')">
 					<el-input
 						v-model="form.displayName"
 						maxlength="64"
@@ -155,62 +155,64 @@
 						}"
 					/>
 				</el-form-item>
-				<el-form-item label="知识库目录名">
+				<el-form-item :label="t('kb.repository.repoCode.full')">
 					<el-input
 						v-model="form.repoCode"
 						:disabled="!!editingId"
 						maxlength="128"
 						autocomplete="off"
-						placeholder="为空时使用 Git 仓库名"
+						:placeholder="t('kb.repository.repoCode.placeholder')"
 					/>
 				</el-form-item>
 				<el-form-item label="URL" required>
 					<el-input v-model="form.remoteUrl" maxlength="2048" autocomplete="off" />
 				</el-form-item>
-				<el-form-item label="分支名">
+				<el-form-item :label="t('kb.repository.branchName')">
 					<el-input
 						v-model="form.defaultBranch"
 						maxlength="256"
 						autocomplete="off"
-						placeholder="默认分支"
+						:placeholder="t('kb.repository.branch.placeholder')"
 					/>
 				</el-form-item>
-				<el-form-item label="用户名">
+				<el-form-item :label="t('kb.repository.username')">
 					<el-input v-model="form.username" autocomplete="username" />
 				</el-form-item>
-				<el-form-item label="密码 / Token">
+				<el-form-item :label="t('kb.repository.passwordToken')">
 					<el-input
 						v-model="form.password"
 						type="password"
 						show-password
 						autocomplete="new-password"
-						:placeholder="editingId ? '留空表示不修改' : ''"
+						:placeholder="editingId ? t('kb.repository.password.placeholder.edit') : ''"
 					/>
 				</el-form-item>
-				<el-form-item label="更新周期" required>
+				<el-form-item :label="t('kb.repository.updateInterval')" required>
 					<el-input-number
 						v-model="form.updateIntervalMinutes"
 						:min="1"
 						:max="10080"
 						controls-position="right"
 					/>
-					<span class="unit-text">分钟</span>
+					<span class="unit-text">{{ t('kb.repository.minutes.unit') }}</span>
 				</el-form-item>
-				<el-form-item label="启用">
+				<el-form-item :label="t('kb.repository.enabled')">
 					<el-switch v-model="form.enabled" />
 				</el-form-item>
 			</el-form>
 			<template #footer>
 				<div class="dialog-footer">
-					<el-button @click="dialogVisible = false">取消</el-button>
-					<el-button type="primary" :loading="submitting" @click="submitForm">保存</el-button>
+					<el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
+					<el-button type="primary" :loading="submitting" @click="submitForm">
+						{{ t('common.save') }}
+					</el-button>
 				</div>
 			</template>
 		</el-dialog>
 
 		<el-drawer
 			v-model="detailVisible"
-			title="知识库仓库详情"
+			:title="t('kb.repository.detail.title')"
 			size="520px"
 			append-to-body
 			class="repository-detail-drawer"
@@ -229,70 +231,70 @@
 							{{ statusLabel(detail.status) }}
 						</el-tag>
 						<el-tag v-if="detail.enabled === false" size="small" type="info">
-							停用
+							{{ t('common.disabled') }}
 						</el-tag>
 					</div>
 				</header>
 
 				<section class="detail-section">
-					<div class="section-heading">连接信息</div>
+					<div class="section-heading">{{ t('kb.repository.detail.connection') }}</div>
 					<div class="detail-kv">
 						<div class="detail-row">
-							<span class="field-label">协议</span>
+							<span class="field-label">{{ t('kb.repository.protocol') }}</span>
 							<span class="field-value">{{ detail.protocol || '-' }}</span>
 						</div>
 						<div class="detail-row">
-							<span class="field-label">分支</span>
-							<span class="field-value">{{ detail.defaultBranch || '远端默认分支' }}</span>
+							<span class="field-label">{{ t('kb.repository.branch') }}</span>
+							<span class="field-value">{{ detail.defaultBranch || t('kb.repository.branch.remoteDefault') }}</span>
 						</div>
 						<div class="detail-row">
-							<span class="field-label">更新周期</span>
-							<span class="field-value">{{ detail.updateIntervalMinutes ? `${detail.updateIntervalMinutes} 分钟` : '-' }}</span>
+							<span class="field-label">{{ t('kb.repository.updateInterval') }}</span>
+							<span class="field-value">{{ detail.updateIntervalMinutes ? formatMinutes(detail.updateIntervalMinutes) : '-' }}</span>
 						</div>
 						<div class="detail-row">
-							<span class="field-label">凭据</span>
-							<span class="field-value">{{ detail.hasCredential ? '已配置' : '未配置' }}</span>
+							<span class="field-label">{{ t('kb.repository.credential') }}</span>
+							<span class="field-value">{{ detail.hasCredential ? t('kb.repository.credential.configured') : t('kb.repository.credential.notConfigured') }}</span>
 						</div>
 						<div class="detail-row">
-							<span class="field-label">知识库名称</span>
+							<span class="field-label">{{ t('kb.repository.displayName') }}</span>
 							<span class="field-value">{{ detail.displayName || '-' }}</span>
 						</div>
 					</div>
 					<div class="detail-path-list">
 						<div class="detail-path-row">
-							<span class="field-label">远程地址</span>
+							<span class="field-label">{{ t('kb.repository.remoteUrl') }}</span>
 							<span class="code-value">{{ detail.remoteUrl || '-' }}</span>
 						</div>
 						<div class="detail-path-row">
-							<span class="field-label">本地路径</span>
+							<span class="field-label">{{ t('kb.repository.localPath') }}</span>
 							<span class="code-value">{{ detail.localPath || '-' }}</span>
 						</div>
 					</div>
 				</section>
 
 				<section class="detail-section">
-					<div class="section-heading">info.json 信息</div>
+					<div class="section-heading">{{ t('kb.repository.detail.infoJson') }}</div>
 					<div class="detail-kv">
 						<div class="detail-row">
 							<span class="field-label">Collection</span>
 							<span class="field-value">{{ collectionText(detail) }}</span>
 						</div>
 						<div class="detail-row">
-							<span class="field-label">最小标题级别</span>
+							<span class="field-label">{{ t('kb.repository.minHeadingLevel') }}</span>
 							<span class="field-value">{{ detail.minHeadingLevel ?? '-' }}</span>
 						</div>
 						<div class="detail-row">
-							<span class="field-label">文件名作为标题</span>
-							<span class="field-value">{{ detail.filenameAsTitle ? '是' : '否' }}</span>
+							<span class="field-label">{{ t('kb.repository.filenameAsTitle') }}</span>
+							<span class="field-value">{{ detail.filenameAsTitle ? t('common.yes') : t('common.no') }}</span>
 						</div>
 					</div>
 				</section>
 
 				<section class="detail-section">
-					<div class="section-heading">版本信息</div>
+					<div class="section-heading">{{ t('kb.repository.detail.version') }}</div>
 					<div class="detail-path-list">
 						<div class="detail-path-row">
-							<span class="field-label">最新 Revision</span>
+							<span class="field-label">{{ t('kb.repository.lastRevision') }}</span>
 							<span class="code-value">{{ detail.lastRevision || '-' }}</span>
 						</div>
 						<div class="detail-path-row">
@@ -302,22 +304,22 @@
 					</div>
 					<div class="detail-kv">
 						<div class="detail-row">
-							<span class="field-label">提交人</span>
+							<span class="field-label">{{ t('kb.repository.revisionAuthor') }}</span>
 							<span class="field-value">{{ detail.lastRevisionAuthor || '-' }}</span>
 						</div>
 						<div class="detail-row">
-							<span class="field-label">提交时间</span>
+							<span class="field-label">{{ t('kb.repository.revisionTime') }}</span>
 							<span class="field-value">{{ formatDateTime(detail.lastRevisionTime) || '-' }}</span>
 						</div>
 						<div class="detail-row">
-							<span class="field-label">最近同步</span>
+							<span class="field-label">{{ t('kb.repository.lastSync') }}</span>
 							<span class="field-value">{{ formatDateTime(detail.lastSyncTime) || '-' }}</span>
 						</div>
 					</div>
 				</section>
 
 				<section v-if="detail.lastError" class="detail-section error-section">
-					<div class="section-heading">错误信息</div>
+					<div class="section-heading">{{ t('kb.repository.error') }}</div>
 					<div class="error-value">{{ detail.lastError }}</div>
 				</section>
 			</div>
@@ -410,7 +412,7 @@ const loadRepositories = async () => {
 		repositories.value = unwrapList(res)
 	} catch (error) {
 		console.error('Failed to load knowledge repositories:', error)
-		ElMessage.error('加载知识库仓库失败')
+		ElMessage.error(t('kb.repository.load.failed'))
 	} finally {
 		loading.value = false
 	}
@@ -464,11 +466,11 @@ const submitForm = async () => {
 			await createKnowledgeRepository(payload)
 			await sleep(1000)
 		}
-		ElMessage.success('保存成功')
+		ElMessage.success(t('common.save.success'))
 		dialogVisible.value = false
 		await loadRepositories()
 	} catch (error: any) {
-		ElMessage.error(error?.response?.data?.message || '保存失败')
+		ElMessage.error(error?.response?.data?.message || t('common.save.failed'))
 	} finally {
 		submitting.value = false
 	}
@@ -476,11 +478,11 @@ const submitForm = async () => {
 
 const buildPayload = (): KnowledgeRepositoryUpsertDto | null => {
 	if (!form.remoteUrl.trim()) {
-		ElMessage.warning('请填写必填字段')
+		ElMessage.warning(t('common.required.fields'))
 		return null
 	}
 	if (form.repoCode.trim() && !/^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$/.test(form.repoCode.trim())) {
-		ElMessage.warning('目录名只能包含字母、数字、下划线和中划线，且至少 2 位')
+		ElMessage.warning(t('kb.repository.repoCode.invalid'))
 		return null
 	}
 	const payload: KnowledgeRepositoryUpsertDto = {
@@ -524,13 +526,13 @@ const handleSync = async (row: KnowledgeRepositoryDto) => {
 	try {
 		const res = await syncKnowledgeRepository(row.id)
 		if (res.data?.success) {
-			ElMessage.success(res.data.message || '已提交同步')
+			ElMessage.success(res.data.message || t('kb.repository.sync.queued'))
 		} else {
-			ElMessage.error(res.data?.message || '同步失败')
+			ElMessage.error(res.data?.message || t('kb.repository.sync.failed'))
 		}
 		await loadRepositories()
 	} catch (error: any) {
-		ElMessage.error(error?.response?.data?.message || '同步失败')
+		ElMessage.error(error?.response?.data?.message || t('kb.repository.sync.failed'))
 		await loadRepositories()
 	}
 }
@@ -539,13 +541,17 @@ const handleDelete = async (row: KnowledgeRepositoryDto) => {
 	if (!row.id || row.readonly) {
 		return
 	}
-	await ElMessageBox.confirm(`确认删除知识库仓库「${row.repoCode}」的远程配置和本地目录？`, '删除确认', {
-		type: 'warning',
-		confirmButtonText: '删除',
-		cancelButtonText: '取消'
-	})
+	await ElMessageBox.confirm(
+		t('kb.repository.delete.confirm', { repoCode: row.repoCode || '-' }),
+		t('kb.repository.delete.title'),
+		{
+			type: 'warning',
+			confirmButtonText: t('common.delete'),
+			cancelButtonText: t('common.cancel')
+		}
+	)
 	await deleteKnowledgeRepository(row.id)
-	ElMessage.success('删除成功')
+	ElMessage.success(t('common.delete.success'))
 	await loadRepositories()
 }
 
@@ -566,6 +572,11 @@ const collectionDisplayName = (repository: KnowledgeRepositoryDto, collection: s
 	return alias ? `${alias} (${collection})` : collection
 }
 
+/** 格式化更新周期（分钟）文案 */
+const formatMinutes = (minutes: number) => {
+	return t('kb.repository.minutes', { minutes })
+}
+
 const normalizeCollectionAliases = (
 	aliases: Record<string, string>,
 	collections: string[]
@@ -581,21 +592,23 @@ const normalizeCollectionAliases = (
 }
 
 const typeLabel = (type?: KnowledgeRepositoryType) => {
-	return type === 'LOCAL_FILE' ? '文件' : '远程'
+	return type === 'LOCAL_FILE'
+		? t('kb.repository.type.localFile')
+		: t('kb.repository.type.remote')
 }
 
 const statusLabel = (status?: KnowledgeRepositoryStatus) => {
 	switch (status) {
 		case 'SYNCING':
-			return '同步中'
+			return t('kb.repository.status.SYNCING')
 		case 'SYNCED':
-			return '已同步'
+			return t('kb.repository.status.SYNCED')
 		case 'FAILED':
-			return '失败'
+			return t('kb.repository.status.FAILED')
 		case 'DIRECTORY_MISSING':
-			return '目录缺失'
+			return t('kb.repository.status.DIRECTORY_MISSING')
 		default:
-			return '空闲'
+			return t('kb.repository.status.IDLE')
 	}
 }
 

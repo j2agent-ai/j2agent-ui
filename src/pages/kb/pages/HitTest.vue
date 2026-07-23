@@ -193,7 +193,7 @@
 						</template>
 					</el-table-column>
 					<template #empty>
-						<span class="table-empty-hint">暂无检索结果</span>
+						<span class="table-empty-hint">{{ t('kb.knowledge.hit.test.empty') }}</span>
 					</template>
 				</el-table>
 			</div>
@@ -207,7 +207,7 @@
 				>
 					<el-select
 						v-model="formData.collection"
-						placeholder="请选择 Collection"
+						:placeholder="t('kb.collection.select.placeholder')"
 						clearable
 						filterable
 						style="width: 260px"
@@ -255,7 +255,9 @@
 							@keyup="handleKeyup"
 						/>
 						<div class="text-input-actions">
-							<el-button type="primary" @click="onSubmit">提交</el-button>
+							<el-button type="primary" @click="onSubmit">
+								{{ t('common.submit') }}
+							</el-button>
 						</div>
 					</div>
 				</el-form-item>
@@ -357,7 +359,7 @@ const loadCollections = async () => {
 		const body = response.data as { data?: KnowledgeCollectionDto[] } | undefined
 		collectionOptions.value = (body?.data ?? []).filter((item) => Boolean(item.collection?.trim()))
 	} catch (error) {
-		console.error('加载知识库 Collection 失败:', error)
+		console.error('Failed to load knowledge collections:', error)
 		collectionOptions.value = []
 	} finally {
 		collectionLoading.value = false
@@ -384,7 +386,7 @@ const onSubmit = async () => {
 				)
 				retrieveResultList.value = response.data?.data || []
 			} catch (error) {
-				console.error('检索知识库失败:', error)
+				console.error('Failed to retrieve knowledge:', error)
 			} finally {
 				loading.value = false
 			}
@@ -432,7 +434,7 @@ const loadRagWeights = async () => {
 		)
 		normalizeRagWeights()
 	} catch (error) {
-		console.error('加载检索权重失败:', error)
+		console.error('Failed to load retrieval weights:', error)
 	}
 }
 

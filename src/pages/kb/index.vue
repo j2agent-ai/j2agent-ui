@@ -17,7 +17,7 @@
 
 		<component :is="currentComponent" v-if="currentComponent" />
 		<div v-else class="placeholder">
-			<p>请选择一个菜单项</p>
+			<p>{{ t('kb.menu.placeholder') }}</p>
 		</div>
 	</SidebarPageLayout>
 </template>
