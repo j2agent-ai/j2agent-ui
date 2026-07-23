@@ -204,7 +204,7 @@ function updateSlideCaptcha() {
 	slideInfo.value.sliderLeft = 0
 	updateSlideInfo()
 		.then(() => {
-			slideInfo.value.sliderText = '拖动滑块完成验证'
+			slideInfo.value.sliderText = t('captcha.slider.text')
 			resultMask.height = 0
 			resultMask.class = ''
 			slideInfo.value.sliderLeft = 0
