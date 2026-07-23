@@ -6,12 +6,11 @@ import { nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { t } from '@ai-system/lib'
 import { chatWebsocketClientApi } from '@/api/ai.api'
-import { getSessionInfo } from '@/api/login.api'
 import type { AgentUiEventEnvelope, ChatRequestDto } from '@/types/ai.types'
-import { redirectToLogin } from '@/utils/auth'
-import { formatApiErrorMessage } from '@/utils/apiError'
 import { chatActivityStore } from '../activity/store'
 import type { ChatSessionRuntime } from '../session/types'
+
+const activeTurnTokens = new WeakMap<ChatSessionRuntime, symbol>()
 
 /** 拆除 WebSocket 回调并关闭连接，避免旧连接晚到的包被错误处理 */
 export const detachWebSocket = (ws: WebSocket | undefined) => {
@@ -58,30 +57,11 @@ const onTurnClose = (session: ChatSessionRuntime) => {
 	})
 }
 
-const systemErrorText = (traceId: string) => t('ai.error.system', { traceId })
-
-const probeSessionAfterHandshakeFailure = async () => {
-	const handshakeFallback = t('ai.turn.error.handshake')
-	try {
-		await getSessionInfo()
-		ElMessage.error(handshakeFallback)
-	} catch (error) {
-		const status = (error as { response?: { status?: number } })?.response?.status
-		if (status === 401 || status === 403) {
-			redirectToLogin()
-		} else {
-			ElMessage.error(
-				formatApiErrorMessage(error, {
-					fallback: handshakeFallback,
-					formatSystem: systemErrorText
-				})
-			)
-		}
-	}
-}
+const WS_HANDSHAKE_RETRY_DELAYS = [500, 1500, 3000] as const
 
 /** 用户主动停止或删除会话时中断该会话的流式连接 */
 export const stopTurn = (session: ChatSessionRuntime) => {
+	activeTurnTokens.set(session, Symbol('stopped'))
 	// 先断开 WS，避免 recordTerminalState 之后仍有晚到消息把状态写回 busy
 	detachWebSocket(session.ws)
 	session.ws = undefined
@@ -104,6 +84,8 @@ export const startTurn = (
 	chatRequestDto: ChatRequestDto,
 	options?: StartTurnOptions
 ) => {
+	const turnToken = Symbol('chat-ws-turn')
+	activeTurnTokens.set(session, turnToken)
 	detachWebSocket(session.ws)
 	session.ws = undefined
 
@@ -113,48 +95,104 @@ export const startTurn = (
 		'THINKING'
 	)
 
-	const ws = chatWebsocketClientApi(chatRequestDto.contextId, session.agentId)
-	session.ws = ws
-	let opened = false
+	let retryTimer: ReturnType<typeof window.setTimeout> | undefined
 
-	ws.onopen = () => {
-		opened = true
-		ws.send(JSON.stringify(chatRequestDto))
-		session.isNewLlmResponse.value = false
-		session.pendingScroll.value = true
-		options?.onOpen?.()
-		options?.onScrollRequest?.()
-	}
+	const isCurrentTurn = () => activeTurnTokens.get(session) === turnToken
 
-	ws.onmessage = (event) => {
-		try {
-			const payload: AgentUiEventEnvelope = JSON.parse(event.data)
-			session.dispatcher.handleAgentEvent(payload)
-			session.pendingScroll.value = true
-			chatActivityStore.updateState(
-				session.agentId,
-				chatRequestDto.contextId,
-				session.dispatcher.currentAgentState.value
-			)
-			options?.onScrollRequest?.()
-		} catch (error) {
-			console.error('解析Agent事件失败:', error)
+	const failHandshake = () => {
+		if (!isCurrentTurn()) {
+			return
 		}
-	}
-
-	ws.onerror = (error: unknown) => {
-		console.error(error)
+		if (retryTimer) {
+			window.clearTimeout(retryTimer)
+			retryTimer = undefined
+		}
 		session.isNewLlmResponse.value = true
+		session.ws = undefined
 		if (!session.dispatcher.isTerminalState.value) {
 			session.dispatcher.recordTerminalState('FAILED')
 		}
 		clearActivity(session)
+		ElMessage.error(t('ai.turn.error.handshake'))
 	}
 
-	ws.onclose = () => {
-		if (!opened) {
-			void probeSessionAfterHandshakeFailure()
+	const connect = (attempt: number) => {
+		if (!isCurrentTurn() || session.dispatcher.isTerminalState.value) {
+			return
 		}
-		onTurnClose(session)
+
+		detachWebSocket(session.ws)
+
+		const ws = chatWebsocketClientApi(chatRequestDto.contextId, session.agentId)
+		session.ws = ws
+		let opened = false
+
+		ws.onopen = () => {
+			if (!isCurrentTurn() || session.ws !== ws || session.dispatcher.isTerminalState.value) {
+				return
+			}
+			opened = true
+			ws.send(JSON.stringify(chatRequestDto))
+			session.isNewLlmResponse.value = false
+			session.pendingScroll.value = true
+			options?.onOpen?.()
+			options?.onScrollRequest?.()
+		}
+
+		ws.onmessage = (event) => {
+			if (!isCurrentTurn() || session.ws !== ws) {
+				return
+			}
+			try {
+				const payload: AgentUiEventEnvelope = JSON.parse(event.data)
+				session.dispatcher.handleAgentEvent(payload)
+				session.pendingScroll.value = true
+				chatActivityStore.updateState(
+					session.agentId,
+					chatRequestDto.contextId,
+					session.dispatcher.currentAgentState.value
+				)
+				options?.onScrollRequest?.()
+			} catch (error) {
+				console.error('解析Agent事件失败:', error)
+			}
+		}
+
+		ws.onerror = (error: unknown) => {
+			console.error(error)
+			if (!isCurrentTurn() || session.ws !== ws) {
+				return
+			}
+			if (!opened) {
+				return
+			}
+			session.isNewLlmResponse.value = true
+			if (!session.dispatcher.isTerminalState.value) {
+				session.dispatcher.recordTerminalState('FAILED')
+			}
+			clearActivity(session)
+		}
+
+		ws.onclose = () => {
+			if (!isCurrentTurn() || session.ws !== ws) {
+				return
+			}
+			if (!opened) {
+				const delay = WS_HANDSHAKE_RETRY_DELAYS[attempt]
+				if (delay !== undefined && !session.dispatcher.isTerminalState.value) {
+					session.ws = undefined
+					retryTimer = window.setTimeout(() => {
+						retryTimer = undefined
+						connect(attempt + 1)
+					}, delay)
+					return
+				}
+				failHandshake()
+				return
+			}
+			onTurnClose(session)
+		}
 	}
+
+	connect(0)
 }

@@ -2,6 +2,12 @@ import axios from 'axios'
 import { redirectToLogin } from '@/utils/auth'
 import { getAuthToken } from '@/utils/token'
 
+declare module 'axios' {
+	export interface AxiosRequestConfig {
+		skipAuthRedirect?: boolean
+	}
+}
+
 const http = axios.create({
 	baseURL: '/',
 	timeout: 60 * 1000
@@ -22,7 +28,8 @@ http.interceptors.response.use(
 		const { status } = error.response || {}
 		const requestUrl = error.config?.url ?? ''
 		const isPublicAuthApi = requestUrl.includes('/auth/')
-		if ((status === 401 || status === 403) && !isPublicAuthApi) {
+		const skipAuthRedirect = error.config?.skipAuthRedirect === true
+		if ((status === 401 || status === 403) && !isPublicAuthApi && !skipAuthRedirect) {
 			// access_token 与外部系统共用，鉴权失败时不删除，避免破坏外部系统会话
 			redirectToLogin()
 		}
