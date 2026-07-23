@@ -26,15 +26,17 @@
     </style>
     <script type="text/javascript">
       var ai_system_language_variable = "en" // change file size.
-      localStorage.setItem("lang", ai_system_language_variable)
+      if (!localStorage.getItem("lang")) {
+        localStorage.setItem("lang", ai_system_language_variable)
+      }
     </script>
-    <script type="module" crossorigin src="./index-CeqmN23E.js"></script>
+    <script type="module" crossorigin src="./index-CLBFXtwJ.js"></script>
     <link rel="modulepreload" crossorigin href="./chunks/vite-preload-DnExFMTF.js">
     <link rel="modulepreload" crossorigin href="./chunks/vue-vendor-BC9ojUic.js">
     <link rel="modulepreload" crossorigin href="./chunks/lodash-vendor-DucNhmqc.js">
-    <link rel="modulepreload" crossorigin href="./chunks/element-plus-B1OVzOeZ.js">
+    <link rel="modulepreload" crossorigin href="./chunks/element-plus-Cb1qdxOH.js">
     <link rel="stylesheet" crossorigin href="./assets/element-plus-BcKBh3Hn.css">
-    <link rel="stylesheet" crossorigin href="./assets/index-Bg8MHZUI.css">
+    <link rel="stylesheet" crossorigin href="./assets/index-BaE24kz5.css">
   </head>
   <body >
     <div id="app" class="app-en"></div>
