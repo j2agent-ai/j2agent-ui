@@ -1,5 +1,6 @@
 import http from '@ai-system/http/loginInterceptor'
 import { globalUrlPrefix, programTag } from '@/oem.js'
+import type { AxiosRequestConfig } from 'axios'
 
 export interface AuthResult {
 	token: string
@@ -30,6 +31,6 @@ export interface SessionInfo {
 	role: number
 }
 
-export const getSessionInfo = () => {
-	return http.get<SessionInfo>(`/v1${globalUrlPrefix}rest/${programTag}/session`)
+export const getSessionInfo = (config?: AxiosRequestConfig) => {
+	return http.get<SessionInfo>(`/v1${globalUrlPrefix}rest/${programTag}/session`, config)
 }
