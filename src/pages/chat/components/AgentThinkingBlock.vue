@@ -32,7 +32,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { getCurrentLocale } from '../ts/stream/agent-ui'
+import { t } from '@ai-system/lib'
 
 const props = withDefaults(
 	defineProps<{
@@ -49,10 +49,7 @@ const props = withDefaults(
 const expanded = ref(false)
 const previewRef = ref<HTMLElement | null>(null)
 
-const titleLabel = computed(() => {
-	const locale = getCurrentLocale()
-	return locale === 'zh' ? '深度思考' : 'Deep thinking'
-})
+const titleLabel = computed(() => t('ai.thinking.deep'))
 
 const scrollPreviewToBottom = () => {
 	const el = previewRef.value

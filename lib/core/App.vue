@@ -16,7 +16,7 @@ import { ElConfigProvider } from 'element-plus'
 import { useElementLocale } from '@ai-system/hooks'
 import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { t } from '@ai-system/lib'
+import { locale, t } from '@ai-system/lib'
 import { scheduleDiagramPrefetch } from '@/utils/scheduleDiagramPrefetch'
 
 const ChatActivityPanel = defineAsyncComponent(
@@ -27,7 +27,6 @@ import { ensureAgentNamesLoaded } from '@/pages/chat/ts/agent/name-registry'
 import { hasRoleAccess, ROLE_USER } from '@/utils/role'
 
 useWarnBeforeUnloadOnActiveTasks()
-document.getElementsByTagName('title')[0].innerHTML = t('ai.title')
 const { elLocale } = useElementLocale()
 
 const route = useRoute()
@@ -49,6 +48,14 @@ const tryLoadAgentNames = () => {
 }
 
 watch(() => route.path, tryLoadAgentNames, { immediate: true })
+
+watch(
+	() => locale.lang.value,
+	() => {
+		document.getElementsByTagName('title')[0].innerHTML = t('ai.title')
+	},
+	{ immediate: true }
+)
 
 const isScreen = ref(false)
 watch(

@@ -17,6 +17,7 @@ export default {
 		'说明：在「设置 → Embedding 接口」切换或修改当前嵌入模型后，系统会自动终止同步并完全重建；此处手动「完全重建」用于修复异常状态。',
 	'kb.knowledge.rebuild.full.switch': '完全重建',
 	'kb.knowledge.rebuild.full.confirm.label': '确认文本',
+	'kb.knowledge.rebuild.full.confirm.text': '完全重建',
 	'kb.knowledge.rebuild.full.confirm.placeholder': '请输入“完全重建”',
 	'kb.knowledge.rebuild.full.confirm.tip': '开启后将先删除 Milvus 全部 collection，并清空哈希记录表，再执行重建。',
 	'kb.knowledge.rebuild.confirm.ok': '继续',

@@ -36,9 +36,9 @@
 				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/kb')">
 					{{ '📚 ' + t('kb.knowledge.base') }}
 				</li>
-        <li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/agents')">
-          {{ '💡 ' + t('ai.assistant') }}
-        </li>
+				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/agents')">
+					{{ '💡 ' + t('ai.assistant') }}
+				</li>
 				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/mcp')">
 					{{ '🧩 ' + t('mcp.title') }}
 				</li>
@@ -47,6 +47,17 @@
 				</li>
 				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/settings')">
 					{{ '⚙️ ' + t('settings.title') }}
+				</li>
+				<hr />
+				<li
+					ref="languageItemRef"
+					class="menu-card-item menu-card-language"
+					:class="{ active: showLanguageMenu }"
+					@click.stop="toggleLanguageMenu"
+				>
+					<span class="menu-card-language-title">
+						{{ '💬 ' + t('settings.language') }}
+					</span>
 				</li>
 			</ul>
 			<ul v-else class="menu-card-list">
@@ -61,11 +72,31 @@
 			</ul>
 		</div>
 	</div>
+	<Teleport to="body">
+		<ul
+			v-show="showLanguageMenu"
+			ref="languageSubmenuRef"
+			class="menu-card-language-submenu glass-card"
+			:style="languageSubmenuStyle"
+			@click.stop
+		>
+			<li
+				v-for="option in languageOptions"
+				:key="option.value"
+				class="menu-card-language-option"
+				:class="{ selected: currentLangMode === option.value }"
+				@click="switchLanguage(option.value)"
+			>
+				<span>{{ option.label }}</span>
+			</li>
+		</ul>
+	</Teleport>
 </template>
 <script setup lang="ts">
 import { t } from '@ai-system/lib'
 import { ElTooltip } from 'element-plus'
-import { computed, ref, onUnmounted, watch } from 'vue'
+import { computed, nextTick, ref, onUnmounted, watch } from 'vue'
+import { getLangStorage, normalizeLangMode } from '@ai-system/utils'
 import { goTo, goToLogout } from '@/routes'
 import {
 	AI_HUB_CHAT_PATH,
@@ -99,6 +130,19 @@ const canAccessAdmin = computed(() => hasRoleAccess(ROLE_ADMIN))
 const menuTitle = computed(() => props.title || t('common.system.options'))
 const menuTitleRef = ref<HTMLElement | null>(null)
 const menuTitleOverflow = ref(false)
+const languageItemRef = ref<HTMLElement | null>(null)
+const languageSubmenuRef = ref<HTMLElement | null>(null)
+const languageSubmenuStyle = ref<Record<string, string>>({})
+const currentLangMode = ref(normalizeLangMode(getLangStorage()))
+const showLanguageMenu = ref(false)
+const LANGUAGE_SUBMENU_WIDTH = 160
+const LANGUAGE_SUBMENU_GAP = 8
+const LANGUAGE_SUBMENU_EDGE = 8
+const languageOptions = computed(() => [
+	{ label: t('settings.language.system'), value: 'system' },
+	{ label: t('settings.language.zh'), value: 'zh' },
+	{ label: t('settings.language.en'), value: 'en' }
+])
 
 function handleLogout() {
 	void goToLogout()
@@ -107,6 +151,55 @@ function handleLogout() {
 function syncMenuTitleOverflow() {
 	const el = menuTitleRef.value
 	menuTitleOverflow.value = el ? el.scrollWidth > el.clientWidth : false
+}
+
+function switchLanguage(lang: string | number | boolean) {
+	if (typeof lang !== 'string') {
+		return
+	}
+	const langMode = normalizeLangMode(lang)
+	currentLangMode.value = langMode
+	window.webApp?.switchLang(langMode)
+	showLanguageMenu.value = false
+}
+
+function toggleLanguageMenu() {
+	showLanguageMenu.value = !showLanguageMenu.value
+	if (showLanguageMenu.value) {
+		nextTick(syncLanguageSubmenuPosition)
+	}
+}
+
+function syncLanguageSubmenuPosition() {
+	const el = languageItemRef.value
+	if (!el) {
+		return
+	}
+	const rect = el.getBoundingClientRect()
+	const submenuHeight = languageSubmenuRef.value?.offsetHeight || 0
+	const preferLeft = rect.left - LANGUAGE_SUBMENU_WIDTH - LANGUAGE_SUBMENU_GAP
+	const openToLeft = preferLeft >= LANGUAGE_SUBMENU_EDGE
+	let left = openToLeft
+		? preferLeft
+		: Math.min(
+			rect.left,
+			window.innerWidth - LANGUAGE_SUBMENU_WIDTH - LANGUAGE_SUBMENU_EDGE
+		)
+	let top = openToLeft ? rect.top : rect.bottom + LANGUAGE_SUBMENU_GAP
+	if (!openToLeft && top + submenuHeight > window.innerHeight - LANGUAGE_SUBMENU_EDGE) {
+		top = rect.top - submenuHeight - LANGUAGE_SUBMENU_GAP
+	}
+	const maxTop = Math.max(
+		LANGUAGE_SUBMENU_EDGE,
+		window.innerHeight - submenuHeight - LANGUAGE_SUBMENU_EDGE
+	)
+	left = Math.max(LANGUAGE_SUBMENU_EDGE, left)
+	top = Math.min(Math.max(LANGUAGE_SUBMENU_EDGE, top), maxTop)
+	languageSubmenuStyle.value = {
+		left: `${left}px`,
+		top: `${top}px`,
+		width: `${LANGUAGE_SUBMENU_WIDTH}px`
+	}
 }
 
 function show() {
@@ -123,27 +216,48 @@ function show() {
 
 function hide() {
 	showMenuCard.value = false
+	showLanguageMenu.value = false
 	isClickOutsideEnabled.value = false
 	document.removeEventListener('click', handleClickOutside)
+	window.removeEventListener('resize', syncLanguageSubmenuPosition)
 }
 
 const handleClickOutside = (event: MouseEvent) => {
 	if (!isClickOutsideEnabled.value) {
 		return
 	}
-	if (menuCardRef.value && !menuCardRef.value.contains(event.target as Node)) {
+	const target = event.target as Node
+	if (
+		menuCardRef.value &&
+		!menuCardRef.value.contains(target) &&
+		!languageSubmenuRef.value?.contains(target)
+	) {
 		showMenuCard.value = false
+		showLanguageMenu.value = false
 		isClickOutsideEnabled.value = false
 		document.removeEventListener('click', handleClickOutside)
+		window.removeEventListener('resize', syncLanguageSubmenuPosition)
 	}
 }
 
 onUnmounted(() => {
 	document.removeEventListener('click', handleClickOutside)
+	window.removeEventListener('resize', syncLanguageSubmenuPosition)
 })
 
 watch(showMenuCard, (newValue) => {
+	if (!newValue) {
+		showLanguageMenu.value = false
+	}
 	emit('show-change', newValue)
+})
+
+watch(showLanguageMenu, (newValue) => {
+	if (newValue) {
+		window.addEventListener('resize', syncLanguageSubmenuPosition)
+	} else {
+		window.removeEventListener('resize', syncLanguageSubmenuPosition)
+	}
 })
 
 </script>
@@ -156,7 +270,7 @@ watch(showMenuCard, (newValue) => {
 	position: fixed;
 	top: 20px;
 	right: 20px;
-	width: 250px;
+	width: 280px;
 	max-height: 80vh;
 	z-index: 1000;
 	box-sizing: border-box;
@@ -199,10 +313,18 @@ watch(showMenuCard, (newValue) => {
 	}
 
 	.menu-card-item {
+		display: flex;
+		align-items: center;
+		min-height: 40px;
+		box-sizing: border-box;
+		max-width: 100%;
 		color: var(--n-color-text-primary);
 		cursor: pointer;
 		border-radius: var(--n-radius-triple);
 		padding: var(--n-padding-basic);
+		line-height: var(--n-font-line-height-2);
+		white-space: normal;
+		overflow-wrap: anywhere;
 
 		&:last-child {
 			border-bottom: none;
@@ -211,6 +333,51 @@ watch(showMenuCard, (newValue) => {
 		&:hover {
 			background-color: var(--el-color-primary);
 		}
+	}
+
+	.menu-card-language {
+		position: relative;
+
+		&.active {
+			background-color: var(--el-color-primary);
+		}
+	}
+
+	.menu-card-language-title {
+		display: block;
+		overflow: hidden;
+		white-space: normal;
+		overflow-wrap: anywhere;
+		line-height: inherit;
+	}
+}
+
+.menu-card-language-submenu {
+	position: fixed;
+	padding: 20px;
+	margin: 0;
+	list-style: none;
+	z-index: 1002;
+	box-sizing: border-box;
+	border-radius: var(--n-radius-quadruple);
+	overflow: visible;
+}
+
+.menu-card-language-option {
+	display: flex;
+	align-items: center;
+	min-height: 40px;
+	box-sizing: border-box;
+	color: var(--n-color-text-primary);
+	border-radius: var(--n-radius-triple);
+	padding: var(--n-padding-basic);
+	line-height: var(--n-font-line-height-2);
+	white-space: nowrap;
+	cursor: pointer;
+
+	&:hover,
+	&.selected {
+		background-color: var(--el-color-primary);
 	}
 }
 </style>

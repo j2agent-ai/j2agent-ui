@@ -8,6 +8,8 @@ import { createWebRouter } from './router'
 import {
 	eventbus,
 	getLangStorage,
+	normalizeLangMode,
+	resolveLangMode,
 	setLangStorage,
 	wrapFunction
 } from '@ai-system/utils'
@@ -90,6 +92,7 @@ export class App implements AppI {
 	public router: Router
 	public plugins
 	public langMessage: Record<string, any> = {}
+	private systemLangChangeHandler?: () => void
 	constructor(options?: AppOptions) {
 		this.initOptions(options)
 	}
@@ -120,9 +123,10 @@ export class App implements AppI {
 	// 国际化
 	public setUpLang(langLoaders: LangLoader | LangLoader[]){
 		langLoaders && this.registerLangLoader(langLoaders)
-		this.lang.value = getLangStorage() || this.options.lang || 'zh'
-		// 设置默认语言
-		this.setLang(this.lang.value)
+		this.lang.value = this.getLang()
+		// 设置默认语言（不走 setLang，避免把 system 模式覆盖成 zh/en）
+		locale.use(this.lang.value, this.langMessage)
+		this.watchSystemLang()
 	}
 
 	// 创建路由
@@ -184,21 +188,33 @@ export class App implements AppI {
 
 	public setLang(lang: string): App {
 		setLangStorage(lang)
-		locale.use(lang, this.langMessage)
-		this.lang.value = lang
+		const actualLang = resolveLangMode(lang)
+		locale.use(actualLang)
+		this.lang.value = actualLang
 		const onSwitchLang = this.options.onSwitchLang
-		onSwitchLang && onSwitchLang(lang)
+		onSwitchLang && onSwitchLang(actualLang)
 		return this
 	}
 
 	public getLang(): string {
-		return getLangStorage() || this.options.lang || 'zh'
+		return resolveLangMode(getLangStorage() || this.options.lang || 'system')
 	}
 
 	public switchLang(lang: string): App {
 		this.setLang(lang)
-		// todo dispatch event en/zh
 		return this
+	}
+
+	private watchSystemLang() {
+		if (this.systemLangChangeHandler) {
+			return
+		}
+		this.systemLangChangeHandler = () => {
+			if (normalizeLangMode(getLangStorage()) === 'system') {
+				this.setLang('system')
+			}
+		}
+		window.addEventListener('languagechange', this.systemLangChangeHandler)
 	}
 
 	// 挂载vue应用

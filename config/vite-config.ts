@@ -242,12 +242,18 @@ export function viteConfig(
 					console.log('Vite 打包完成，执行自定义脚本...')
 					const content = fs.readFileSync(indexPath, { encoding: 'utf-8' })
 					// 这几个文件的长度不能一样,否则文件的etag相同
-					fs.writeFileSync(path.join(outDir, 'index-zh.html'), content)
+					fs.writeFileSync(
+						path.join(outDir, 'index-zh.html'),
+						content.replace(
+							'ai_system_language_variable = "system"',
+							'ai_system_language_variable = "zh"'
+						)
+					)
 					fs.writeFileSync(
 						path.join(outDir, 'index-en.html'),
 						content
 							.replace(
-								'ai_system_language_variable = "zh"',
+								'ai_system_language_variable = "system"',
 								'ai_system_language_variable = "en" // change file size.'
 							)
 							.replace('class="app-zh"', 'class="app-en"')

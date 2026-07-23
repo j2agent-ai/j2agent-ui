@@ -8,7 +8,8 @@ import type {
 	TurnStepItem,
 	TurnStepStatus
 } from '@/types/ai.types'
-import { agentNameMap, registeredAgents } from '../agent/name-registry'
+import { locale, t } from '@ai-system/lib'
+import { agentNameMap, matchesAgentI18nName, registeredAgents } from '../agent/name-registry'
 
 // ---------------------------------------------------------------------------
 // 状态机文案与步骤展示
@@ -91,16 +92,16 @@ export const resolveTurnStepStatus = (
 	return 'completed'
 }
 
-const STATE_MAP: Record<string, { zh: string; en: string }> = {
-	IDLE: { zh: '空闲', en: 'Idle' },
-	AGENT_ORCHESTRATING: { zh: '智能体编排中', en: 'Agent orchestrating' },
-	THINKING: { zh: '思考中', en: 'Thinking' },
-	STREAMING_TEXT: { zh: '输出中', en: 'Streaming' },
-	CALLING_TOOL: { zh: '调用工具', en: 'Calling Tool' },
-	LOAD_SKILL: { zh: '加载技能', en: 'Loading skill' },
-	COMPLETED: { zh: '已完成', en: 'Completed' },
-	FAILED: { zh: '失败', en: 'Failed' },
-	CANCELLED: { zh: '已取消', en: 'Cancelled' }
+const STATE_I18N_KEYS: Record<string, string> = {
+	IDLE: 'ai.agent.state.IDLE',
+	AGENT_ORCHESTRATING: 'ai.agent.state.AGENT_ORCHESTRATING',
+	THINKING: 'ai.agent.state.THINKING',
+	STREAMING_TEXT: 'ai.agent.state.STREAMING_TEXT',
+	CALLING_TOOL: 'ai.agent.state.CALLING_TOOL',
+	LOAD_SKILL: 'ai.agent.state.LOAD_SKILL',
+	COMPLETED: 'ai.agent.state.COMPLETED',
+	FAILED: 'ai.agent.state.FAILED',
+	CANCELLED: 'ai.agent.state.CANCELLED'
 }
 
 const TOOL_NAME_STATES: AgentState[] = ['CALLING_TOOL', 'LOAD_SKILL']
@@ -114,34 +115,32 @@ const isSubAgentCallTrailName = (name?: string) => {
 		return true
 	}
 	return registeredAgents.value.some(
-		(a) => a.agentId === trimmed || a.name?.trim() === trimmed
+		(a) => matchesAgentI18nName(a, trimmed)
 	)
 }
 
 export const getCurrentLocale = () => {
-	const browserLang = navigator.language?.toLowerCase?.() || 'zh-cn'
-	return browserLang.startsWith('en') ? 'en' : 'zh'
+	return locale.lang.value === 'en' ? 'en' : 'zh'
 }
 
 export const getStateI18nText = (state?: string, locale?: 'zh' | 'en') => {
 	if (!state) {
 		return ''
 	}
-	const lang = locale ?? getCurrentLocale()
-	return STATE_MAP[state]?.[lang] || state
+	const key = STATE_I18N_KEYS[state]
+	return key ? t(key, undefined, state) : state
 }
 
 export const formatStepLabelParts = (
 	step: Pick<TurnStepItem, 'state' | 'toolName'>,
 	locale?: 'zh' | 'en'
 ) => {
-	const lang = locale ?? getCurrentLocale()
 	let stateText = getStateI18nText(step.state, locale)
 	if (
 		step.state === 'CALLING_TOOL' &&
 		isSubAgentCallTrailName(step.toolName)
 	) {
-		stateText = lang === 'en' ? 'Calling sub-agent' : '调用子智能体'
+		stateText = t('ai.agent.state.CALLING_SUB_AGENT')
 	}
 	const toolName =
 		TOOL_NAME_STATES.includes(step.state) && step.toolName?.trim()

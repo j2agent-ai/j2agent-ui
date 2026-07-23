@@ -5,11 +5,10 @@
 import { ref } from 'vue'
 import { getAgentList } from '@/api/ai.api'
 import type { AgentInfoDto } from '@/types/ai.types'
+import { t } from '@ai-system/lib'
 import { hasRoleAccess, ROLE_USER } from '@/utils/role'
 import {
-	KNOWLEDGE_QA_ASSISTANT_DISPLAY_NAME,
 	KNOWLEDGE_QA_ASSISTANT_ID,
-	UNIVERSAL_ASSISTANT_DISPLAY_NAME,
 	UNIVERSAL_ASSISTANT_ID
 } from './universal-assistant'
 
@@ -29,13 +28,30 @@ export function extractAgentsPayload(res: {
 	return body?.agents ?? body?.data?.agents ?? []
 }
 
+/** 解析智能体展示名称（后端已按 X-Locale 返回） */
+export const resolveAgentInfoName = (agent: Pick<AgentInfoDto, 'agentId' | 'name'>) =>
+	agent.name?.trim() || agent.agentId
+
+/** 解析智能体描述文案 */
+export const resolveAgentInfoDescription = (agent: Pick<AgentInfoDto, 'description'>) =>
+	agent.description?.trim() || ''
+
+/** 判断文本是否匹配某智能体 id 或本地化名称 */
+export const matchesAgentI18nName = (agent: Pick<AgentInfoDto, 'agentId' | 'name'>, text: string) => {
+	const trimmed = text.trim()
+	return (
+		agent.agentId === trimmed ||
+		agent.name?.trim() === trimmed
+	)
+}
+
 const applyAgents = (agents: AgentInfoDto[]) => {
 	registeredAgents.value = agents
 	const map = new Map<string, string>()
-	map.set(UNIVERSAL_ASSISTANT_ID, UNIVERSAL_ASSISTANT_DISPLAY_NAME)
-	map.set(KNOWLEDGE_QA_ASSISTANT_ID, KNOWLEDGE_QA_ASSISTANT_DISPLAY_NAME)
+	map.set(UNIVERSAL_ASSISTANT_ID, t('ai.hub'))
+	map.set(KNOWLEDGE_QA_ASSISTANT_ID, t('ai.knowledge.qa'))
 	for (const agent of agents) {
-		map.set(agent.agentId, agent.name?.trim() || agent.agentId)
+		map.set(agent.agentId, resolveAgentInfoName(agent))
 	}
 	agentNameMap.value = map
 }
@@ -74,10 +90,14 @@ export const refreshAgentNames = async () => {
 /** 获取智能体展示名称，未加载时回退 agentId */
 export const getAgentDisplayName = (agentId: string) => {
 	if (agentId === UNIVERSAL_ASSISTANT_ID) {
-		return UNIVERSAL_ASSISTANT_DISPLAY_NAME
+		return t('ai.hub')
 	}
 	if (agentId === KNOWLEDGE_QA_ASSISTANT_ID) {
-		return KNOWLEDGE_QA_ASSISTANT_DISPLAY_NAME
+		return t('ai.knowledge.qa')
+	}
+	const agent = registeredAgents.value.find((a) => a.agentId === agentId)
+	if (agent) {
+		return resolveAgentInfoName(agent)
 	}
 	return agentNameMap.value.get(agentId) ?? agentId
 }

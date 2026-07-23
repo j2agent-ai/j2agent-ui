@@ -365,10 +365,10 @@
                   <template #content>
                     <div class="manual-orchestrate-tooltip">
                       <div class="manual-orchestrate-tooltip-title">
-                        {{ agent.name || agent.agentId }}
+                        {{ resolveAgentInfoName(agent) }}
                       </div>
-                      <div v-if="agent.description" class="manual-orchestrate-tooltip-desc">
-                        {{ agent.description }}
+                      <div v-if="resolveAgentInfoDescription(agent)" class="manual-orchestrate-tooltip-desc">
+                        {{ resolveAgentInfoDescription(agent) }}
                       </div>
                     </div>
                   </template>
@@ -380,7 +380,7 @@
                     @click="toggleManualOrchestrateAgent(agent.agentId)"
                   >
                     <span class="manual-orchestrate-logo">{{ agent.logo || '🤖' }}</span>
-                    <span class="manual-orchestrate-name">{{ agent.name || agent.agentId }}</span>
+                    <span class="manual-orchestrate-name">{{ resolveAgentInfoName(agent) }}</span>
                     <span
                       v-if="isManualOrchestrateSelected(agent.agentId)"
                       class="manual-orchestrate-clear"
@@ -417,16 +417,16 @@
                           <template #content>
                             <div class="manual-orchestrate-tooltip">
                               <div class="manual-orchestrate-tooltip-title">
-                                {{ agent.name || agent.agentId }}
+                                {{ resolveAgentInfoName(agent) }}
                               </div>
-                              <div v-if="agent.description" class="manual-orchestrate-tooltip-desc">
-                                {{ agent.description }}
+                              <div v-if="resolveAgentInfoDescription(agent)" class="manual-orchestrate-tooltip-desc">
+                                {{ resolveAgentInfoDescription(agent) }}
                               </div>
                             </div>
                           </template>
                           <span class="manual-orchestrate-menu-item">
                             <span class="manual-orchestrate-logo">{{ agent.logo || '🤖' }}</span>
-                            <span class="manual-orchestrate-menu-name">{{ agent.name || agent.agentId }}</span>
+                            <span class="manual-orchestrate-menu-name">{{ resolveAgentInfoName(agent) }}</span>
                           </span>
                         </ElTooltip>
                       </ElDropdownItem>
@@ -648,7 +648,14 @@ import {
 } from '@/utils/markdownRenderer'
 import { registerSessionRenderCacheEvict } from '../ts/render/session-render-cache'
 import { chatLogoEmoji, chatLogoUrl } from '@/oem'
-import { getAgentDisplayName, getAgentLogo, agentNameMap, registeredAgents } from '../ts/agent/name-registry'
+import {
+  getAgentDisplayName,
+  getAgentLogo,
+  agentNameMap,
+  registeredAgents,
+  resolveAgentInfoDescription,
+  resolveAgentInfoName
+} from '../ts/agent/name-registry'
 import {
   KNOWLEDGE_QA_ASSISTANT_ID,
   UNIVERSAL_ASSISTANT_ID
