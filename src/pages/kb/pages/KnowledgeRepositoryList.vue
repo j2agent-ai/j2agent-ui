@@ -45,7 +45,7 @@
 				</el-table-column>
 				<el-table-column :label="t('kb.repository.displayName')" min-width="120" show-overflow-tooltip>
 					<template #default="{ row }">
-						{{ row.displayName || '-' }}
+						{{ row.displayName || '--' }}
 					</template>
 				</el-table-column>
 				<el-table-column :label="t('kb.repository.repoCode')" min-width="150" prop="repoCode" show-overflow-tooltip />
@@ -257,7 +257,7 @@
 						</div>
 						<div class="detail-row">
 							<span class="field-label">{{ t('kb.repository.displayName') }}</span>
-							<span class="field-value">{{ detail.displayName || '-' }}</span>
+							<span class="field-value">{{ detail.displayName || '--' }}</span>
 						</div>
 					</div>
 					<div class="detail-path-list">
@@ -567,7 +567,7 @@ const collectionText = (repository: KnowledgeRepositoryDto) => {
 
 const collectionDisplayName = (repository: KnowledgeRepositoryDto, collection: string) => {
 	const alias = repository.type === 'REMOTE'
-		? repository.collectionAliases?.[collection]?.trim() || repository.displayName?.trim()
+		? repository.collectionAliases?.[collection]?.trim()
 		: ''
 	return alias ? `${alias} (${collection})` : collection
 }

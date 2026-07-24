@@ -291,7 +291,19 @@ const emptyTableMessage = computed(() =>
 /** 解析 collection 列表响应体 */
 const unwrapCollectionList = (res: unknown): KnowledgeCollectionDto[] => {
 	const body = (res as { data?: { data?: KnowledgeCollectionDto[] } })?.data
-	return (body?.data ?? []).filter((item) => Boolean(item.collection?.trim()))
+	return dedupeCollectionOptions((body?.data ?? []).filter((item) => Boolean(item.collection?.trim())))
+}
+
+/** 按 collection 去重，保留首次出现的选项 */
+const dedupeCollectionOptions = (items: KnowledgeCollectionDto[]) => {
+	const optionByCollection = new Map<string, KnowledgeCollectionDto>()
+	for (const item of items) {
+		const collection = item.collection?.trim()
+		if (collection && !optionByCollection.has(collection)) {
+			optionByCollection.set(collection, item)
+		}
+	}
+	return [...optionByCollection.values()]
 }
 
 /** 格式化 collection 下拉展示名 */

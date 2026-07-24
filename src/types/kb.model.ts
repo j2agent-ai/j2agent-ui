@@ -8,6 +8,7 @@ export interface KnowledgeCollectionListDto {
 
 export interface KnowledgeCollectionDto {
 	collection?: string
+	selectionValue?: string
 	name?: string
 	repoCode?: string
 	repositoryName?: string
