@@ -49,7 +49,8 @@ export interface KnowledgeRepositoryDto {
 	hasCredential?: boolean
 	collections?: string[]
 	displayName?: string
-	collectionAliases?: Record<string, string>
+	collectionName?: string
+	partitionNames?: string[]
 	minHeadingLevel?: number
 	filenameAsTitle?: boolean
 }
@@ -60,6 +61,7 @@ export interface KnowledgeRepositoryListDto {
 
 export interface KnowledgeRepositoryUpsertDto {
 	repoCode?: string
+	type?: KnowledgeRepositoryType
 	protocol?: KnowledgeRepositoryProtocol
 	enabled?: boolean
 	updateIntervalMinutes?: number
@@ -67,7 +69,10 @@ export interface KnowledgeRepositoryUpsertDto {
 	defaultBranch?: string
 	protocolConfig?: Record<string, unknown>
 	displayName?: string
-	collectionAliases?: Record<string, string>
+	collectionName?: string
+	partitionNames?: string[]
+	minHeadingLevel?: number
+	filenameAsTitle?: boolean
 	credentialConfig?: KnowledgeRepositoryCredentialConfig
 }
 
