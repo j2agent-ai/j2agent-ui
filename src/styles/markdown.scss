@@ -804,50 +804,158 @@
     display: none;
   }
 
-  .md-diagram-error .md-diagram-body {
-    background: var(--el-color-danger-light-9);
-    border-color: var(--el-color-danger-light-5);
-    color: var(--el-color-danger);
-    /* 错误栈可能很长：允许滚动，避免看起来“空白/看不见” */
-    overflow: auto;
-    text-align: left;
-    scrollbar-gutter: stable;
+  .md-diagram-error {
+    max-height: none;
+    overflow: visible;
   }
 
-  .md-diagram-error .md-diagram-error-title {
+  .md-diagram-error .md-diagram-body {
+    display: block;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    padding: 10px 12px;
+    background: color-mix(in srgb, var(--el-color-danger-light-9) 72%, var(--n-color-bg-glass));
+    border-color: color-mix(in srgb, var(--el-color-danger) 26%, transparent);
+    border-radius: 8px;
+    color: var(--n-color-text-primary);
+    /* 错误栈可能很长：允许滚动，避免看起来“空白/看不见” */
+    overflow: visible;
+    text-align: left;
+    user-select: text;
+  }
+
+  .md-diagram-error .md-diagram-body:hover {
+    border-color: color-mix(in srgb, var(--el-color-danger) 34%, transparent);
+    box-shadow: none;
+  }
+
+  .md-diagram-error .md-diagram-error-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    margin-bottom: 6px;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .md-diagram-error .md-diagram-error-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    color: var(--el-color-danger);
+  }
+
+  .md-diagram-error .md-diagram-error-title::before {
+    content: '!';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--el-color-danger) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--el-color-danger) 34%, transparent);
+    color: var(--el-color-danger);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .md-diagram-error .md-diagram-error-code {
+    display: inline-flex;
+    flex: 0 0 auto;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .md-diagram-error .md-diagram-error-code .md-code-block-foot {
+    min-height: 26px;
+    padding: 1px;
+    overflow: visible;
+  }
+
+  .md-diagram-error .md-diagram-error-copy {
+    gap: 6px;
+    width: auto;
+    height: 28px;
+    min-width: 0;
+    padding: 0 10px;
+    border-color: color-mix(in srgb, var(--el-color-danger) 28%, transparent);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--n-color-bg-glass) 84%, var(--el-color-danger-light-9));
+    box-shadow: none;
+    color: var(--n-color-text-primary);
+    white-space: nowrap;
+    font-size: var(--n-font-size-0, 12px);
+  }
+
+  .md-diagram-error .md-diagram-error-copy:hover,
+  .md-diagram-error .md-diagram-error-copy:focus-visible {
+    color: var(--el-color-danger);
+    border-color: color-mix(in srgb, var(--el-color-danger) 42%, transparent);
+    background: color-mix(in srgb, var(--el-color-danger-light-9) 80%, var(--n-color-bg-glass));
+    box-shadow: none;
   }
 
   .md-diagram-error .md-diagram-error-details {
-    background: var(--n-color-bg-glass-weak);
-    border: 1px solid color-mix(in srgb, var(--el-color-danger) 22%, transparent);
-    border-radius: 6px;
-    padding: 8px 10px;
+    background: transparent;
+    border: 0;
+    padding: 0;
   }
 
   .md-diagram-error .md-diagram-error-summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid color-mix(in srgb, var(--el-color-danger) 28%, transparent);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--n-color-bg-glass) 84%, var(--el-color-danger-light-9));
     cursor: pointer;
     font-weight: 600;
+    color: var(--n-color-text-primary);
     user-select: none;
     outline: none;
+    font-size: var(--n-font-size-0, 12px);
   }
 
-  .md-diagram-error pre {
-    margin-bottom: 0;
-    white-space: pre-wrap;
+  .md-diagram-error .md-diagram-error-summary::marker,
+  .md-diagram-error .md-diagram-error-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .md-diagram-error .md-diagram-error-summary:hover,
+  .md-diagram-error .md-diagram-error-summary:focus-visible {
+    color: var(--el-color-danger);
+    border-color: color-mix(in srgb, var(--el-color-danger) 42%, transparent);
+    background: color-mix(in srgb, var(--el-color-danger-light-9) 80%, var(--n-color-bg-glass));
   }
 
   .md-diagram-error .md-diagram-error-pre {
-    background: var(--n-color-bg-glass);
-    color: var(--n-color-preview-text);
-    border: 1px solid var(--n-color-preview-border);
+    margin: 0;
     margin-top: 8px;
-    max-height: 180px;
+    padding: 10px 12px;
+    background: transparent;
+    color: var(--n-color-preview-text);
+    border: 0;
+    max-height: 220px;
     overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
+  }
+
+  @media (max-width: 640px) {
+    .md-diagram-error .md-diagram-error-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

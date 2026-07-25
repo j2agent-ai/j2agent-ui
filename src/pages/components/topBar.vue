@@ -458,14 +458,14 @@ const hideUserMenu = () => {
 }
 .menu-card {
 	position: fixed;
-	top: 60px;
+	top: calc(var(--n-topbar-height, 50px) + 10px);
 	right: 10px;
 	z-index: 100;
 }
 
 .user-menu-card {
 	position: fixed;
-	top: 60px;
+	top: calc(var(--n-topbar-height, 50px) + 10px);
 	right: 10px;
 	z-index: 100;
 }

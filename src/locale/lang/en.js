@@ -414,6 +414,15 @@ export default {
 	'logout': 'Logout',
 	'diagramPreview.saveSvg': 'Save SVG',
 	'diagramPreview.saveSvg.failed': 'Failed to save SVG',
+	'markdownRenderer.copy': 'Copy',
+	'markdownRenderer.copyAll': 'Copy all',
+	'markdownRenderer.copyCode': 'Copy code',
+	'markdownRenderer.diagramError.title': 'Diagram render failed',
+	'markdownRenderer.diagramError.copyAllDiagnostics': 'Copy diagnostics',
+	'markdownRenderer.diagramError.viewDetails': 'View error details',
+	'markdownRenderer.diagramError.error': 'Error',
+	'markdownRenderer.diagramError.rawSource': 'Raw source',
+	'markdownRenderer.diagramError.normalizedSource': 'Normalized source',
 	...enAi,
 	...enKb
 }

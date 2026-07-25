@@ -408,6 +408,15 @@ export default {
 	'logout': '退出登录',
 	'diagramPreview.saveSvg': '保存 SVG',
 	'diagramPreview.saveSvg.failed': '保存 SVG 失败',
+	'markdownRenderer.copy': '复制',
+	'markdownRenderer.copyAll': '复制全部',
+	'markdownRenderer.copyCode': '复制代码',
+	'markdownRenderer.diagramError.title': '图表渲染失败',
+	'markdownRenderer.diagramError.copyAllDiagnostics': '复制全部诊断内容',
+	'markdownRenderer.diagramError.viewDetails': '查看错误详情',
+	'markdownRenderer.diagramError.error': '报错',
+	'markdownRenderer.diagramError.rawSource': '原始源码',
+	'markdownRenderer.diagramError.normalizedSource': '规范化后源码',
 	...zhAi,
 	...zhKb
 }

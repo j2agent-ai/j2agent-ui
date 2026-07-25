@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it'
+import { t } from '@ai-system/lib'
 import { appendAuthTokenToUrl } from './authenticatedUrl'
 import { normalizeMarkdownRepoFileUrls, normalizeRepoFileUrl } from './repoFileUrl'
 import { DIAGRAM_COLOR_PALETTE, DIAGRAM_FONT_FAMILY } from './diagramTheme'
@@ -26,7 +27,7 @@ const MARKDOWN_OFFSCREEN_ATTR = 'data-md-offscreen'
  * 图表后处理逻辑变更时递增，用于让历史气泡在 SPA 内重新渲染（非 Mermaid 缓存）。
  * 与 ChatView 中 v-html 的 :key 保持一致。
  */
-export const MARKDOWN_RENDERER_REVISION = '31'
+export const MARKDOWN_RENDERER_REVISION = '32'
 /** 与 markdown.scss 中 --md-diagram-max-height 回退值保持一致 */
 const MARKDOWN_DIAGRAM_MAX_HEIGHT_FALLBACK = 360
 /** 与 markdown.scss 中 --md-html-preview-max-height 回退值保持一致 */
@@ -528,6 +529,8 @@ const defaultFence = md.renderer.rules.fence?.bind(md.renderer.rules)
 const MD_CODE_COPY_ICON =
   '<svg class="md-code-copy-icon" viewBox="0 0 1024 1024" width="11" height="11" aria-hidden="true"><path fill="currentColor" d="M768 832H256c-35.3 0-64-28.7-64-64V256c0-35.3 28.7-64 64-64h512c35.3 0 64 28.7 64 64v512c0 35.3-28.7 64-64 64zM704 192H320c-17.7 0-32 14.3-32 32v448c0 17.7 14.3 32 32 32h384c17.7 0 32-14.3 32-32V224c0-17.7-14.3-32-32-32zM448 320h128v64H448v-64z"/></svg>'
 
+const mt = (key: string, fallback: string) => t(key, undefined, fallback)
+
 /** 普通围栏代码块：顶部语言头 + 底部安全区复制按钮 */
 const wrapFenceCodeBlock = (preHtml: string, lang: string) => {
   const label = escapeHtml(lang || 'text')
@@ -538,13 +541,43 @@ const wrapFenceCodeBlock = (preHtml: string, lang: string) => {
     '</div>',
     preHtml,
     '<div class="md-code-block-foot">',
-    '<button type="button" class="md-code-copy" aria-label="复制代码" title="复制">',
+    `<button type="button" class="md-code-copy" aria-label="${escapeHtml(
+      mt('markdownRenderer.copyCode', 'Copy code')
+    )}" title="${escapeHtml(mt('markdownRenderer.copy', 'Copy'))}">`,
     MD_CODE_COPY_ICON,
     '</button>',
     '</div>',
     '</div>'
   ].join('')
 }
+
+const formatDiagnosticSection = (label: string, content: string) =>
+  `[${label}]\n${content}`
+
+const renderDiagnosticCopyButton = (content: string) => [
+  '<div class="md-code-block md-diagram-error-code">',
+  `<pre hidden><code>${escapeHtml(content)}</code></pre>`,
+  '<div class="md-code-block-foot">',
+  `<button type="button" class="md-code-copy md-diagram-error-copy" aria-label="${escapeHtml(
+    mt('markdownRenderer.diagramError.copyAllDiagnostics', 'Copy diagnostics')
+  )}" title="${escapeHtml(mt('markdownRenderer.copyAll', 'Copy all'))}">`,
+  MD_CODE_COPY_ICON,
+  `<span>${escapeHtml(
+    mt('markdownRenderer.diagramError.copyAllDiagnostics', 'Copy diagnostics')
+  )}</span>`,
+  '</button>',
+  '</div>',
+  '</div>'
+].join('')
+
+const renderDiagnosticDetails = (content: string) => [
+  '<details class="md-diagram-error-details">',
+  `<summary class="md-diagram-error-summary">${escapeHtml(
+    mt('markdownRenderer.diagramError.viewDetails', 'View error details')
+  )}</summary>`,
+  `<pre class="md-diagram-error-pre"><code>${escapeHtml(content)}</code></pre>`,
+  '</details>'
+].join('')
 
 md.renderer.rules.fence = (tokens, idx, options, env, self) => {
   const token = tokens[idx]
@@ -1989,39 +2022,38 @@ const setBlockError = (block: Element, error: unknown) => {
     clearDiagramBodyPending(body)
     const type = block.getAttribute(MARKDOWN_RENDER_ATTR)
     const rawSource = getSourceFromBlock(block).trim()
-    const detailsParts = [
-      '<details class="md-diagram-error-details">',
-      '<summary class="md-diagram-error-summary">查看错误详情</summary>',
-      `<pre class="md-diagram-error-pre"><code>${escapeHtml(
+    const diagnosticParts = [
+      formatDiagnosticSection(
+        mt('markdownRenderer.diagramError.error', 'Error'),
         message
-      )}</code></pre>`
+      )
     ]
     // Mermaid：附带规范化前后源码，便于对照 LLM 产出与修复结果
     if (type === 'mermaid' && rawSource) {
       const normalizedSource = normalizeMermaidSource(rawSource)
-      detailsParts.push(
-        '<details class="md-diagram-error-source">',
-        '<summary class="md-diagram-error-summary">规范化前源码</summary>',
-        `<pre class="md-diagram-error-pre"><code>${escapeHtml(
+      diagnosticParts.push(
+        formatDiagnosticSection(
+          mt('markdownRenderer.diagramError.rawSource', 'Raw source'),
           rawSource
-        )}</code></pre>`,
-        '</details>'
+        )
       )
       if (normalizedSource !== rawSource) {
-        detailsParts.push(
-          '<details class="md-diagram-error-source">',
-          '<summary class="md-diagram-error-summary">规范化后源码</summary>',
-          `<pre class="md-diagram-error-pre"><code>${escapeHtml(
+        diagnosticParts.push(
+          formatDiagnosticSection(
+            mt('markdownRenderer.diagramError.normalizedSource', 'Normalized source'),
             normalizedSource
-          )}</code></pre>`,
-          '</details>'
+          )
         )
       }
     }
-    detailsParts.push('</details>')
     body.innerHTML = [
-      '<div class="md-diagram-error-title"><strong>图表渲染失败</strong></div>',
-      ...detailsParts
+      '<div class="md-diagram-error-header">',
+      `<div class="md-diagram-error-title"><strong>${escapeHtml(
+        mt('markdownRenderer.diagramError.title', 'Diagram render failed')
+      )}</strong></div>`,
+      renderDiagnosticCopyButton(diagnosticParts.join('\n\n')),
+      '</div>',
+      renderDiagnosticDetails(diagnosticParts.join('\n\n'))
     ].join('')
   }
   block.setAttribute(MARKDOWN_RENDERED_ATTR, 'true')
