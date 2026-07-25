@@ -168,8 +168,17 @@ const quotePieSliceLines = (source: string) => {
 }
 
 /**
- * 修复 LLM 常见的 title 粘连，并为含中文 / 空白 / 数字开头的标题补引号。
+ * 修复 LLM 常见的 title 粘连。
  * 典型坏例：`title15趟列车余票状态分布` → `title "15趟列车余票状态分布"`
+ */
+const normalizeDiagramTitleKeywordSpacing = (source: string) =>
+  source.replace(
+    /^(\s*)title(?=[\d\u0080-\uffff])(\S.*)$/gim,
+    '$1title $2'
+  )
+
+/**
+ * 为含中文 / 空白 / 数字开头的标题补引号。
  */
 const normalizeDiagramTitleLines = (source: string) =>
   source
@@ -178,11 +187,7 @@ const normalizeDiagramTitleLines = (source: string) =>
       if (line.trimStart().startsWith('%%')) {
         return line
       }
-      // title 关键字与正文粘连（title15 / title武汉）；数字仍是 word char，\\b 无法切开
-      let fixed = line.replace(
-        /^(\s*)title(?![ \t"'\r\n])(\S.*)$/i,
-        '$1title $2'
-      )
+      const fixed = normalizeDiagramTitleKeywordSpacing(line)
       const match = fixed.match(/^(\s*)title\s+(.+)$/i)
       if (!match) {
         return fixed
@@ -445,9 +450,9 @@ const normalizeMindmapIndentation = (source: string) => {
 const splitMultipleFlowchartNodeDefsOnLine = (line: string) => {
   const indent = line.match(/^[\t ]*/)?.[0] ?? ''
   const nodePatterns = [
-    /([A-Za-z_][\w-]*\[[^\]]*\])([ \t]+)(?=[A-Za-z_][\w-]*)/g,
-    /([A-Za-z_][\w-]*\([^)]*\))([ \t]+)(?=[A-Za-z_][\w-]*)/g,
-    /([A-Za-z_][\w-]*\{[^}]*\})([ \t]+)(?=[A-Za-z_][\w-]*)/g
+    /([A-Za-z_][\w-]*\[[^\]]*\])([ \t]*)(?=[A-Za-z_][\w-]*)/g,
+    /([A-Za-z_][\w-]*\([^)]*\))([ \t]*)(?=[A-Za-z_][\w-]*)/g,
+    /([A-Za-z_][\w-]*\{[^}]*\})([ \t]*)(?=[A-Za-z_][\w-]*)/g
   ]
 
   let cur = line
@@ -479,7 +484,10 @@ const shouldNormalizeFlowchartNodeLine = (trimmed: string) => {
   const nodeLike =
     /[A-Za-z_][\w-]*(?:\[[^\]]*\]|\([^)]*\)|\{[^}]*\})/g
   const matches = trimmed.match(nodeLike)
-  return (matches?.length ?? 0) >= 2
+  if ((matches?.length ?? 0) >= 2) {
+    return true
+  }
+  return /[A-Za-z_][\w-]*(?:\[[^\]]*\]|\([^)]*\)|\{[^}]*\})[ \t]*(?=[A-Za-z_][\w-]*(?:\s*(?:-->|---|===|-\.->|==>|--o|--x)|\s*(?:\[|\(|\{)))/.test(trimmed)
 }
 
 const normalizeFlowchartMultilineNodeDefs = (source: string) => {
@@ -956,8 +964,9 @@ const normalizeMermaidSourceBase = (source: string) => {
     .replace(/：/g, ':')
     .replace(/\u00a0/g, ' ')
   text = normalizeMindmapIndentation(text)
-  // title 粘连/中文引号须在 pie 拆分前处理，否则 title15... 不会被识别为标题行
-  text = normalizeDiagramTitleLines(text)
+  // title 粘连须在 pie 拆分前处理，否则 title15... 不会被识别为标题行。
+  // 标题补引号放在 pie 拆分后，避免把同一行的扇区误包进 title。
+  text = normalizeDiagramTitleKeywordSpacing(text)
   text = normalizeFlowchartHeaderLine(text)
   text = normalizeMidlineFlowKeywords(text)
   text = normalizeFlowchartSubgraphLabels(text)

@@ -138,6 +138,15 @@ const showLanguageMenu = ref(false)
 const LANGUAGE_SUBMENU_WIDTH = 160
 const LANGUAGE_SUBMENU_GAP = 8
 const LANGUAGE_SUBMENU_EDGE = 8
+
+function getTopbarSafeTop() {
+	const raw = getComputedStyle(document.documentElement)
+		.getPropertyValue('--n-topbar-height')
+		.trim()
+	const topbarHeight = Number.parseFloat(raw) || 50
+	return topbarHeight + LANGUAGE_SUBMENU_EDGE
+}
+
 const languageOptions = computed(() => [
 	{ label: t('settings.language.system'), value: 'system' },
 	{ label: t('settings.language.zh'), value: 'zh' },
@@ -179,6 +188,7 @@ function syncLanguageSubmenuPosition() {
 	const submenuHeight = languageSubmenuRef.value?.offsetHeight || 0
 	const preferLeft = rect.left - LANGUAGE_SUBMENU_WIDTH - LANGUAGE_SUBMENU_GAP
 	const openToLeft = preferLeft >= LANGUAGE_SUBMENU_EDGE
+	const safeTop = getTopbarSafeTop()
 	let left = openToLeft
 		? preferLeft
 		: Math.min(
@@ -190,11 +200,11 @@ function syncLanguageSubmenuPosition() {
 		top = rect.top - submenuHeight - LANGUAGE_SUBMENU_GAP
 	}
 	const maxTop = Math.max(
-		LANGUAGE_SUBMENU_EDGE,
+		safeTop,
 		window.innerHeight - submenuHeight - LANGUAGE_SUBMENU_EDGE
 	)
 	left = Math.max(LANGUAGE_SUBMENU_EDGE, left)
-	top = Math.min(Math.max(LANGUAGE_SUBMENU_EDGE, top), maxTop)
+	top = Math.min(Math.max(safeTop, top), maxTop)
 	languageSubmenuStyle.value = {
 		left: `${left}px`,
 		top: `${top}px`,
@@ -268,10 +278,10 @@ watch(showLanguageMenu, (newValue) => {
 	flex-direction: column;
 	padding: 20px;
 	position: fixed;
-	top: 20px;
+	top: calc(var(--n-topbar-height, 50px) + 10px);
 	right: 20px;
 	width: 280px;
-	max-height: 80vh;
+	max-height: calc(100vh - var(--n-topbar-height, 50px) - 20px);
 	z-index: 1000;
 	box-sizing: border-box;
 
