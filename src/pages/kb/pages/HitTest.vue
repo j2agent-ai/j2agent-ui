@@ -357,13 +357,27 @@ const loadCollections = async () => {
 	try {
 		const response = await getKnowledgeCollections()
 		const body = response.data as { data?: KnowledgeCollectionDto[] } | undefined
-		collectionOptions.value = (body?.data ?? []).filter((item) => Boolean(item.collection?.trim()))
+		collectionOptions.value = dedupeCollectionOptions(
+			(body?.data ?? []).filter((item) => Boolean(item.collection?.trim()))
+		)
 	} catch (error) {
 		console.error('Failed to load knowledge collections:', error)
 		collectionOptions.value = []
 	} finally {
 		collectionLoading.value = false
 	}
+}
+
+/** 按 collection 去重，保留首次出现的选项 */
+const dedupeCollectionOptions = (items: KnowledgeCollectionDto[]) => {
+	const optionByCollection = new Map<string, KnowledgeCollectionDto>()
+	for (const item of items) {
+		const collection = item.collection?.trim()
+		if (collection && !optionByCollection.has(collection)) {
+			optionByCollection.set(collection, item)
+		}
+	}
+	return [...optionByCollection.values()]
 }
 
 /** 格式化 collection 下拉展示名 */

@@ -1075,6 +1075,7 @@ const isUniversalAssistantPage = computed(
 const KNOWLEDGE_COLLECTIONS_STORAGE_KEY = 'ai-knowledge-qa-selected-collections'
 const knowledgeCollections = ref<string[]>([])
 const knowledgeCollectionLabelMap = ref<Record<string, string>>({})
+const knowledgeCollectionValueMap = ref<Record<string, string[]>>({})
 const knowledgeCollectionsLoading = ref(false)
 const knowledgeCollectionsLoadFailed = ref(false)
 const knowledgeCollectionsLoaded = ref(false)
@@ -1128,37 +1129,81 @@ const syncSelectedKnowledgeCollections = () => {
     return
   }
   const available = new Set(knowledgeCollections.value)
-  const next = selectedKnowledgeCollections.value.filter((collection) =>
-    available.has(collection)
-  )
-  if (next.length !== selectedKnowledgeCollections.value.length) {
+  const next: string[] = []
+  for (const selection of selectedKnowledgeCollections.value) {
+    if (available.has(selection)) {
+      next.push(selection)
+      continue
+    }
+    const decodedCollection = decodeKnowledgeCollectionSelection(selection)
+    if (decodedCollection && available.has(decodedCollection)) {
+      next.push(decodedCollection)
+      continue
+    }
+    for (const migrated of knowledgeCollectionValueMap.value[selection] || []) {
+      if (!next.includes(migrated)) {
+        next.push(migrated)
+      }
+    }
+  }
+  const changed = next.length !== selectedKnowledgeCollections.value.length
+    || next.some((selection, index) => selection !== selectedKnowledgeCollections.value[index])
+  if (changed) {
     selectedKnowledgeCollections.value = next
     writeStoredKnowledgeCollections(next)
   }
 }
 
+/** 解析前端选择值：优先 selectionValue，否则回退 collection */
+const knowledgeCollectionSelectionValue = (item: KnowledgeCollectionDto) =>
+  item.selectionValue?.trim() || item.collection?.trim() || ''
+
+/** 兼容历史存储中带分隔符的 selection 值 */
+const decodeKnowledgeCollectionSelection = (selection: string) => {
+  const delimiterIndex = selection.indexOf('\u0000')
+  if (delimiterIndex < 0) {
+    return selection.trim()
+  }
+  return selection.slice(delimiterIndex + 1).trim()
+}
+
 const formatKnowledgeCollectionLabel = (item: KnowledgeCollectionDto) => {
   const collection = item.collection?.trim()
   const name = item.name?.trim()
-  return name && collection && name !== collection ? `${name} (${collection})` : collection || name || ''
+  if (!collection) {
+    return name || ''
+  }
+  if (name && name !== collection) {
+    return `${name} (${collection})`
+  }
+  return collection
 }
 
 const applyKnowledgeCollectionOptions = (items: KnowledgeCollectionDto[]) => {
   knowledgeCollections.value = items
-    .map((item) => item.collection?.trim())
-    .filter((collection): collection is string => Boolean(collection))
-  const next: Record<string, string> = {}
+    .map(knowledgeCollectionSelectionValue)
+    .filter((selection): selection is string => Boolean(selection))
+  const nextLabels: Record<string, string> = {}
+  const nextValues: Record<string, string[]> = {}
   for (const item of items) {
     const collection = item.collection?.trim()
-    if (!collection) {
+    const selection = knowledgeCollectionSelectionValue(item)
+    if (!collection || !selection) {
       continue
     }
     const label = formatKnowledgeCollectionLabel(item)
     if (label) {
-      next[collection] = label
+      nextLabels[selection] = label
+    }
+    if (!nextValues[collection]) {
+      nextValues[collection] = []
+    }
+    if (!nextValues[collection].includes(selection)) {
+      nextValues[collection].push(selection)
     }
   }
-  knowledgeCollectionLabelMap.value = next
+  knowledgeCollectionLabelMap.value = nextLabels
+  knowledgeCollectionValueMap.value = nextValues
 }
 
 const getKnowledgeCollectionLabel = (collection: string) =>

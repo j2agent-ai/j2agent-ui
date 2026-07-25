@@ -45,7 +45,7 @@
 				</el-table-column>
 				<el-table-column :label="t('kb.repository.displayName')" min-width="120" show-overflow-tooltip>
 					<template #default="{ row }">
-						{{ row.displayName || '-' }}
+						{{ row.displayName || '--' }}
 					</template>
 				</el-table-column>
 				<el-table-column :label="t('kb.repository.repoCode')" min-width="150" prop="repoCode" show-overflow-tooltip />
@@ -136,7 +136,13 @@
 			<el-form label-width="120px" autocomplete="off" @submit.prevent="submitForm">
 				<input type="text" class="autofill-trap" tabindex="-1" autocomplete="username" aria-hidden="true" />
 				<input type="password" class="autofill-trap" tabindex="-1" autocomplete="current-password" aria-hidden="true" />
-				<el-form-item :label="t('kb.repository.protocol')" required>
+				<el-form-item :label="t('kb.repository.type')" required>
+					<el-select v-model="form.type" :disabled="!!editingId" class="form-control">
+						<el-option :label="t('kb.repository.type.remote')" value="REMOTE" />
+						<el-option :label="t('kb.repository.type.localFile')" value="LOCAL_FILE" />
+					</el-select>
+				</el-form-item>
+				<el-form-item v-if="form.type === 'REMOTE'" :label="t('kb.repository.protocol')" required>
 					<el-select v-model="form.protocol" disabled class="form-control">
 						<el-option label="Git" value="GIT" />
 					</el-select>
@@ -164,10 +170,10 @@
 						:placeholder="t('kb.repository.repoCode.placeholder')"
 					/>
 				</el-form-item>
-				<el-form-item label="URL" required>
+				<el-form-item v-if="form.type === 'REMOTE'" label="URL" required>
 					<el-input v-model="form.remoteUrl" maxlength="2048" autocomplete="off" />
 				</el-form-item>
-				<el-form-item :label="t('kb.repository.branchName')">
+				<el-form-item v-if="form.type === 'REMOTE'" :label="t('kb.repository.branchName')">
 					<el-input
 						v-model="form.defaultBranch"
 						maxlength="256"
@@ -175,10 +181,10 @@
 						:placeholder="t('kb.repository.branch.placeholder')"
 					/>
 				</el-form-item>
-				<el-form-item :label="t('kb.repository.username')">
+				<el-form-item v-if="form.type === 'REMOTE'" :label="t('kb.repository.username')">
 					<el-input v-model="form.username" autocomplete="username" />
 				</el-form-item>
-				<el-form-item :label="t('kb.repository.passwordToken')">
+				<el-form-item v-if="form.type === 'REMOTE'" :label="t('kb.repository.passwordToken')">
 					<el-input
 						v-model="form.password"
 						type="password"
@@ -199,6 +205,34 @@
 				<el-form-item :label="t('kb.repository.enabled')">
 					<el-switch v-model="form.enabled" />
 				</el-form-item>
+				<div class="form-section-title">{{ t('kb.repository.detail.advancedConfig') }}</div>
+				<el-form-item label="Collection" :required="!!editingId">
+					<el-input
+						v-model="form.collectionName"
+						maxlength="128"
+						autocomplete="off"
+						placeholder="kb_{目录名}"
+					/>
+				</el-form-item>
+				<el-form-item :label="t('kb.repository.partitionNames')">
+					<el-input
+						v-model="form.partitionNamesInput"
+						maxlength="2048"
+						autocomplete="off"
+						:placeholder="t('kb.repository.partitionNames.placeholder')"
+					/>
+				</el-form-item>
+				<el-form-item :label="t('kb.repository.minHeadingLevel')" required>
+					<el-input-number
+						v-model="form.minHeadingLevel"
+						:min="1"
+						:max="3"
+						controls-position="right"
+					/>
+				</el-form-item>
+				<el-form-item :label="t('kb.repository.filenameAsTitle')">
+					<el-switch v-model="form.filenameAsTitle" />
+				</el-form-item>
 			</el-form>
 			<template #footer>
 				<div class="dialog-footer">
@@ -215,6 +249,8 @@
 			:title="t('kb.repository.detail.title')"
 			size="520px"
 			append-to-body
+			destroy-on-close
+			:modal="false"
 			class="repository-detail-drawer"
 		>
 			<div v-if="detail" class="detail-panel">
@@ -257,7 +293,7 @@
 						</div>
 						<div class="detail-row">
 							<span class="field-label">{{ t('kb.repository.displayName') }}</span>
-							<span class="field-value">{{ detail.displayName || '-' }}</span>
+							<span class="field-value">{{ detail.displayName || '--' }}</span>
 						</div>
 					</div>
 					<div class="detail-path-list">
@@ -268,24 +304,6 @@
 						<div class="detail-path-row">
 							<span class="field-label">{{ t('kb.repository.localPath') }}</span>
 							<span class="code-value">{{ detail.localPath || '-' }}</span>
-						</div>
-					</div>
-				</section>
-
-				<section class="detail-section">
-					<div class="section-heading">{{ t('kb.repository.detail.infoJson') }}</div>
-					<div class="detail-kv">
-						<div class="detail-row">
-							<span class="field-label">Collection</span>
-							<span class="field-value">{{ collectionText(detail) }}</span>
-						</div>
-						<div class="detail-row">
-							<span class="field-label">{{ t('kb.repository.minHeadingLevel') }}</span>
-							<span class="field-value">{{ detail.minHeadingLevel ?? '-' }}</span>
-						</div>
-						<div class="detail-row">
-							<span class="field-label">{{ t('kb.repository.filenameAsTitle') }}</span>
-							<span class="field-value">{{ detail.filenameAsTitle ? t('common.yes') : t('common.no') }}</span>
 						</div>
 					</div>
 				</section>
@@ -322,13 +340,35 @@
 					<div class="section-heading">{{ t('kb.repository.error') }}</div>
 					<div class="error-value">{{ detail.lastError }}</div>
 				</section>
+
+				<section class="detail-section">
+					<div class="section-heading">{{ t('kb.repository.detail.advancedConfigInfo') }}</div>
+					<div class="detail-kv">
+						<div class="detail-row">
+							<span class="field-label">Collection</span>
+							<span class="field-value">{{ collectionText(detail) }}</span>
+						</div>
+						<div class="detail-row">
+							<span class="field-label">{{ t('kb.repository.partitionNames') }}</span>
+							<span class="field-value">{{ (detail.partitionNames || []).join(', ') || '-' }}</span>
+						</div>
+						<div class="detail-row">
+							<span class="field-label">{{ t('kb.repository.minHeadingLevel') }}</span>
+							<span class="field-value">{{ detail.minHeadingLevel ?? '-' }}</span>
+						</div>
+						<div class="detail-row">
+							<span class="field-label">{{ t('kb.repository.filenameAsTitle') }}</span>
+							<span class="field-value">{{ detail.filenameAsTitle ? t('common.yes') : t('common.no') }}</span>
+						</div>
+					</div>
+				</section>
 			</div>
 		</el-drawer>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import {
 	ElButton,
 	ElDialog,
@@ -364,6 +404,7 @@ import type {
 } from '@/types/kb.model'
 
 type FormState = {
+	type: KnowledgeRepositoryType
 	protocol: 'GIT'
 	repoCode: string
 	remoteUrl: string
@@ -372,9 +413,11 @@ type FormState = {
 	password: string
 	updateIntervalMinutes: number
 	enabled: boolean
-	collections: string[]
 	displayName: string
-	collectionAliases: Record<string, string>
+	collectionName: string
+	partitionNamesInput: string
+	minHeadingLevel: number
+	filenameAsTitle: boolean
 }
 
 const loading = ref(false)
@@ -386,6 +429,7 @@ const editingId = ref('')
 const detail = ref<KnowledgeRepositoryDto | null>(null)
 
 const form = reactive<FormState>({
+	type: 'REMOTE',
 	protocol: 'GIT',
 	repoCode: '',
 	remoteUrl: '',
@@ -394,9 +438,11 @@ const form = reactive<FormState>({
 	password: '',
 	updateIntervalMinutes: 60,
 	enabled: true,
-	collections: [],
 	displayName: '',
-	collectionAliases: {}
+	collectionName: '',
+	partitionNamesInput: '',
+	minHeadingLevel: 3,
+	filenameAsTitle: true
 })
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
@@ -425,6 +471,7 @@ const openCreateDialog = () => {
 
 const openEditDialog = (row: KnowledgeRepositoryDto) => {
 	editingId.value = row.id || ''
+	form.type = row.type || 'REMOTE'
 	form.repoCode = row.repoCode || ''
 	form.remoteUrl = row.remoteUrl || ''
 	form.defaultBranch = row.defaultBranch || ''
@@ -432,14 +479,17 @@ const openEditDialog = (row: KnowledgeRepositoryDto) => {
 	form.password = ''
 	form.updateIntervalMinutes = row.updateIntervalMinutes || 60
 	form.enabled = row.enabled !== false
-	form.collections = [...(row.collections || [])]
 	form.displayName = row.displayName || ''
-	form.collectionAliases = { ...(row.collectionAliases || {}) }
+	form.collectionName = row.collectionName || row.collections?.[0] || ''
+	form.partitionNamesInput = (row.partitionNames || []).join(', ')
+	form.minHeadingLevel = row.minHeadingLevel || 3
+	form.filenameAsTitle = row.filenameAsTitle !== false
 	dialogVisible.value = true
 }
 
 const resetForm = () => {
 	editingId.value = ''
+	form.type = 'REMOTE'
 	form.protocol = 'GIT'
 	form.repoCode = ''
 	form.remoteUrl = ''
@@ -448,9 +498,11 @@ const resetForm = () => {
 	form.password = ''
 	form.updateIntervalMinutes = 60
 	form.enabled = true
-	form.collections = []
 	form.displayName = ''
-	form.collectionAliases = {}
+	form.collectionName = ''
+	form.partitionNamesInput = ''
+	form.minHeadingLevel = 3
+	form.filenameAsTitle = true
 }
 
 const submitForm = async () => {
@@ -477,26 +529,52 @@ const submitForm = async () => {
 }
 
 const buildPayload = (): KnowledgeRepositoryUpsertDto | null => {
-	if (!form.remoteUrl.trim()) {
+	if (form.type === 'REMOTE' && !form.remoteUrl.trim()) {
 		ElMessage.warning(t('common.required.fields'))
 		return null
 	}
-	if (form.repoCode.trim() && !/^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$/.test(form.repoCode.trim())) {
+	if (!editingId.value && form.type === 'LOCAL_FILE' && !form.repoCode.trim()) {
+		ElMessage.warning(t('common.required.fields'))
+		return null
+	}
+	const repoCode = form.repoCode.trim()
+	if (repoCode && (repoCode.length > 128 || repoCode === '.' || repoCode === '..' || /[\\/]/.test(repoCode))) {
 		ElMessage.warning(t('kb.repository.repoCode.invalid'))
 		return null
 	}
+	if (editingId.value && !form.collectionName.trim()) {
+		ElMessage.warning(t('common.required.fields'))
+		return null
+	}
+	if (form.collectionName.trim() && !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(form.collectionName.trim())) {
+		ElMessage.warning(t('kb.repository.collectionName.invalid'))
+		return null
+	}
+	if (form.minHeadingLevel < 1 || form.minHeadingLevel > 3) {
+		ElMessage.warning(t('kb.repository.minHeadingLevel.invalid'))
+		return null
+	}
+	const partitionNames = parsePartitionNames(form.partitionNamesInput)
+	if (!partitionNames) {
+		ElMessage.warning(t('kb.repository.partitionNames.invalid'))
+		return null
+	}
 	const payload: KnowledgeRepositoryUpsertDto = {
+		type: form.type,
 		protocol: 'GIT',
 		repoCode: form.repoCode.trim() || undefined,
-		remoteUrl: form.remoteUrl.trim(),
-		defaultBranch: form.defaultBranch.trim() || undefined,
+		remoteUrl: form.type === 'REMOTE' ? form.remoteUrl.trim() : undefined,
+		defaultBranch: form.type === 'REMOTE' ? form.defaultBranch.trim() || undefined : undefined,
 		updateIntervalMinutes: form.updateIntervalMinutes || 60,
 		enabled: form.enabled,
 		protocolConfig: {},
 		displayName: form.displayName.trim() || undefined,
-		collectionAliases: normalizeCollectionAliases(form.collectionAliases, form.collections)
+		collectionName: form.collectionName.trim() || undefined,
+		partitionNames,
+		minHeadingLevel: form.minHeadingLevel,
+		filenameAsTitle: form.filenameAsTitle
 	}
-	if (form.username.trim() || form.password.trim()) {
+	if (form.type === 'REMOTE' && (form.username.trim() || form.password.trim())) {
 		payload.credentialConfig = {
 			username: form.username.trim(),
 			password: form.password
@@ -516,6 +594,16 @@ const openDetail = async (row: KnowledgeRepositoryDto) => {
 	} catch (error) {
 		console.error('Failed to load repository detail:', error)
 		detail.value = row
+	}
+}
+
+const handleDetailOutsidePointerDown = (event: PointerEvent) => {
+	if (!detailVisible.value) {
+		return
+	}
+	const target = event.target as HTMLElement | null
+	if (!target?.closest('.repository-detail-drawer')) {
+		detailVisible.value = false
 	}
 }
 
@@ -560,16 +648,7 @@ const shortRevision = (revision?: string) => {
 }
 
 const collectionText = (repository: KnowledgeRepositoryDto) => {
-	return (repository.collections || [])
-		.map((collection) => collectionDisplayName(repository, collection))
-		.join(', ') || '-'
-}
-
-const collectionDisplayName = (repository: KnowledgeRepositoryDto, collection: string) => {
-	const alias = repository.type === 'REMOTE'
-		? repository.collectionAliases?.[collection]?.trim() || repository.displayName?.trim()
-		: ''
-	return alias ? `${alias} (${collection})` : collection
+	return repository.collectionName || repository.collections?.[0] || '-'
 }
 
 /** 格式化更新周期（分钟）文案 */
@@ -577,18 +656,16 @@ const formatMinutes = (minutes: number) => {
 	return t('kb.repository.minutes', { minutes })
 }
 
-const normalizeCollectionAliases = (
-	aliases: Record<string, string>,
-	collections: string[]
-) => {
-	const next: Record<string, string> = {}
-	for (const collection of collections) {
-		const alias = aliases[collection]?.trim()
-		if (collection && alias) {
-			next[collection] = alias
-		}
+const parsePartitionNames = (value: string): string[] | null => {
+	const raw = value
+		.split(/[,，\n]/)
+		.map((item) => item.trim())
+		.filter(Boolean)
+	const names = Array.from(new Set(raw))
+	if (names.some((name) => !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name))) {
+		return null
 	}
-	return next
+	return names
 }
 
 const typeLabel = (type?: KnowledgeRepositoryType) => {
@@ -627,7 +704,14 @@ const statusTagType = (status?: KnowledgeRepositoryStatus) => {
 	}
 }
 
-onMounted(loadRepositories)
+onMounted(() => {
+	loadRepositories()
+	document.addEventListener('pointerdown', handleDetailOutsidePointerDown, true)
+})
+
+onBeforeUnmount(() => {
+	document.removeEventListener('pointerdown', handleDetailOutsidePointerDown, true)
+})
 </script>
 
 <style scoped lang="scss">
@@ -671,6 +755,15 @@ onMounted(loadRepositories)
 	width: 100%;
 }
 
+.form-section-title {
+	margin: 18px 0 12px;
+	padding-top: 14px;
+	border-top: 1px solid var(--n-color-border-soft);
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--n-color-text-primary);
+}
+
 .unit-text {
 	margin-left: 8px;
 	color: var(--n-color-text-muted);
@@ -682,26 +775,43 @@ onMounted(loadRepositories)
 }
 
 :global(.repository-detail-drawer.el-drawer) {
-	background: var(--n-color-bg-glass-overlay);
-	backdrop-filter: blur(var(--n-glass-blur-4)) saturate(var(--n-glass-saturate));
-	-webkit-backdrop-filter: blur(var(--n-glass-blur-4)) saturate(var(--n-glass-saturate));
-	box-shadow: var(--n-shadow-elevation-4);
-	color: var(--n-color-text-primary);
+	@include n-glass-surface(2);
+	background: var(--n-color-bg-glass) !important;
+	background-color: var(--n-color-bg-glass) !important;
+	--el-drawer-bg-color: var(--n-color-bg-glass);
+	border-left: 1px solid var(--n-color-border-soft);
+	border-radius: var(--n-dialog-border-radius) 0 0 var(--n-dialog-border-radius);
+	box-shadow: var(--n-shadow-elevation-4) !important;
+	overflow: hidden;
+	color: var(--n-color-text-primary) !important;
 }
 
 :global(.repository-detail-drawer .el-drawer__header) {
-	height: 56px;
+	flex-shrink: 0;
+	min-height: 56px;
 	margin: 0;
-	padding: 0 24px;
+	padding: 16px 20px 12px;
+	display: flex;
+	align-items: center;
+	background: transparent;
 	border-bottom: 1px solid var(--n-color-border-soft);
+}
+
+:global(.repository-detail-drawer .el-drawer__title) {
 	color: var(--n-color-text-primary);
 	font-size: 16px;
-	font-weight: 600;
+	font-weight: bolder;
+}
+
+:global(.repository-detail-drawer .el-drawer__close) {
+	color: color-mix(in srgb, var(--n-color-text-primary), transparent 50%);
+	text-shadow: var(--el-color-primary-light-3);
 }
 
 :global(.repository-detail-drawer .el-drawer__body) {
 	padding: 0;
 	overflow: hidden;
+	background: transparent;
 }
 
 .detail-panel {
@@ -836,9 +946,9 @@ onMounted(loadRepositories)
 	display: block;
 	min-width: 0;
 	padding: 9px 10px;
-	border: 1px solid var(--n-color-border-soft);
-	border-radius: var(--n-radius-basic, 6px);
-	background: color-mix(in srgb, var(--n-color-bg-glass-weak) 82%, transparent);
+	@include n-glass-surface(1);
+	background: var(--n-color-bg-glass-weak) !important;
+	border-radius: calc(var(--n-dialog-border-radius) - 8px);
 	font-size: 12px;
 	line-height: 1.6;
 	color: var(--n-color-text-primary);

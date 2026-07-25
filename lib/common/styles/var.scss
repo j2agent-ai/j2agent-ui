@@ -19,6 +19,8 @@
 
 // 默认浅色主题
 :root {
+  color-scheme: light;
+
   --el-color-primary: #{$oem-primary}; // 主色
 
   --el-color-success: #52AC82; // 成功色

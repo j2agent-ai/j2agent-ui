@@ -19,8 +19,18 @@ import { applyOemBranding } from '@/utils/applyOemBranding'
 applyOemBranding()
 installDraggableMessageBox()
 
-document.documentElement.classList.remove('dark')
-localStorage.removeItem('dark-mode')
+/** 强制浅色主题，清除本地暗色偏好 */
+const forceLightTheme = () => {
+	document.documentElement.classList.remove('dark')
+	document.documentElement.setAttribute('data-theme', 'light')
+	document.documentElement.style.colorScheme = 'light'
+	document.body?.classList.remove('dark')
+	document.body?.setAttribute('data-theme', 'light')
+	localStorage.removeItem('dark-mode')
+	localStorage.removeItem('theme')
+}
+
+forceLightTheme()
 
 async function APP() {
 	const { ssoEntry } = consumeLaunchQueryFromUrl()
