@@ -206,7 +206,7 @@
 					<el-switch v-model="form.enabled" />
 				</el-form-item>
 				<div class="form-section-title">{{ t('kb.repository.detail.advancedConfig') }}</div>
-				<el-form-item label="Collection" required>
+				<el-form-item label="Collection" :required="!!editingId">
 					<el-input
 						v-model="form.collectionName"
 						maxlength="128"
@@ -540,6 +540,10 @@ const buildPayload = (): KnowledgeRepositoryUpsertDto | null => {
 	const repoCode = form.repoCode.trim()
 	if (repoCode && (repoCode.length > 128 || repoCode === '.' || repoCode === '..' || /[\\/]/.test(repoCode))) {
 		ElMessage.warning(t('kb.repository.repoCode.invalid'))
+		return null
+	}
+	if (editingId.value && !form.collectionName.trim()) {
+		ElMessage.warning(t('common.required.fields'))
 		return null
 	}
 	if (form.collectionName.trim() && !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(form.collectionName.trim())) {
