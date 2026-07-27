@@ -2,31 +2,6 @@
 	<div class="hit-test-container">
 		<div class="hit-test-result">
 			<div class="table-wrapper">
-				<div class="table-header">
-					<span class="table-header-title">{{
-						t('settings.rag.weight.label')
-					}}</span>
-					<div class="rag-weight-slider compact">
-						<el-slider
-							:model-value="denseWeightPercent"
-							:min="0"
-							:max="100"
-							:show-tooltip="true"
-							:format-tooltip="formatWeightTooltip"
-							disabled
-						/>
-						<div class="rag-weight-values">
-							<span
-								>{{ t('settings.rag.weight.dense') }}:
-								{{ denseWeightPercent }}%</span
-							>
-							<span
-								>{{ t('settings.rag.weight.sparse') }}:
-								{{ sparseWeightPercent }}%</span
-							>
-						</div>
-					</div>
-				</div>
 				<el-table
 					ref="tableRef"
 					:data="retrieveResultList"
@@ -276,21 +251,16 @@ import {
 	ElPopover,
 	ElOption,
 	ElSelect,
-	ElSlider,
 	ElTable,
 	ElTableColumn,
 	ElTooltip,
 	ElIcon
 } from 'element-plus'
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { getOutlineDisplay, getOutlineItems, isTableCellEmpty, t } from '@ai-system/lib'
 import { getKnowledgeCollections, retrieveKnowledge } from '@/api/kb/kb.api'
-import { getProperties } from '@/api/property.api'
 import type { KnowledgeCollectionDto, KnowledgeRetrieveItemDto } from '@/types/kb.model'
 import { QuestionFilled } from '@element-plus/icons-vue'
-
-const KEY_RETRIEVE_DENSE_WEIGHT = 'RETRIEVE_DENSE_WEIGHT'
-const KEY_RETRIEVE_SPARSE_WEIGHT = 'RETRIEVE_SPARSE_WEIGHT'
 
 // 表单数据
 const formData = ref({
@@ -306,51 +276,6 @@ const loading = ref(false)
 const collectionLoading = ref(false)
 const retrieveResultList = ref<KnowledgeRetrieveItemDto[]>([])
 const collectionOptions = ref<KnowledgeCollectionDto[]>([])
-
-const ragWeights = ref({
-	denseWeight: 0.5,
-	sparseWeight: 0.5
-})
-
-const normalizeRagWeights = () => {
-	const dense = ragWeights.value.denseWeight
-	const sparse = ragWeights.value.sparseWeight
-	const total = dense + sparse
-	if (!Number.isFinite(total) || total <= 0) {
-		ragWeights.value.denseWeight = 0.5
-		ragWeights.value.sparseWeight = 0.5
-		return
-	}
-	ragWeights.value.denseWeight = dense / total
-	ragWeights.value.sparseWeight = sparse / total
-}
-
-const parseNumber = (value: string | undefined, fallback: number) => {
-	if (value === undefined || value === null) {
-		return fallback
-	}
-	const parsed = Number(value)
-	return Number.isFinite(parsed) ? parsed : fallback
-}
-
-const resolvePropertyMap = (res: any) => {
-	if (res?.data?.data) {
-		return res.data.data
-	}
-	return res?.data ?? {}
-}
-
-const denseWeightPercent = computed(() =>
-	Math.round(ragWeights.value.denseWeight * 100)
-)
-const sparseWeightPercent = computed(() => 100 - denseWeightPercent.value)
-const formatWeightTooltip = (value: number) => {
-	const densePercent = Math.min(100, Math.max(0, Math.round(value)))
-	const sparsePercent = 100 - densePercent
-	return `${t('settings.rag.weight.dense')}: ${densePercent}% / ${t(
-		'settings.rag.weight.sparse'
-	)}: ${sparsePercent}%`
-}
 
 const loadCollections = async () => {
 	collectionLoading.value = true
@@ -427,34 +352,8 @@ const handleKeyup = () => {
 	}
 }
 
-const loadRagWeights = async () => {
-	try {
-		const res = await getProperties([
-			KEY_RETRIEVE_DENSE_WEIGHT,
-			KEY_RETRIEVE_SPARSE_WEIGHT
-		])
-		const data = resolvePropertyMap(res)
-		ragWeights.value.denseWeight = parseNumber(
-			KEY_RETRIEVE_DENSE_WEIGHT in data
-				? data[KEY_RETRIEVE_DENSE_WEIGHT]
-				: undefined,
-			ragWeights.value.denseWeight
-		)
-		ragWeights.value.sparseWeight = parseNumber(
-			KEY_RETRIEVE_SPARSE_WEIGHT in data
-				? data[KEY_RETRIEVE_SPARSE_WEIGHT]
-				: undefined,
-			ragWeights.value.sparseWeight
-		)
-		normalizeRagWeights()
-	} catch (error) {
-		console.error('Failed to load retrieval weights:', error)
-	}
-}
-
 onMounted(() => {
 	loadCollections()
-	loadRagWeights()
 })
 </script>
 
@@ -487,53 +386,6 @@ onMounted(() => {
 
 		.table-wrapper {
 			border-radius: var(--n-radius-triple);
-
-			.table-header {
-				display: flex;
-				align-items: center;
-				justify-content: flex-start;
-				gap: 12px;
-				padding: 8px 12px;
-				flex-shrink: 0;
-				border-bottom: 1px solid var(--n-color-border-soft);
-				background-color: transparent;
-
-				.table-header-title {
-					font-weight: 600;
-					color: var(--n-color-text-primary);
-					white-space: nowrap;
-				}
-
-				.rag-weight-slider {
-					flex: 0 0 auto;
-				}
-			}
-
-			.rag-weight-slider {
-				width: 280px;
-
-				:deep(.el-slider__runway) {
-					background-color: #f4a340;
-				}
-
-				:deep(.el-slider__bar) {
-					background-color: var(--el-slider-main-bg-color);
-				}
-
-				.rag-weight-values {
-					display: flex;
-					justify-content: space-between;
-					margin-top: 4px;
-					color: var(--n-color-text-muted);
-					font-size: 12px;
-				}
-
-				&.compact {
-					.rag-weight-values {
-						margin-top: 2px;
-					}
-				}
-			}
 		}
 		// 内容预览样式
 		.text-chunk-preview,

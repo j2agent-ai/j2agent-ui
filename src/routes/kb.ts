@@ -1,10 +1,10 @@
-import { ROLE_ADMIN } from '@/utils/role'
+import { ROLE_KB_ADMIN } from '@/utils/role'
 
 export default [
 	{
 		path: '/kb',
 		name: 'knowledgeBase',
 		component: () => import('@/pages/kb/index.vue'),
-		meta: { requiredRole: ROLE_ADMIN }
+		meta: { requiredRole: ROLE_KB_ADMIN }
 	}
 ]
