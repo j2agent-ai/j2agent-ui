@@ -17,6 +17,9 @@
 							{{ menuTitle }}
 						</div>
 					</el-tooltip>
+					<span v-if="props.mode === 'user'" class="menu-card-role-badge">
+						{{ currentRoleLabel }}
+					</span>
 				</div>
 			</div>
 		</div>
@@ -33,7 +36,7 @@
 				<li class="menu-card-item" v-if="canAccessChat" @click="goTo(KNOWLEDGE_QA_CHAT_PATH)">
 					{{ '📚 ' + t('ai.knowledge.qa') }}
 				</li>
-				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/kb')">
+				<li class="menu-card-item" v-if="canAccessKbAdmin" @click="goTo('/kb')">
 					{{ '📚 ' + t('kb.knowledge.base') }}
 				</li>
 				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/agents')">
@@ -102,7 +105,13 @@ import {
 	AI_HUB_CHAT_PATH,
 	KNOWLEDGE_QA_CHAT_PATH
 } from '@/pages/chat/ts/agent/universal-assistant'
-import { hasRoleAccess, ROLE_ADMIN, ROLE_USER } from '@/utils/role'
+import {
+	getUserRole,
+	hasRoleAccess,
+	ROLE_ADMIN,
+	ROLE_KB_ADMIN,
+	ROLE_USER
+} from '@/utils/role'
 
 defineExpose({
 	show,
@@ -127,7 +136,18 @@ const menuCardRef = ref<HTMLElement | null>(null)
 const isClickOutsideEnabled = ref(false)
 const canAccessChat = computed(() => hasRoleAccess(ROLE_USER))
 const canAccessAdmin = computed(() => hasRoleAccess(ROLE_ADMIN))
+const canAccessKbAdmin = computed(() => hasRoleAccess(ROLE_KB_ADMIN))
 const menuTitle = computed(() => props.title || t('common.system.options'))
+const currentRoleLabel = computed(() => {
+	const role = getUserRole()
+	if (role === ROLE_ADMIN) {
+		return t('user.management.role.admin')
+	}
+	if (role === ROLE_KB_ADMIN) {
+		return t('user.management.role.kbAdmin')
+	}
+	return t('user.management.role.user')
+})
 const menuTitleRef = ref<HTMLElement | null>(null)
 const menuTitleOverflow = ref(false)
 const languageItemRef = ref<HTMLElement | null>(null)
@@ -286,7 +306,7 @@ watch(showLanguageMenu, (newValue) => {
 	box-sizing: border-box;
 
 	.menu-card-card-header-title-text :deep(.el-tooltip__trigger) {
-		display: block;
+		display: inline-flex;
 		min-width: 0;
 		max-width: 100%;
 	}
@@ -297,13 +317,35 @@ watch(showLanguageMenu, (newValue) => {
 		font-weight: bold;
 		line-height: var(--n-font-line-height-3);
 		color: var(--n-color-text-primary);
-		margin-bottom: 15px;
 		max-width: 100%;
 		box-sizing: border-box;
 		overflow-x: hidden;
 		overflow-y: visible;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.menu-card-card-header-title-text {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		min-width: 0;
+		margin-bottom: 15px;
+	}
+
+	.menu-card-role-badge {
+		flex: 0 0 auto;
+		max-width: 120px;
+		padding: 2px 8px;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--el-color-primary) 14%, transparent);
+		color: var(--el-color-primary);
+		font-size: 12px;
+		font-weight: 600;
+		line-height: 20px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.menu-card-content {

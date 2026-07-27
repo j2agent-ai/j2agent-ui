@@ -3,7 +3,8 @@ const USERNAME_STORAGE_KEY = 'user-name'
 const USERID_STORAGE_KEY = 'user-id'
 
 export const ROLE_ADMIN = 1
-export const ROLE_USER = 2
+export const ROLE_KB_ADMIN = 2
+export const ROLE_USER = 3
 
 export const setUserRole = (role: number | null) => {
 	if (role === null || role === undefined || Number.isNaN(role)) {

@@ -24,7 +24,7 @@
 				<h3>{{ t('ai.knowledge.qa') }}</h3>
 				<p>{{ t('ai.knowledge.qa.desc') }}</p>
 			</div>
-			<div class="feature-card" v-if="canAccessAdmin" @click="goTo('/kb')">
+			<div class="feature-card" v-if="canAccessKbAdmin" @click="goTo('/kb')">
 				<div class="card-icon">📚</div>
 				<h3>{{ t('kb.knowledge.base') }}</h3>
 				<p>{{ t('kb.management') }}</p>
@@ -63,7 +63,7 @@ import {
 	AI_HUB_CHAT_PATH,
 	KNOWLEDGE_QA_CHAT_PATH
 } from '@/pages/chat/ts/agent/universal-assistant'
-import { hasRoleAccess, ROLE_ADMIN, ROLE_USER } from '@/utils/role'
+import { hasRoleAccess, ROLE_ADMIN, ROLE_KB_ADMIN, ROLE_USER } from '@/utils/role'
 import { scheduleDiagramPrefetch } from '@/utils/scheduleDiagramPrefetch'
 
 const route = useRoute()
@@ -71,6 +71,7 @@ const isFullscreen = ref(true)
 const isMobile = ref(false)
 const canAccessChat = computed(() => hasRoleAccess(ROLE_USER))
 const canAccessAdmin = computed(() => hasRoleAccess(ROLE_ADMIN))
+const canAccessKbAdmin = computed(() => hasRoleAccess(ROLE_KB_ADMIN))
 
 const onWindowResize = debounce(() => {
 	resize()

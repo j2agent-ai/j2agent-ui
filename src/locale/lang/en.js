@@ -328,6 +328,7 @@ export default {
 	'user.management.password': 'Password',
 	'user.management.role': 'Role',
 	'user.management.role.admin': 'Admin',
+	'user.management.role.kbAdmin': 'Knowledge Base Admin',
 	'user.management.role.user': 'User',
 	'user.management.reset.password': 'Reset Password',
 	'user.management.load.failed': 'Failed to load users',

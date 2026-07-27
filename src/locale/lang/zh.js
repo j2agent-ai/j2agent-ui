@@ -322,6 +322,7 @@ export default {
 	'user.management.password': '密码',
 	'user.management.role': '角色',
 	'user.management.role.admin': '管理员',
+	'user.management.role.kbAdmin': '知识库管理员',
 	'user.management.role.user': '普通用户',
 	'user.management.reset.password': '重置密码',
 	'user.management.load.failed': '加载用户失败',

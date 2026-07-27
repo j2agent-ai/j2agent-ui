@@ -153,7 +153,7 @@ import {
 	updateUserRole,
 	type UserDto
 } from '@/api/user.api'
-import { hasRoleAccess, ROLE_ADMIN, ROLE_USER } from '@/utils/role'
+import { hasRoleAccess, ROLE_ADMIN, ROLE_KB_ADMIN, ROLE_USER } from '@/utils/role'
 import EmailRegisterSettingsPanel from './EmailRegisterSettingsPanel.vue'
 
 // 用户列表数据
@@ -177,7 +177,10 @@ const passwordForm = ref({
 })
 
 const roleOptions = computed(() => {
-	const options = [{ value: ROLE_USER, label: t('user.management.role.user') }]
+	const options = [
+		{ value: ROLE_KB_ADMIN, label: t('user.management.role.kbAdmin') },
+		{ value: ROLE_USER, label: t('user.management.role.user') }
+	]
 	if (isAdmin.value) {
 		options.unshift({ value: ROLE_ADMIN, label: t('user.management.role.admin') })
 	}
@@ -194,7 +197,13 @@ const canEditRole = (user: UserDto) => {
 }
 
 const getRoleLabel = (role: number) => {
-	return role === ROLE_ADMIN ? t('user.management.role.admin') : t('user.management.role.user')
+	if (role === ROLE_ADMIN) {
+		return t('user.management.role.admin')
+	}
+	if (role === ROLE_KB_ADMIN) {
+		return t('user.management.role.kbAdmin')
+	}
+	return t('user.management.role.user')
 }
 
 const canResetPassword = (user: UserDto) => {
