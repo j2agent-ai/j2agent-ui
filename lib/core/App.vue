@@ -22,11 +22,9 @@ import { scheduleDiagramPrefetch } from '@/utils/scheduleDiagramPrefetch'
 const ChatActivityPanel = defineAsyncComponent(
 	() => import('@/pages/chat/components/ChatActivityPanel.vue')
 )
-import { useWarnBeforeUnloadOnActiveTasks } from '@/pages/chat/ts/index'
 import { ensureAgentNamesLoaded } from '@/pages/chat/ts/agent/name-registry'
 import { hasRoleAccess, ROLE_USER } from '@/utils/role'
 
-useWarnBeforeUnloadOnActiveTasks()
 const { elLocale } = useElementLocale()
 
 const route = useRoute()

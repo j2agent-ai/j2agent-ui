@@ -215,18 +215,6 @@ class ChatSessionRegistry {
 		}
 	}
 
-	/** 中断所有进行中的流式对话并清理活动状态（刷新/退出登录前调用） */
-	stopAllActiveTurns() {
-		for (const entry of [...chatActivityStore.activeEntries.value]) {
-			const session = this.peekSession(entry.agentId, entry.contextId)
-			if (session) {
-				this.stopSessionStream(session)
-			} else {
-				chatActivityStore.markInactive(entry.agentId, entry.contextId)
-			}
-		}
-	}
-
 	/**
 	 * 超出 MAX_CHAT_SESSIONS 时淘汰最久未访问的空闲非活跃会话。
 	 * 进行中的流式会话不会被 prune。

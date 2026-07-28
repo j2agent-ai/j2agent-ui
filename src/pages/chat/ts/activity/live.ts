@@ -1,28 +1,14 @@
 /**
- * 判断会话是否仍在真实流式中。
- * 后端被 kill 时 WebSocket 可能长期不触发 onclose，需结合连接状态清理本地活动登记。
+ * 判断会话是否处于后台运行中。
+ *
+ * 页面刷新恢复后，运行中的后台任务在用户点进会话前不主动建立 WebSocket；
+ * 因此这里只读取 activity store，不再因为本地没有 WS 就清理运行中标记。
  */
 import { chatActivityStore } from './store'
-import { chatSessionRegistry } from '../session/registry'
 import { buildSessionKey } from '../session/types'
 
-const isWebSocketLive = (ws: WebSocket | undefined): boolean => {
-	if (!ws) {
-		return false
-	}
-	return ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING
-}
-
-/** 该 context 是否仍有活跃流式连接（会顺带清理已断连的本地活动登记） */
+/** 该 context 是否存在后台运行任务或已连接的流式观察。 */
 export const isContextStreaming = (agentId: string, contextId: string): boolean => {
 	const sessionKey = buildSessionKey(agentId, contextId)
-	if (!chatActivityStore.isActiveByKey(sessionKey)) {
-		return false
-	}
-	const session = chatSessionRegistry.peekSession(agentId, contextId)
-	if (!isWebSocketLive(session?.ws)) {
-		chatActivityStore.markInactive(agentId, contextId)
-		return false
-	}
-	return true
+	return chatActivityStore.isActiveByKey(sessionKey)
 }

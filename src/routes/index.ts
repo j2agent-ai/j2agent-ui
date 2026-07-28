@@ -78,14 +78,3 @@ export const goTo = (path: string) => {
 	const normalized = path.startsWith('/') ? path : `/${path}`
 	return router.push(normalized)
 }
-
-/** 退出登录：有进行中任务时先警告，确认后停止所有任务再跳转。 */
-export const goToLogout = async () => {
-	const { guardLeaveWithActiveTasks } = await import(
-		'@/pages/chat/ts/guard/leave'
-	)
-	const canLeave = await guardLeaveWithActiveTasks()
-	if (canLeave) {
-		goTo('/logout')
-	}
-}

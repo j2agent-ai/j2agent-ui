@@ -14,11 +14,20 @@ import { globalUrlPrefix, programTag } from '@/oem.js'
 import { getAuthToken } from '@/utils/token'
 import { getLangStorage, resolveLangMode } from '@ai-system/utils'
 
-export const chatWebsocketClientApi = (contextId: string, agentId: string): WebSocket => {
+export type ChatWebSocketOptions = {
+	resume?: boolean
+}
+
+export const chatWebsocketClientApi = (
+	contextId: string,
+	agentId: string,
+	options?: ChatWebSocketOptions
+): WebSocket => {
 	const token = getAuthToken()
 	const lang = resolveLangMode(getLangStorage() || window.webApp?.getLang?.() || 'system')
 	const locale = lang === 'en' ? 'en_US' : 'zh_CN'
 	const authQuery = token ? `&authorization=${encodeURIComponent(token)}` : ''
+	const resumeQuery = options?.resume ? '&resume=true' : ''
 	return new WebSocket(
 		window.location.origin.replace('http', 'ws') +
 			`/ws${globalUrlPrefix}rest/${programTag}/chat?context-id=` +
@@ -27,6 +36,7 @@ export const chatWebsocketClientApi = (contextId: string, agentId: string): WebS
 			encodeURIComponent(agentId) +
 			'&locale=' +
 			encodeURIComponent(locale) +
+			resumeQuery +
 			authQuery
 	)
 }
@@ -140,6 +150,18 @@ export const deleteHistoryContext = (contextId: string | string[], agentId?: str
 		params: {
 			'context-id': Array.isArray(contextId) ? contextId.join(',') : contextId,
 			...(agentId !== undefined ? { 'agent-id': agentId } : {})
+		}
+	})
+}
+
+/**
+ * 主动停止正在后台运行的对话任务。
+ */
+export const stopChatTurn = (contextId: string, agentId: string) => {
+	return http.post(`/v1${globalUrlPrefix}rest/${programTag}/chat/stop`, undefined, {
+		params: {
+			'context-id': contextId,
+			'agent-id': agentId
 		}
 	})
 }
