@@ -46,10 +46,6 @@ export default {
 	'ai.activity.panel.empty.cta': 'Start chat',
 	'ai.activity.fab.label': 'Running agent tasks',
 	'ai.activity.fab.label.idle': 'AI assistant',
-	'ai.activity.beforeunload.title': 'Agent tasks in progress',
-	'ai.activity.beforeunload':
-		'Agent tasks are still running. Leaving this page will interrupt them.',
-	'ai.activity.beforeunload.confirm': 'Leave anyway',
 	'ai.history.chat': 'Historical Dialogue',
 	'ai.history.loading.more': 'Loading more…',
 	'ai.history.refreshing': 'Updating…',

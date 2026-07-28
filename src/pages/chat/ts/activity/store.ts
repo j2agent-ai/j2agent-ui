@@ -69,10 +69,22 @@ const markInactive = (agentId: string, contextId: string) => {
 	entries.delete(resolveKey(agentId, contextId))
 }
 
+/** 按 contextId 移除所有本地活动记录，用于修正 agentId alias / 委派导致的 key 不一致。 */
+const markInactiveByContext = (contextId: string) => {
+	for (const [key, entry] of entries) {
+		if (entry.contextId === contextId) {
+			entries.delete(key)
+		}
+	}
+}
+
 const isActive = (agentId: string, contextId: string) =>
 	entries.has(resolveKey(agentId, contextId))
 
 const isActiveByKey = (sessionKey: string) => entries.has(sessionKey)
+
+const isActiveContext = (contextId: string) =>
+	[...entries.values()].some((entry) => entry.contextId === contextId)
 
 const getEntry = (agentId: string, contextId: string) =>
 	entries.get(resolveKey(agentId, contextId))
@@ -83,7 +95,9 @@ export const chatActivityStore = {
 	markActive,
 	updateState,
 	markInactive,
+	markInactiveByContext,
 	isActive,
 	isActiveByKey,
+	isActiveContext,
 	getEntry
 }

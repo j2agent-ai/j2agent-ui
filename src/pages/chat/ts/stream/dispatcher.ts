@@ -55,6 +55,20 @@ const isChatResponsePayload = (
 	return !!payload && typeof payload === 'object' && 'message' in payload
 }
 
+const isSnapshotPayload = (
+	payload: unknown
+): payload is {
+	snapshot: true
+	answerContent?: string
+	reasoningContent?: string
+} => {
+	return (
+		!!payload &&
+		typeof payload === 'object' &&
+		(payload as { snapshot?: unknown }).snapshot === true
+	)
+}
+
 /** 用户图片已上传 OSS，回传稳定直链供气泡展示。 */
 const isUserAttachmentsReadyNotice = (event: AgentUiEventEnvelope) => {
 	if (event.eventType !== 'NOTICE') {
@@ -504,6 +518,16 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		}
 	}
 
+	const applyMessageSnapshot = (payload: {
+		answerContent?: string
+		reasoningContent?: string
+	}) => {
+		const msg = ensureTurnAssistant()
+		msg.content = payload.answerContent ?? ''
+		msg.reasoningContent = payload.reasoningContent ?? ''
+		coalesceOrphanTurnStepAssistants()
+	}
+
 	const srcFileKey = (file: FileDto) => {
 		const path = file.relativePath?.trim().replace(/\\/g, '/')
 		if (path) {
@@ -668,8 +692,12 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		ensureTurnContext(event)
 		recordEventState(event)
 		const payload = event.payload
-		if (event.eventType === 'MESSAGE' && isChatResponsePayload(payload)) {
-			applyMessageDelta(payload)
+		if (event.eventType === 'MESSAGE') {
+			if (isSnapshotPayload(payload)) {
+				applyMessageSnapshot(payload)
+			} else if (isChatResponsePayload(payload)) {
+				applyMessageDelta(payload)
+			}
 		} else if (isUserAttachmentsReadyNotice(event)) {
 			applyUserAttachmentsReady(event)
 		} else {

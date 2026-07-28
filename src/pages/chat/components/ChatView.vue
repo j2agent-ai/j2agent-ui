@@ -616,7 +616,14 @@ import type { KnowledgeCollectionDto } from '@/types/kb.model'
 import { chatActivityStore } from '../ts/activity/store'
 import { isContextStreaming } from '../ts/activity/live'
 import { chatSessionRegistry } from '../ts/session/registry'
-import { startTurn, stopTurn } from '../ts/stream/service'
+import {
+  getRememberedActiveTurnsForAgent,
+  isRememberedActiveTurn,
+  reconcileRememberedTurnAfterHistoryLoad,
+  resumeTurn,
+  startTurn,
+  stopTurn
+} from '../ts/stream/service'
 import { useActiveChatSessionBindings } from '../ts/session/bindings'
 import type { ChatSessionRuntime, PendingChatImage } from '../ts/session/types'
 import { buildSessionKey } from '../ts/session/types'
@@ -2713,6 +2720,7 @@ const copyMessage = async (content?: string) => {
 
 /** 进入智能体：列表页 forceNewChat flag 时强制新建；否则预激活会话保留，未预激活则新建 */
 const bootstrapAgentSession = async (forceNew = false) => {
+  hydrateRememberedActiveTurnsForAgent(props.agentId)
   if (forceNew || consumeForceNewChatFlag(props.agentId)) {
     await chatSessionRegistry.createNewSession(props.agentId)
   } else {
@@ -2747,6 +2755,37 @@ watch(
     await bootstrapAgentSession()
   }
 )
+
+const resumeRememberedTurnIfNeeded = (session: ChatSessionRuntime) => {
+  const targetContextId = session.contextId.value
+  if (!targetContextId || session.ws || session.dispatcher.isTerminalState.value) {
+    return
+  }
+  if (
+    !isRememberedActiveTurn(session.agentId, targetContextId) &&
+    !chatActivityStore.isActiveContext(targetContextId)
+  ) {
+    return
+  }
+  session.sendingMessage.value = false
+  resumeTurn(session, targetContextId, {
+    onScrollRequest: () => {
+      if (shouldAutoScroll()) {
+        scrollToBottom()
+      }
+    }
+  })
+}
+
+const hydrateRememberedActiveTurnsForAgent = (agentId: string) => {
+  for (const remembered of getRememberedActiveTurnsForAgent(agentId)) {
+    chatActivityStore.markActive(
+      remembered.agentId,
+      remembered.contextId,
+      'THINKING'
+    )
+  }
+}
 
 /** Agent 元数据异步到达后补拉热门问题 */
 watch(
@@ -3001,6 +3040,9 @@ const showSessionView = async (targetContextId: string) => {
     }
   }
 
+  if (!reconcileRememberedTurnAfterHistoryLoad(session, targetContextId)) {
+    resumeRememberedTurnIfNeeded(session)
+  }
   if (activeSession.value?.pendingScroll.value) {
     activeSession.value.pendingScroll.value = false
   }

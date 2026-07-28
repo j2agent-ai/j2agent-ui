@@ -100,7 +100,7 @@ import { t } from '@ai-system/lib'
 import { ElTooltip } from 'element-plus'
 import { computed, nextTick, ref, onUnmounted, watch } from 'vue'
 import { getLangStorage, normalizeLangMode } from '@ai-system/utils'
-import { goTo, goToLogout } from '@/routes'
+import { goTo } from '@/routes'
 import {
 	AI_HUB_CHAT_PATH,
 	KNOWLEDGE_QA_CHAT_PATH
@@ -174,7 +174,7 @@ const languageOptions = computed(() => [
 ])
 
 function handleLogout() {
-	void goToLogout()
+	void goTo('/logout')
 }
 
 function syncMenuTitleOverflow() {
