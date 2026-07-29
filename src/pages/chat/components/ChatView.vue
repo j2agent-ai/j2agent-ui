@@ -570,7 +570,6 @@ import {
   shallowRef,
   watch
 } from 'vue'
-import { consumeForceNewChatFlag } from '@/routes'
 import {
   ElAvatar,
   ElButton,
@@ -599,6 +598,7 @@ import {
   ChatRequestDto,
   FileDto,
   formatSrcFileLabel,
+  HistoryContextItem,
   MessageDto
 } from '@/types/ai.types'
 import {
@@ -609,6 +609,7 @@ import { t } from '@ai-system/lib'
 import {
   addMessageFeedback,
   getHistoryContext,
+  getHistoryContextList,
   getQaTemplate
 } from '@/api/ai.api'
 import { getKnowledgeCollections } from '@/api/kb/kb.api'
@@ -670,6 +671,8 @@ import {
 
 const showChatManage = ref(false)
 const chatManageRef = ref(null)
+/** 进入智能体时，10 分钟内更新过的最新历史会话自动作为当前会话。 */
+const RECENT_AGENT_SESSION_WINDOW_MS = 10 * 60 * 1000
 /** 聊天主区域根节点，用于写入底部悬浮层高度 CSS 变量 */
 const chatViewRef = ref<HTMLElement>()
 /** 监听消息列表高度变化（图片/iframe/图表异步撑高），跟随态下瞬时贴底 */
@@ -2718,13 +2721,43 @@ const copyMessage = async (content?: string) => {
   }
 }
 
-/** 进入智能体：列表页 forceNewChat flag 时强制新建；否则预激活会话保留，未预激活则新建 */
+const findRecentHistorySessionForAgent = async (
+  agentId: string
+): Promise<HistoryContextItem | null> => {
+  try {
+    const res = await getHistoryContextList(0, 1, agentId)
+    const latest = (res.data?.data ?? [])[0] as HistoryContextItem | undefined
+    if (!latest?.contextId) {
+      return null
+    }
+    const updatedAt = latest.lastUpdateTime ?? latest.lastAccessTime ?? 0
+    if (!updatedAt || Date.now() - updatedAt > RECENT_AGENT_SESSION_WINDOW_MS) {
+      return null
+    }
+    return latest
+  } catch (error) {
+    console.error('[ChatView] resolve recent history session failed', error)
+    return null
+  }
+}
+
+/** 进入智能体：预激活会话优先；否则自动进入 10 分钟内最新历史会话；再否则新建 */
 const bootstrapAgentSession = async (forceNew = false) => {
   hydrateRememberedActiveTurnsForAgent(props.agentId)
-  if (forceNew || consumeForceNewChatFlag(props.agentId)) {
+  if (forceNew) {
     await chatSessionRegistry.createNewSession(props.agentId)
   } else {
-    await chatSessionRegistry.enterAgent(props.agentId)
+    const current = chatSessionRegistry.getActiveSession()
+    if (current?.agentId === props.agentId) {
+      current.lastAccessedAt = Date.now()
+    } else {
+      const recent = await findRecentHistorySessionForAgent(props.agentId)
+      if (recent?.contextId) {
+        await showSessionView(recent.contextId)
+      } else {
+        await chatSessionRegistry.createNewSession(props.agentId)
+      }
+    }
   }
   hydrateKnowledgeCollectionSelection()
   await ensureKnowledgeCollectionsLoaded()

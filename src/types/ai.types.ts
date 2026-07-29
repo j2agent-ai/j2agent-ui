@@ -238,8 +238,6 @@ export type HistoryContextItem = {
 	tittle?: string
 	// 最后访问时间
 	lastUpdateTime?: number
-	/** @deprecated 历史字段名 */
-	lastAccessTime?: number
 }
 
 export type ChatContextDto = {
