@@ -51,23 +51,6 @@ export default routes
 export const NAV_POST_LOGIN_PATH_KEY = 'app:postLoginPath'
 /** 普通用户（非管理员）登录后的默认落点：首页 */
 export const DEFAULT_USER_LANDING_PATH = '/'
-/** 智能体列表进入聊天时强制新建会话（AgentListPage 写入，ChatView 读取后清除） */
-export const NAV_FORCE_NEW_CHAT_KEY = 'app:forceNewChat'
-
-export const setForceNewChatFlag = (agentId: string) => {
-	sessionStorage.setItem(NAV_FORCE_NEW_CHAT_KEY, agentId)
-}
-
-/** 若 flag 与当前 agentId 匹配则消费并返回 true */
-export const consumeForceNewChatFlag = (agentId: string): boolean => {
-	const flagged = sessionStorage.getItem(NAV_FORCE_NEW_CHAT_KEY)
-	if (flagged === agentId) {
-		sessionStorage.removeItem(NAV_FORCE_NEW_CHAT_KEY)
-		return true
-	}
-	return false
-}
-
 /** 应用内 SPA 导航：只允许 router.push，禁止 replace / location / redirect */
 export const goTo = (path: string) => {
 	const router = getAppRouter()
