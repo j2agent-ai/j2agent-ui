@@ -242,6 +242,7 @@ onUnmounted(() => {
 })
 
 async function handleSendCode() {
+	if (sendingCode.value || sendCodeCooldown.value > 0) return
 	if (!captchaToken.value) {
 		await forgotForm.value?.validateField('captcha').catch(() => {})
 		return
@@ -271,7 +272,7 @@ async function handleSendCode() {
 
 async function handleSubmit() {
 	const form = forgotForm.value
-	if (!form) return
+	if (!form || loading.value) return
 	try {
 		await form.validate()
 	} catch {
@@ -285,10 +286,9 @@ async function handleSubmit() {
 			code: formData.code.trim()
 		})
 		ElMessage.success(t('user.resetPassword.success'))
-		void goTo('/login')
+		await goTo('/login')
 	} catch (e: unknown) {
 		await showErrorAlert(extractApiErrorMessage(e, t('user.resetPassword.failed')))
-	} finally {
 		loading.value = false
 	}
 }

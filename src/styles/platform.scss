@@ -107,11 +107,68 @@
 	}
 }
 
-/* 全局覆盖 Element Plus Loading 蒙层：高斯模糊 + 染色遮罩 */
+/* 全局覆盖 Element Plus Loading：半透明毛玻璃蒙层 */
 .el-loading-mask {
-	backdrop-filter: blur(var(--n-glass-blur-4)) saturate(var(--n-glass-saturate));
-	-webkit-backdrop-filter: blur(var(--n-glass-blur-4)) saturate(var(--n-glass-saturate));
-	background-color: var(--n-color-bg-glass-overlay) !important;
+	background-color: color-mix(
+		in srgb,
+		var(--n-color-font-dark, #000) 12%,
+		transparent
+	) !important;
+	backdrop-filter: blur(var(--n-glass-blur-1)) saturate(var(--n-glass-saturate));
+	-webkit-backdrop-filter: blur(var(--n-glass-blur-1)) saturate(var(--n-glass-saturate));
+}
+
+/* 全屏导航/退出：轻模糊背景 + 中央毛玻璃信息胶囊 */
+.el-loading-mask.n-loading--glass {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-color: color-mix(
+		in srgb,
+		var(--n-color-font-dark, #000) 14%,
+		transparent
+	) !important;
+	backdrop-filter: blur(var(--n-glass-blur-1)) saturate(var(--n-glass-saturate));
+	-webkit-backdrop-filter: blur(var(--n-glass-blur-1)) saturate(var(--n-glass-saturate));
+
+	.el-loading-spinner {
+		position: static;
+		top: auto;
+		left: auto;
+		width: auto;
+		min-width: 220px;
+		margin: 0;
+		padding: 36px 52px 32px;
+		border-radius: var(--n-radius-quadruple);
+		background: var(--n-color-bg-glass);
+		backdrop-filter: blur(var(--n-glass-blur-3)) saturate(var(--n-glass-saturate));
+		-webkit-backdrop-filter: blur(var(--n-glass-blur-3)) saturate(var(--n-glass-saturate));
+		box-shadow: var(--n-shadow-elevation-3);
+		border: 1px solid var(--n-color-border-soft);
+		isolation: isolate;
+		box-sizing: border-box;
+
+		.circular {
+			width: 50px;
+			height: 50px;
+		}
+
+		.el-loading-text {
+			margin: 16px 0 0;
+			color: var(--n-color-text-primary);
+			font-size: var(--n-font-size-3, 16px);
+			font-weight: 500;
+			letter-spacing: 0.02em;
+		}
+
+		.circular .path {
+			stroke: var(--el-color-primary);
+		}
+
+		i {
+			color: var(--el-color-primary);
+		}
+	}
 }
 
 /** 毛玻璃 elevation mixin：$level 1-4 对应弱/标准/强/浮层（无描边，靠阴影过渡） */

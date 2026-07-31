@@ -3,6 +3,7 @@ import enKb from './knowledgeBase/en-kb.js'
 
 export default {
 	'common.submit': 'Submit',
+	'common.loading': 'Loading…',
 	'common.delete': 'Delete',
 	'common.cancel': 'Cancel',
 	'common.edit': 'Edit',

@@ -1,4 +1,6 @@
 import type { RouteRecordRaw } from 'vue-router'
+import { ElLoading } from 'element-plus'
+import { t } from '@ai-system/lib'
 import { ROLE_USER } from '@/utils/role'
 import { getAppRouter } from '@/routes/router-holder'
 
@@ -60,4 +62,36 @@ export const goTo = (path: string) => {
 	}
 	const normalized = path.startsWith('/') ? path : `/${path}`
 	return router.push(normalized)
+}
+
+/** 菜单/首页等入口跳转中的全屏加载锁，防止连点重复 push */
+let navigating = false
+let navLoadingInstance: { close: () => void } | null = null
+
+/** 创建毛玻璃风格的全屏 Loading */
+export function createGlassLoading(text?: string) {
+	return ElLoading.service({
+		lock: true,
+		text: text ?? t('common.loading'),
+		customClass: 'n-loading--glass',
+		background: 'transparent'
+	})
+}
+
+/** 带全屏 loading 的导航；跳转进行中再次调用会被忽略 */
+export const goToWithLoading = async (path: string): Promise<void> => {
+	if (navigating) {
+		return
+	}
+	navigating = true
+	navLoadingInstance = createGlassLoading()
+	try {
+		await goTo(path)
+	} catch {
+		// 同路径重复导航等错误忽略，仍需关闭遮罩
+	} finally {
+		navLoadingInstance?.close()
+		navLoadingInstance = null
+		navigating = false
+	}
 }

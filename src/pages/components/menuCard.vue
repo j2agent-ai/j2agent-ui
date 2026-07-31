@@ -26,29 +26,29 @@
 		<div class="menu-card-content">
 			<ul v-if="props.mode === 'system'" class="menu-card-list">
 				<hr />
-				<li class="menu-card-item" @click="goTo('/')">
+				<li class="menu-card-item" @click="navigateTo('/')">
 					{{ '🏠 ' + t('homepage') }}
 				</li>
 				<hr />
-				<li class="menu-card-item" v-if="canAccessChat" @click="goTo(AI_HUB_CHAT_PATH)">
+				<li class="menu-card-item" v-if="canAccessChat" @click="navigateTo(AI_HUB_CHAT_PATH)">
 					{{ '🤖 ' + t('ai.hub') }}
 				</li>
-				<li class="menu-card-item" v-if="canAccessChat" @click="goTo(KNOWLEDGE_QA_CHAT_PATH)">
+				<li class="menu-card-item" v-if="canAccessChat" @click="navigateTo(KNOWLEDGE_QA_CHAT_PATH)">
 					{{ '📚 ' + t('ai.knowledge.qa') }}
 				</li>
-				<li class="menu-card-item" v-if="canAccessKbAdmin" @click="goTo('/kb')">
+				<li class="menu-card-item" v-if="canAccessKbAdmin" @click="navigateTo('/kb')">
 					{{ '📚 ' + t('kb.knowledge.base') }}
 				</li>
-				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/agents')">
+				<li class="menu-card-item" v-if="canAccessAdmin" @click="navigateTo('/agents')">
 					{{ '💡 ' + t('ai.assistant') }}
 				</li>
-				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/mcp')">
+				<li class="menu-card-item" v-if="canAccessAdmin" @click="navigateTo('/mcp')">
 					{{ '🧩 ' + t('mcp.title') }}
 				</li>
-				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/files')">
+				<li class="menu-card-item" v-if="canAccessAdmin" @click="navigateTo('/files')">
 					{{ '📁 ' + t('files.title') }}
 				</li>
-				<li class="menu-card-item" v-if="canAccessAdmin" @click="goTo('/settings')">
+				<li class="menu-card-item" v-if="canAccessAdmin" @click="navigateTo('/settings')">
 					{{ '⚙️ ' + t('settings.title') }}
 				</li>
 				<hr />
@@ -65,7 +65,7 @@
 			</ul>
 			<ul v-else class="menu-card-list">
 				<hr />
-				<li class="menu-card-item" @click="goTo('/account')">
+				<li class="menu-card-item" @click="navigateTo('/account')">
 					{{ t('account.title') }}
 				</li>
 				<hr />
@@ -100,7 +100,7 @@ import { t } from '@ai-system/lib'
 import { ElTooltip } from 'element-plus'
 import { computed, nextTick, ref, onUnmounted, watch } from 'vue'
 import { getLangStorage, normalizeLangMode } from '@ai-system/utils'
-import { goTo } from '@/routes'
+import { goToWithLoading } from '@/routes'
 import {
 	AI_HUB_CHAT_PATH,
 	KNOWLEDGE_QA_CHAT_PATH
@@ -173,8 +173,14 @@ const languageOptions = computed(() => [
 	{ label: t('settings.language.en'), value: 'en' }
 ])
 
+function navigateTo(path: string) {
+	hide()
+	void goToWithLoading(path)
+}
+
 function handleLogout() {
-	void goTo('/logout')
+	hide()
+	void goToWithLoading('/logout')
 }
 
 function syncMenuTitleOverflow() {
