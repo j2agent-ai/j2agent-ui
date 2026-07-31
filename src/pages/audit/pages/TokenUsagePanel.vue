@@ -59,15 +59,7 @@
 						<el-option label="UNAVAILABLE" value="UNAVAILABLE" />
 					</el-select>
 				</template>
-				<el-date-picker
-					v-model="dateRange"
-					type="datetimerange"
-					value-format="x"
-					:shortcuts="dateRangeShortcuts"
-					:start-placeholder="t('audit.filter.from')"
-					:end-placeholder="t('audit.filter.to')"
-					@change="resetAndLoad"
-				/>
+				<GlassTimeRangePicker v-model="dateRange" @change="resetAndLoad" />
 				<el-button type="primary" @click="resetAndLoad">
 					{{ t('common.search') }}
 				</el-button>
@@ -199,7 +191,6 @@
 import { onMounted, ref } from 'vue'
 import {
 	ElButton,
-	ElDatePicker,
 	ElInput,
 	ElMessage,
 	ElOption,
@@ -215,8 +206,8 @@ import type {
 	AuditTokenRecord,
 	AuditTokenSummaryItem
 } from '@/types/audit.types'
+import GlassTimeRangePicker from '@/components/GlassTimeRangePicker/GlassTimeRangePicker.vue'
 import AuditUserPicker from '@/pages/audit/components/AuditUserPicker.vue'
-import { buildAuditDateRangeShortcuts } from '@/pages/audit/ts/dateRangeShortcuts'
 
 const viewMode = ref<'overview' | 'detail'>('overview')
 const selectedUserId = ref<string>()
@@ -226,7 +217,6 @@ const modelName = ref('')
 const callKind = ref<string>()
 const usageStatus = ref<string>()
 const dateRange = ref<[string, string] | null>(null)
-const dateRangeShortcuts = buildAuditDateRangeShortcuts()
 
 const loading = ref(false)
 const page = ref(1)
@@ -367,7 +357,7 @@ onMounted(() => {
 		width: 160px;
 	}
 
-	.el-input {
+	.el-input:not(.el-date-editor) {
 		width: 160px;
 	}
 

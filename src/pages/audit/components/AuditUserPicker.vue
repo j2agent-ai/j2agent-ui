@@ -275,15 +275,10 @@ function clearSelection() {
 	height: 32px;
 	padding: 0 10px 0 12px;
 	box-sizing: border-box;
-	border: 1px solid var(--el-border-color);
-	border-radius: var(--el-border-radius-base);
-	background: var(--el-fill-color-blank);
 	cursor: pointer;
-	transition: border-color 0.15s ease;
+	@include n-glass-filter-control;
 
-	&:hover,
 	&:focus {
-		border-color: var(--el-color-primary);
 		outline: none;
 	}
 }
@@ -294,12 +289,12 @@ function clearSelection() {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	font-size: 14px;
-	color: var(--el-text-color-regular);
+	font-size: 13px;
+	color: var(--n-color-text-primary);
 	text-align: left;
 
 	&.is-placeholder {
-		color: var(--el-text-color-placeholder);
+		color: var(--n-color-text-muted);
 	}
 }
 
@@ -310,14 +305,14 @@ function clearSelection() {
 	padding: 0;
 	border: 0;
 	border-radius: 50%;
-	background: var(--el-text-color-placeholder);
+	background: color-mix(in srgb, var(--n-color-text-muted) 70%, transparent);
 	color: #fff;
 	line-height: 14px;
 	font-size: 12px;
 	cursor: pointer;
 
 	&:hover {
-		background: var(--el-text-color-secondary);
+		background: var(--n-color-text-muted);
 	}
 }
 
@@ -328,7 +323,7 @@ function clearSelection() {
 	margin-left: 2px;
 	border-left: 4px solid transparent;
 	border-right: 4px solid transparent;
-	border-top: 5px solid var(--el-text-color-placeholder);
+	border-top: 5px solid var(--n-color-text-muted);
 }
 
 .picker-body {

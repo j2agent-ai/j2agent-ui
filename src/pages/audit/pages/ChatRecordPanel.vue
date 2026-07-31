@@ -28,15 +28,7 @@
 					@keyup.enter="resetAndLoad"
 					@clear="resetAndLoad"
 				/>
-				<el-date-picker
-					v-model="dateRange"
-					type="datetimerange"
-					value-format="x"
-					:shortcuts="dateRangeShortcuts"
-					:start-placeholder="t('audit.filter.from')"
-					:end-placeholder="t('audit.filter.to')"
-					@change="resetAndLoad"
-				/>
+				<GlassTimeRangePicker v-model="dateRange" @change="resetAndLoad" />
 				<el-button type="primary" @click="resetAndLoad">
 					{{ t('common.search') }}
 				</el-button>
@@ -191,7 +183,6 @@
 import { computed, nextTick, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
 	ElButton,
-	ElDatePicker,
 	ElDrawer,
 	ElInput,
 	ElMessage,
@@ -203,8 +194,8 @@ import { t } from '@ai-system/lib'
 import { getAuditContext, getAuditContexts } from '@/api/audit.api'
 import type { AuditContextItem, AuditMessage } from '@/types/audit.types'
 import type { UserDto } from '@/api/user.api'
+import GlassTimeRangePicker from '@/components/GlassTimeRangePicker/GlassTimeRangePicker.vue'
 import AuditUserPicker from '@/pages/audit/components/AuditUserPicker.vue'
-import { buildAuditDateRangeShortcuts } from '@/pages/audit/ts/dateRangeShortcuts'
 import {
 	buildMdViewerPrefetchRootMargin,
 	cancelPendingMarkdownRenderWork,
@@ -218,7 +209,6 @@ const selectedUsername = ref<string>()
 const titleKeyword = ref('')
 const agentId = ref('')
 const dateRange = ref<[string, string] | null>(null)
-const dateRangeShortcuts = buildAuditDateRangeShortcuts()
 
 const loading = ref(false)
 const page = ref(1)
@@ -473,7 +463,7 @@ onUnmounted(() => {
 }
 
 .toolbar__filters {
-	.el-input {
+	.el-input:not(.el-date-editor) {
 		width: 180px;
 	}
 
