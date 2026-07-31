@@ -10,6 +10,7 @@ import type {
 } from '@/types/ai.types'
 import { locale, t } from '@ai-system/lib'
 import { agentNameMap, matchesAgentI18nName, registeredAgents } from '../agent/name-registry'
+import { isSyntheticSubAgentCallToolName } from './sub-agent-trail'
 
 // ---------------------------------------------------------------------------
 // 状态机文案与步骤展示
@@ -111,6 +112,10 @@ const isSubAgentCallTrailName = (name?: string) => {
 		return false
 	}
 	const trimmed = name.trim()
+	// 实时解析失败时可能仍落成 call_sub_agent，须按子智能体调用展示
+	if (isSyntheticSubAgentCallToolName(trimmed)) {
+		return true
+	}
 	if (agentNameMap.value.has(trimmed)) {
 		return true
 	}
@@ -142,9 +147,14 @@ export const formatStepLabelParts = (
 	) {
 		stateText = t('ai.agent.state.CALLING_SUB_AGENT')
 	}
-	const toolName =
+	const rawToolName =
 		TOOL_NAME_STATES.includes(step.state) && step.toolName?.trim()
 			? step.toolName.trim()
+			: undefined
+	// 合成工具名不展示给用户，避免出现 `call_sub_agent`
+	const toolName =
+		rawToolName && !isSyntheticSubAgentCallToolName(rawToolName)
+			? rawToolName
 			: undefined
 	return { stateText, toolName }
 }

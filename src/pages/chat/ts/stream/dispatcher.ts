@@ -24,6 +24,11 @@ import {
 import { getAgentDisplayName } from '../agent/name-registry'
 import { resolveAttachmentsDisplayUrls } from '../media/attachment'
 import { relativePathFromRepoFileUrl } from '@/utils/repoFileUrl'
+import {
+	isSyntheticSubAgentCallToolName,
+	parseAgentIdFromArguments,
+	shouldUpgradeSubAgentTrailName
+} from './sub-agent-trail'
 
 type DispatcherOptions = {
 	messageContext: Ref<MessageDto[]>
@@ -243,6 +248,7 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 
 	/**
 	 * 向当前轮次轨迹追加状态：同 state 仅在新工具名出现时追加节点，避免 TOOL/COMPLETE 携带 transition.from 却无 toolName 时误判为新节点。
+	 * 若末步已是 call_sub_agent 合成名、后续解析出真实 agent 名，则就地升级。
 	 */
 	const appendCurrentTurnState = (state?: AgentState, toolName?: string, ts?: number) => {
 		if (!state || !ALL_AGENT_STATES.includes(state)) {
@@ -252,6 +258,16 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 			currentTurnStates.value[currentTurnStates.value.length - 1]
 		if (lastStateItem && lastStateItem.state === state) {
 			if (toolName && !lastStateItem.toolName) {
+				lastStateItem.toolName = toolName
+				if (ts != null) {
+					lastStateItem.ts = ts
+				}
+				return
+			}
+			if (
+				toolName &&
+				shouldUpgradeSubAgentTrailName(lastStateItem.toolName, toolName)
+			) {
 				lastStateItem.toolName = toolName
 				if (ts != null) {
 					lastStateItem.ts = ts
@@ -306,23 +322,6 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		}
 	}
 
-	const parseAgentIdFromArguments = (
-		argumentsJson: unknown
-	): string | undefined => {
-		if (typeof argumentsJson !== 'string' || !argumentsJson.trim()) {
-			return undefined
-		}
-		try {
-			const parsed = JSON.parse(argumentsJson) as Record<string, unknown>
-			const agentId = parsed.agentId
-			return typeof agentId === 'string' && agentId.trim()
-				? agentId.trim()
-				: undefined
-		} catch {
-			return undefined
-		}
-	}
-
 	/** LOAD_SKILL 轨迹括号内优先展示 skillName（含 relative_path），否则回退 toolName。 */
 	const resolveTrailDisplayName = (event: AgentUiEventEnvelope) => {
 		if (event.eventType !== 'TOOL') {
@@ -344,11 +343,7 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 			}
 		}
 		const toolName = resolveToolName(event)
-		if (
-			toolName === 'call_sub_agent' ||
-			toolName === 'delegate_to_agent' ||
-			toolName === 'call_agent'
-		) {
+		if (isSyntheticSubAgentCallToolName(toolName)) {
 			const agentId = parseAgentIdFromArguments(payload.arguments)
 			if (agentId) {
 				return getAgentDisplayName(agentId)
