@@ -37,6 +37,13 @@
 
 		<div class="table-wrap">
 			<el-table v-loading="loading" :data="sessions" height="100%">
+				<el-table-column :label="t('common.action')" width="100" fixed="left">
+					<template #default="{ row }">
+						<el-button link type="primary" @click="openMessages(row)">
+							{{ t('audit.chat.view') }}
+						</el-button>
+					</template>
+				</el-table-column>
 				<el-table-column
 					prop="title"
 					:label="t('audit.col.title')"
@@ -74,13 +81,6 @@
 				>
 					<template #default="{ row }">
 						{{ formatTime(row.lastUpdateTime) }}
-					</template>
-				</el-table-column>
-				<el-table-column :label="t('common.action')" width="100" fixed="right">
-					<template #default="{ row }">
-						<el-button link type="primary" @click="openMessages(row)">
-							{{ t('audit.chat.view') }}
-						</el-button>
 					</template>
 				</el-table-column>
 			</el-table>
