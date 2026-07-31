@@ -45,6 +45,9 @@
 				<li class="menu-card-item" v-if="canAccessAdmin" @click="navigateTo('/mcp')">
 					{{ '🧩 ' + t('mcp.title') }}
 				</li>
+				<li class="menu-card-item" v-if="canAccessAdmin" @click="navigateTo('/audit')">
+					{{ '📋 ' + t('audit.title') }}
+				</li>
 				<li class="menu-card-item" v-if="canAccessAdmin" @click="navigateTo('/files')">
 					{{ '📁 ' + t('files.title') }}
 				</li>

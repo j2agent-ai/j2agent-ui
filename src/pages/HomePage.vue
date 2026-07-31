@@ -39,6 +39,11 @@
 				<h3>{{ t('mcp.title') }}</h3>
 				<p>{{ t('mcp.desc') }}</p>
 			</div>
+			<div class="feature-card" v-if="canAccessAdmin" @click="goToWithLoading('/audit')">
+				<div class="card-icon">📋</div>
+				<h3>{{ t('audit.title') }}</h3>
+				<p>{{ t('audit.desc') }}</p>
+			</div>
 			<div class="feature-card" v-if="canAccessAdmin" @click="goToWithLoading('/files')">
 				<div class="card-icon">📁</div>
 				<h3>{{ t('files.title') }}</h3>
