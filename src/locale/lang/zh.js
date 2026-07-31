@@ -3,6 +3,7 @@ import zhKb from './knowledgeBase/zh-kb.js'
 
 export default {
 	'common.submit': '提交',
+	'common.loading': '加载中…',
 	'common.delete': '删除',
 	'common.cancel': '取消',
 	'common.edit': '编辑',

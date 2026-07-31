@@ -20,7 +20,10 @@ class BaseFeedbackService {
 	}
 	loading(msg: string) {
 		return ElLoading.service({
-			text: msg
+			text: msg,
+			lock: true,
+			customClass: 'n-loading--glass',
+			background: 'transparent'
 		})
 	}
 	confirm(

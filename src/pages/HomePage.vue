@@ -9,7 +9,7 @@
 			<div
 				class="feature-card"
 				v-if="canAccessChat"
-				@click="goTo(AI_HUB_CHAT_PATH)"
+				@click="goToWithLoading(AI_HUB_CHAT_PATH)"
 			>
 				<div class="card-icon">🤖</div>
 				<h3>{{ t('ai.hub') }}</h3>
@@ -18,33 +18,33 @@
 			<div
 				class="feature-card"
 				v-if="canAccessChat"
-				@click="goTo(KNOWLEDGE_QA_CHAT_PATH)"
+				@click="goToWithLoading(KNOWLEDGE_QA_CHAT_PATH)"
 			>
 				<div class="card-icon">📚</div>
 				<h3>{{ t('ai.knowledge.qa') }}</h3>
 				<p>{{ t('ai.knowledge.qa.desc') }}</p>
 			</div>
-			<div class="feature-card" v-if="canAccessKbAdmin" @click="goTo('/kb')">
+			<div class="feature-card" v-if="canAccessKbAdmin" @click="goToWithLoading('/kb')">
 				<div class="card-icon">📚</div>
 				<h3>{{ t('kb.knowledge.base') }}</h3>
 				<p>{{ t('kb.management') }}</p>
 			</div>
-      <div class="feature-card" v-if="canAccessAdmin" @click="goTo('/agents')">
+      <div class="feature-card" v-if="canAccessAdmin" @click="goToWithLoading('/agents')">
         <div class="card-icon">💡</div>
         <h3>{{ t('ai.assistant') }}</h3>
         <p>{{ t('ai.assistant.desc') }}</p>
       </div>
-			<div class="feature-card" v-if="canAccessAdmin" @click="goTo('/mcp')">
+			<div class="feature-card" v-if="canAccessAdmin" @click="goToWithLoading('/mcp')">
 				<div class="card-icon">🧩</div>
 				<h3>{{ t('mcp.title') }}</h3>
 				<p>{{ t('mcp.desc') }}</p>
 			</div>
-			<div class="feature-card" v-if="canAccessAdmin" @click="goTo('/files')">
+			<div class="feature-card" v-if="canAccessAdmin" @click="goToWithLoading('/files')">
 				<div class="card-icon">📁</div>
 				<h3>{{ t('files.title') }}</h3>
 				<p>{{ t('files.desc') }}</p>
 			</div>
-			<div class="feature-card" v-if="canAccessAdmin" @click="goTo('/settings')">
+			<div class="feature-card" v-if="canAccessAdmin" @click="goToWithLoading('/settings')">
 				<div class="card-icon">⚙️</div>
 				<h3>{{ t('settings.title') }}</h3>
 				<p>{{ t('settings.desc') }}</p>
@@ -58,7 +58,7 @@ import { useRoute } from 'vue-router'
 import { debounce, t } from '@ai-system/lib'
 import topBar from '@/pages/components/topBar.vue'
 import { getNewContextId } from '@/api/ai.api'
-import { goTo } from '@/routes'
+import { goToWithLoading } from '@/routes'
 import {
 	AI_HUB_CHAT_PATH,
 	KNOWLEDGE_QA_CHAT_PATH

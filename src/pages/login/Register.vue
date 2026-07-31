@@ -234,6 +234,7 @@ onMounted(async () => {
 })
 
 async function handleSendCode() {
+	if (sendingCode.value || sendCodeCooldown.value > 0) return
 	if (!captchaToken.value) {
 		await registerForm.value?.validateField('captcha').catch(() => {})
 		return
@@ -263,7 +264,7 @@ async function handleSendCode() {
 
 async function handleRegister() {
 	const form = registerForm.value
-	if (!form) return
+	if (!form || loading.value) return
 	try {
 		await form.validate()
 	} catch {
@@ -277,10 +278,9 @@ async function handleRegister() {
 			code: formData.code.trim()
 		})
 		ElMessage.success(t('user.emailRegister.success'))
-		void goTo('/login')
+		await goTo('/login')
 	} catch (e: unknown) {
 		await showRegisterErrorAlert(extractApiErrorMessage(e, t('user.emailRegister.failed')))
-	} finally {
 		loading.value = false
 	}
 }

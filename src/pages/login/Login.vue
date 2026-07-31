@@ -180,7 +180,7 @@ function onDialogClose() {
 
 async function submitLogin() {
 	const form = loginForm.value
-	if (!form) return
+	if (!form || loading.value) return
 	try {
 		await form.validate()
 	} catch {
@@ -201,10 +201,10 @@ async function submitLogin() {
 		try {
 			const sessionResponse = await getSessionInfo()
 			setSessionInfo(sessionResponse.data)
-			void goTo(resolvePostLoginPath())
+			await goTo(resolvePostLoginPath())
 		} catch (error) {
 			setSessionInfo(null)
-			void goTo('/')
+			await goTo('/')
 		}
 	} catch (e: unknown) {
 		console.log(e)
@@ -213,7 +213,6 @@ async function submitLogin() {
 			resetCaptcha()
 			ElMessage.error(t('login.fail'))
 		}
-	} finally {
 		loading.value = false
 	}
 }
