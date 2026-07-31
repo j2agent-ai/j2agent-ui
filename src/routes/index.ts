@@ -10,6 +10,7 @@ import mcp from '@/routes/mcp'
 import settings from '@/routes/settings'
 import account from '@/routes/account'
 import files from '@/routes/files'
+import audit from '@/routes/audit'
 
 // 业务系统路由定义
 const routes = [
@@ -44,6 +45,7 @@ const routes = [
 	...mcp,
 	...settings,
 	...account,
+	...audit,
 	...files
 ] as RouteRecordRaw[]
 

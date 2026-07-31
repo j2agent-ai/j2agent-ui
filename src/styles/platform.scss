@@ -209,6 +209,25 @@
 	isolation: isolate;
 }
 
+/** 筛选栏控件（input / select / 自定义触发器）统一毛玻璃描边风格 */
+@mixin n-glass-filter-control {
+	@include n-glass-surface(1);
+	border: 1px solid var(--n-color-border-soft);
+	border-radius: 8px;
+	box-shadow: none !important;
+	transition:
+		border-color 0.15s ease,
+		box-shadow 0.15s ease;
+
+	&:hover,
+	&.is-active,
+	&.is-focus,
+	&.is-focused {
+		border-color: color-mix(in srgb, var(--el-color-primary) 55%, transparent);
+		box-shadow: var(--n-shadow-elevation-2) !important;
+	}
+}
+
 @mixin n-glass-card-surface {
 	@include n-glass-surface(2);
 	transition:
@@ -511,4 +530,62 @@
 			var(--n-color-bg-glass-strong)
 		) !important;
 	}
+}
+
+/* ---------- 全局表单控件：与筛选栏毛玻璃风格统一 ---------- */
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+	@include n-glass-filter-control;
+}
+
+.el-input__wrapper,
+.el-select__wrapper {
+	min-height: 32px;
+}
+
+.el-textarea__inner {
+	min-height: auto;
+	padding: 8px 12px;
+}
+
+/*
+ * input-number：完全退出全局毛玻璃描边。
+ * 步进器依赖 EP 默认 inset box-shadow + 控件左边框，再套 border 会对不齐。
+ */
+.el-input-number {
+	.el-input__wrapper,
+	.el-input__wrapper:hover,
+	.el-input__wrapper.is-focus,
+	.el-input__wrapper.is-focused {
+		background: var(--el-fill-color-blank) !important;
+		backdrop-filter: none !important;
+		-webkit-backdrop-filter: none !important;
+		border: none !important;
+		border-radius: var(--el-border-radius-base) !important;
+		box-shadow: 0 0 0 1px var(--el-input-border-color, var(--el-border-color)) inset !important;
+		isolation: auto;
+		min-height: var(--el-component-size, 32px);
+	}
+
+	&:hover .el-input__wrapper {
+		box-shadow: 0 0 0 1px var(--el-border-color-hover, var(--el-color-primary-light-5)) inset !important;
+	}
+
+	&:focus-within .el-input__wrapper.is-focus,
+	&:focus-within .el-input__wrapper {
+		box-shadow: 0 0 0 1px var(--el-color-primary) inset !important;
+	}
+}
+
+.el-input.is-disabled .el-input__wrapper,
+.el-select.is-disabled .el-select__wrapper,
+.el-textarea.is-disabled .el-textarea__inner {
+	opacity: 0.72;
+	cursor: not-allowed;
+}
+
+/** 自定义触发器也可直接挂此类以对齐全局输入风格 */
+.n-glass-filter-control {
+	@include n-glass-filter-control;
 }

@@ -174,68 +174,68 @@
 			</div>
 		</div>
 		<div class="hit-test-form">
-			<el-form ref="formRef" :model="formData" label-width="120px">
-				<el-form-item
-					label="Collection"
-					prop="collection"
-					:rules="[{ required: true, message: t('common.input.required') }]"
-				>
-					<el-select
-						v-model="formData.collection"
-						:placeholder="t('kb.collection.select.placeholder')"
-						clearable
-						filterable
-						style="width: 260px"
-						:loading="collectionLoading"
-						@change="retrieveResultList = []"
+			<el-form ref="formRef" :model="formData" label-width="120px" class="hit-test-form__body">
+				<div class="hit-test-form__row">
+					<el-form-item
+						label="Collection"
+						prop="collection"
+						:rules="[{ required: true, message: t('common.input.required') }]"
 					>
-						<el-option
-							v-for="collection in collectionOptions"
-							:key="collection.collection"
-							:label="formatCollectionLabel(collection)"
-							:value="collection.collection"
+						<el-select
+							v-model="formData.collection"
+							:placeholder="t('kb.collection.select.placeholder')"
+							clearable
+							filterable
+							class="collection-select"
+							:loading="collectionLoading"
+							@change="retrieveResultList = []"
+						>
+							<el-option
+								v-for="collection in collectionOptions"
+								:key="collection.collection"
+								:label="formatCollectionLabel(collection)"
+								:value="collection.collection"
+							/>
+						</el-select>
+					</el-form-item>
+					<el-form-item
+						label="TOP-K"
+						prop="topK"
+						:rules="[{ required: true, message: t('common.input.required') }]"
+					>
+						<el-input-number
+							class="top-k-input"
+							v-model="formData.topK"
+							:min="1"
+							:max="15"
+							controls-position="right"
 						/>
-					</el-select>
-				</el-form-item>
-				<el-form-item
-					label="TOP-K"
-					prop="topK"
-					:rules="[{ required: true, message: t('common.input.required') }]"
-				>
-					<el-input-number
-						class="top-k-input"
-						v-model="formData.topK"
-						:min="1"
-						:max="15"
-						controls-position="right"
-					/>
-				</el-form-item>
+					</el-form-item>
+				</div>
 				<el-form-item
 					:label="t('kb.knowledge.hit.test.text')"
 					prop="text"
 					class="input-area"
 					:rules="[{ required: true, message: t('common.input.required') }]"
 				>
-					<div class="text-input-panel">
-						<ElInput
-							v-model="formData.text"
-							class="text-input"
-							:placeholder="t('kb.knowledge.hit.test.text.placeholder')"
-							type="textarea"
-							:rows="4"
-							:maxlength="32768"
-							show-word-limit
-							@keydown="handleKeydown"
-							@input="handleInput"
-							@keyup="handleKeyup"
-						/>
-						<div class="text-input-actions">
-							<el-button type="primary" @click="onSubmit">
-								{{ t('common.submit') }}
-							</el-button>
-						</div>
-					</div>
+					<ElInput
+						v-model="formData.text"
+						class="text-input"
+						:placeholder="t('kb.knowledge.hit.test.text.placeholder')"
+						type="textarea"
+						:rows="4"
+						:maxlength="32768"
+						show-word-limit
+						@keydown="handleKeydown"
+						@input="handleInput"
+						@keyup="handleKeyup"
+					/>
 				</el-form-item>
+				<div class="text-input-actions">
+					<el-button type="primary" @click="onSubmit">
+						{{ t('common.submit') }}
+					</el-button>
+				</div>
 			</el-form>
 		</div>
 	</div>
@@ -411,14 +411,19 @@ onMounted(() => {
 		@include n-glass-surface(2);
 		border-radius: var(--n-radius-triple);
 
-		:deep(.el-form) {
+		:deep(.hit-test-form__body.el-form) {
+			display: block;
+		}
+
+		.hit-test-form__row {
 			display: flex;
 			flex-wrap: wrap;
+			align-items: flex-start;
 			gap: 0 24px;
 		}
 
 		:deep(.el-form-item) {
-			margin-bottom: 12px;
+			margin-bottom: 18px;
 		}
 
 		:deep(.el-form-item__label) {
@@ -426,13 +431,18 @@ onMounted(() => {
 			justify-content: flex-start;
 		}
 
+		/* 错误信息贴在控件下方、与内容列左对齐 */
+		:deep(.el-form-item__error) {
+			padding-top: 2px;
+			left: 0;
+		}
+
+		.collection-select {
+			width: 260px;
+		}
+
 		.top-k-input {
 			width: 100px;
-
-			:deep(.el-input__wrapper) {
-				height: 40px;
-				background: var(--n-color-bg-glass-weak) !important;
-			}
 
 			:deep(.el-input-number) {
 				width: 100%;
@@ -444,19 +454,17 @@ onMounted(() => {
 		}
 
 		.input-area {
-			flex: 1 1 100%;
-			margin-bottom: 0;
+			width: 100%;
+			margin-bottom: 8px;
 
 			:deep(.el-form-item__content) {
 				width: 100%;
 			}
-		}
 
-		.text-input-panel {
-			width: 100%;
-			display: flex;
-			flex-direction: column;
-			gap: 10px;
+			:deep(.el-form-item__label) {
+				align-items: flex-start;
+				line-height: 32px;
+			}
 		}
 
 		.text-input {
@@ -482,6 +490,9 @@ onMounted(() => {
 		.text-input-actions {
 			display: flex;
 			justify-content: flex-end;
+			/* 与 label-width 对齐，按钮落在内容列右侧 */
+			padding-left: 120px;
+			box-sizing: border-box;
 		}
 	}
 }
