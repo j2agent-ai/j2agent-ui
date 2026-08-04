@@ -45,7 +45,9 @@ export const chatWebsocketClientApi = (
  * 获取一个新的对话上下文ID
  */
 export const getNewContextId = () => {
-	return http.get<ContextIdDto>(`/v1${globalUrlPrefix}rest/${programTag}/context/id`)
+	return http.get<ContextIdDto>(`/v1${globalUrlPrefix}rest/${programTag}/context/id`, {
+		skipAuthRedirect: true
+	})
 }
 
 /**
@@ -112,6 +114,7 @@ export const deleteAgentPackage = (agentDir: string) => {
  */
 export const getHistoryContextList = (offset?: number, limit?: number, agentId?: string) => {
 	return http.get<HistoryContextList>(`/v1${globalUrlPrefix}rest/${programTag}/context/list`, {
+		skipAuthRedirect: true,
 		params: {
 			offset,
 			limit,
@@ -125,6 +128,7 @@ export const getHistoryContextList = (offset?: number, limit?: number, agentId?:
  */
 export const getHistoryContext = (contextId: string, agentId: string) => {
 	return http.get<ChatContextDto>(`/v1${globalUrlPrefix}rest/${programTag}/context`, {
+		skipAuthRedirect: true,
 		params: {
 			'context-id': contextId,
 			'agent-id': agentId
@@ -159,6 +163,7 @@ export const deleteHistoryContext = (contextId: string | string[], agentId?: str
  */
 export const stopChatTurn = (contextId: string, agentId: string) => {
 	return http.post(`/v1${globalUrlPrefix}rest/${programTag}/chat/stop`, undefined, {
+		skipAuthRedirect: true,
 		params: {
 			'context-id': contextId,
 			'agent-id': agentId

@@ -716,6 +716,38 @@ const isHiddenAuditMessage = (message: { role?: string; content?: string }) => {
   }
 }
 
+const getHttpStatus = (error: unknown): number | undefined => {
+  if (typeof error !== 'object' || error === null || !('response' in error)) {
+    return undefined
+  }
+  return (error as { response?: { status?: number } }).response?.status
+}
+
+const isAuthFailure = (error: unknown) => {
+  const status = getHttpStatus(error)
+  return status === 401 || status === 403
+}
+
+const resolveChatRequestErrorMessage = (
+  error: unknown,
+  fallback = t('ai.connection.failed')
+) => {
+  if (isAuthFailure(error)) {
+    return t('ai.session.expired')
+  }
+  return formatApiErrorMessage(error, {
+    fallback,
+    formatSystem: (traceId) => t('ai.error.system', { traceId })
+  })
+}
+
+const notifyChatRequestError = (
+  error: unknown,
+  fallback = t('ai.connection.failed')
+) => {
+  ElMessage.error(resolveChatRequestErrorMessage(error, fallback))
+}
+
 /**
  * 仅展示后端标记为可展示的消息；displayInChat === false 的条目仍保留在上下文中，但不渲染气泡。
  * system/tool 无气泡 UI，过滤以免空 message-row 撑大间距。
@@ -861,8 +893,8 @@ const ensureContextId = async (): Promise<string | undefined> => {
   try {
     const created = await chatSessionRegistry.createNewSession(props.agentId)
     return created.contextId.value
-  } catch {
-    ElMessage.error(t('ai.image.upload.failed'))
+  } catch (error) {
+    notifyChatRequestError(error, t('ai.session.create.failed'))
     return undefined
   }
 }
@@ -1564,7 +1596,12 @@ const ensureKnowledgeCollectionsForRequest = (session: ChatSessionRuntime) => {
 const sendMessage = async (msg?: string) => {
   let session = requireActiveSession()
   if (!session) {
-    session = await chatSessionRegistry.enterAgent(props.agentId)
+    try {
+      session = await chatSessionRegistry.enterAgent(props.agentId)
+    } catch (error) {
+      notifyChatRequestError(error, t('ai.session.create.failed'))
+      return
+    }
   }
   if (msg) {
     session.inputMessage.value = msg
@@ -2744,20 +2781,25 @@ const findRecentHistorySessionForAgent = async (
 /** 进入智能体：预激活会话优先；否则自动进入 10 分钟内最新历史会话；再否则新建 */
 const bootstrapAgentSession = async (forceNew = false) => {
   hydrateRememberedActiveTurnsForAgent(props.agentId)
-  if (forceNew) {
-    await chatSessionRegistry.createNewSession(props.agentId)
-  } else {
-    const current = chatSessionRegistry.getActiveSession()
-    if (current?.agentId === props.agentId) {
-      current.lastAccessedAt = Date.now()
+  try {
+    if (forceNew) {
+      await chatSessionRegistry.createNewSession(props.agentId)
     } else {
-      const recent = await findRecentHistorySessionForAgent(props.agentId)
-      if (recent?.contextId) {
-        await showSessionView(recent.contextId)
+      const current = chatSessionRegistry.getActiveSession()
+      if (current?.agentId === props.agentId) {
+        current.lastAccessedAt = Date.now()
       } else {
-        await chatSessionRegistry.createNewSession(props.agentId)
+        const recent = await findRecentHistorySessionForAgent(props.agentId)
+        if (recent?.contextId) {
+          await showSessionView(recent.contextId)
+        } else {
+          await chatSessionRegistry.createNewSession(props.agentId)
+        }
       }
     }
+  } catch (error) {
+    notifyChatRequestError(error, t('ai.session.create.failed'))
+    return
   }
   hydrateKnowledgeCollectionSelection()
   await ensureKnowledgeCollectionsLoaded()
@@ -2770,7 +2812,12 @@ const bootstrapAgentSession = async (forceNew = false) => {
 }
 
 const newChat = async () => {
-  await chatSessionRegistry.createNewSession(props.agentId)
+  try {
+    await chatSessionRegistry.createNewSession(props.agentId)
+  } catch (error) {
+    notifyChatRequestError(error, t('ai.session.create.failed'))
+    return
+  }
   hydrateKnowledgeCollectionSelection()
   await ensureKnowledgeCollectionsLoaded()
   isAtBottom.value = true
@@ -3060,16 +3107,14 @@ const showSessionView = async (targetContextId: string) => {
       console.error('[ChatView] load history failed', error)
       // 非 HTTP 错误（如 res.data 为空时的 JS 异常）不应展示伪造的 TRACE_ID
       if (!isSystemApiError(error)) {
-        session.messageContext.value = []
-        session.loadedFromServer.value = true
+        if (getHttpStatus(error) === undefined) {
+          session.messageContext.value = []
+          session.loadedFromServer.value = true
+        }
+        notifyChatRequestError(error, t('ai.connection.failed'))
         return
       }
-      ElMessage.error(
-        formatApiErrorMessage(error, {
-          fallback: t('ai.turn.error.generic'),
-          formatSystem: (traceId) => t('ai.error.system', { traceId })
-        })
-      )
+      notifyChatRequestError(error, t('ai.turn.error.generic'))
     }
   }
 

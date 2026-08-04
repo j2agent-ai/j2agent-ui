@@ -34,7 +34,9 @@ http.interceptors.response.use(
 		const requestUrl = error.config?.url ?? ''
 		const isPublicAuthApi = requestUrl.includes('/auth/')
 		const skipAuthRedirect = error.config?.skipAuthRedirect === true
-		if ((status === 401 || status === 403) && !isPublicAuthApi && !skipAuthRedirect) {
+		const shouldRedirectAuthFailure =
+			(status === 401 || status === 403) && !isPublicAuthApi && !skipAuthRedirect
+		if (shouldRedirectAuthFailure) {
 			// access_token 与外部系统共用，鉴权失败时不删除，避免破坏外部系统会话
 			redirectToLogin()
 		}

@@ -5,7 +5,7 @@
 import { nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { t } from '@ai-system/lib'
-import { chatWebsocketClientApi, stopChatTurn } from '@/api/ai.api'
+import { chatWebsocketClientApi } from '@/api/ai.api'
 import type {
 	AgentState,
 	AgentUiEventEnvelope,
@@ -249,9 +249,6 @@ const onTurnClose = (session: ChatSessionRuntime) => {
 	const contextId = session.contextId.value
 	if (contextId) {
 		forgetActiveTurn(session.agentId, contextId)
-		stopChatTurn(contextId, session.agentId).catch((error) => {
-			console.error('停止后台对话任务失败:', error)
-		})
 	}
 	session.isNewLlmResponse.value = true
 	clearActivity(session)
@@ -321,6 +318,7 @@ export const startTurn = (
 		if (!session.dispatcher.isTerminalState.value) {
 			session.dispatcher.recordTerminalState('FAILED')
 		}
+		session.sendingMessage.value = false
 		forgetActiveTurn(session.agentId, chatRequestDto.contextId)
 		clearActivity(session)
 		ElMessage.error(t('ai.turn.error.handshake'))

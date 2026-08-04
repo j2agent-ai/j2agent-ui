@@ -105,6 +105,17 @@ const isTurnFailurePayload = (
 	)
 }
 
+const isConnectedNoticeEvent = (event: AgentUiEventEnvelope) => {
+	const payload = event.payload
+	return (
+		event.state === 'IDLE' &&
+		event.eventType === 'SYSTEM' &&
+		!!payload &&
+		typeof payload === 'object' &&
+		(payload as Record<string, unknown>).notice === 'connected'
+	)
+}
+
 export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 	const {
 		messageContext,
@@ -683,6 +694,9 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 	}
 
 	const handleAgentEvent = (event: AgentUiEventEnvelope) => {
+		if (isConnectedNoticeEvent(event)) {
+			return
+		}
 		currentAgentState.value = event.state || null
 		ensureTurnContext(event)
 		recordEventState(event)
