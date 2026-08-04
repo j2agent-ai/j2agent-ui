@@ -333,7 +333,7 @@ export default {
 	'providerConfig.copy.failed': '复制配置失败',
 	'providerConfig.validate.configName': '请填写配置名称',
 	'providerConfig.validate.modelName': '请填写模型名称',
-	'providerConfig.validate.maxTokens': 'Anthropic 兼容须填写 Max Tokens（正整数）',
+	'providerConfig.validate.maxTokens': 'Max Tokens 须为正整数',
 	'providerConfig.contextLength.placeholder': '留空使用模型默认',
 	'providerConfig.field.configName.tip': '便于识别的展示名称，同一类型下可重复。',
 	'providerConfig.field.providerType.tip':
@@ -352,8 +352,8 @@ export default {
 		'单次 Embedding API 请求的最大 input 条数，用于知识库同步与检索向量化；默认 10，范围 1–128。',
 	'providerConfig.field.contextLength.tip': '仅 Ollama 生效，对应 num_ctx；留空则使用模型 Modelfile 或 Ollama 默认值。',
 	'providerConfig.field.maxTokens.tip':
-		'Anthropic 兼容必填，对应 Messages API max_tokens；请按模型与平台文档填写单次回复输出上限。',
-	'providerConfig.maxTokens.placeholder': '例如 16384',
+		'Anthropic 兼容可选，对应 Messages API max_tokens；留空使用提供商或运行时默认值。',
+	'providerConfig.maxTokens.placeholder': '留空使用默认',
 	'providerConfig.field.temperature.tip': '采样温度，越高越发散，越低越确定。',
 	'providerConfig.thinkingMode': '深度思考',
 	'providerConfig.thinkingMode.providerDefault': '提供商默认',

@@ -339,7 +339,7 @@ export default {
 	'providerConfig.copy.failed': 'Failed to copy configuration',
 	'providerConfig.validate.configName': 'Configuration name is required',
 	'providerConfig.validate.modelName': 'Model name is required',
-	'providerConfig.validate.maxTokens': 'Max Tokens is required for Anthropic Compatible (positive integer)',
+	'providerConfig.validate.maxTokens': 'Max Tokens must be a positive integer',
 	'providerConfig.contextLength.placeholder': 'Leave empty for model default',
 	'providerConfig.field.configName.tip': 'Display name for your reference; duplicates are allowed under the same type.',
 	'providerConfig.field.providerType.tip':
@@ -358,8 +358,8 @@ export default {
 		'Maximum number of inputs per Embedding API request for knowledge sync and retrieval; default 10, range 1–128.',
 	'providerConfig.field.contextLength.tip': 'Ollama only (num_ctx). Leave empty to use the model or Ollama default.',
 	'providerConfig.field.maxTokens.tip':
-		'Required for Anthropic Compatible (Messages API max_tokens). Set the max output tokens per reply per your model and platform docs.',
-	'providerConfig.maxTokens.placeholder': 'e.g. 16384',
+		'Optional for Anthropic Compatible (Messages API max_tokens). Leave empty to use the provider or runtime default.',
+	'providerConfig.maxTokens.placeholder': 'Leave empty for default',
 	'providerConfig.field.temperature.tip': 'Sampling temperature; higher = more random, lower = more deterministic.',
 	'providerConfig.thinkingMode': 'Deep thinking',
 	'providerConfig.thinkingMode.providerDefault': 'Provider default',

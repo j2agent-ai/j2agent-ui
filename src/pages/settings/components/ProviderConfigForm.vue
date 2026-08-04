@@ -153,13 +153,15 @@
 			/>
 		</el-form-item>
 
-		<el-form-item v-if="needsMaxTokens" required>
+		<el-form-item v-if="needsMaxTokens">
 			<template #label>
 				<FormFieldLabel :label="t('providerConfig.maxTokens')" :tip="t('providerConfig.field.maxTokens.tip')" />
 			</template>
 			<el-input-number
 				v-model="formState.config.maxTokens"
 				:min="1"
+				clearable
+				:value-on-clear="null"
 				:placeholder="t('providerConfig.maxTokens.placeholder')"
 				autocomplete="off"
 			/>
@@ -241,8 +243,6 @@ import { t } from '@ai-system/lib'
 import FormFieldLabel from './FormFieldLabel.vue'
 import type { ProviderApiType, ProviderConfigDto } from '@/api/provider-config.api'
 
-/** Anthropic 表单 maxTokens 缺省填写值（非运行时兜底，保存须为正整数） */
-const ANTHROPIC_FORM_DEFAULT_MAX_TOKENS = 16384
 /** 深度思考 budget 表单默认值（与后端 LlmThinkingSupport.DEFAULT_THINKING_BUDGET 一致） */
 const DEFAULT_THINKING_BUDGET = 4096
 /** LM Studio 默认服务地址（与后端 LlmBackedChatModelFactory 一致） */
@@ -376,8 +376,8 @@ watch(
 		if (merged.contextLength == null || merged.contextLength === 0) {
 			merged.contextLength = undefined
 		}
-		if (src.providerType === 'anthropic' && (merged.maxTokens == null || merged.maxTokens === undefined)) {
-			merged.maxTokens = ANTHROPIC_FORM_DEFAULT_MAX_TOKENS
+		if (merged.maxTokens == null || merged.maxTokens === 0) {
+			merged.maxTokens = undefined
 		}
 		if (!isLlm.value && (merged.embeddingBatchSize == null || merged.embeddingBatchSize === undefined)) {
 			merged.embeddingBatchSize = 10
@@ -494,11 +494,7 @@ const onProviderTypeChange = () => {
 	if (providerType.value !== 'ollama') {
 		formState.config.contextLength = undefined
 	}
-	if (providerType.value === 'anthropic') {
-		if (formState.config.maxTokens == null || formState.config.maxTokens === undefined) {
-			formState.config.maxTokens = ANTHROPIC_FORM_DEFAULT_MAX_TOKENS
-		}
-	} else {
+	if (providerType.value !== 'anthropic') {
 		formState.config.maxTokens = undefined
 	}
 	if (

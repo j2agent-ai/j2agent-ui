@@ -554,6 +554,9 @@
  * 步进器依赖 EP 默认 inset box-shadow + 控件左边框，再套 border 会对不齐。
  */
 .el-input-number {
+	width: 240px;
+	max-width: 100%;
+
 	.el-input__wrapper,
 	.el-input__wrapper:hover,
 	.el-input__wrapper.is-focus,

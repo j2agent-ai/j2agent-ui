@@ -268,18 +268,21 @@ const onCopy = async (row: ProviderConfigDto) => {
 	}
 }
 
-/** 保存前清洗 config：无效 contextLength 不写入；非 Anthropic 剔除 maxTokens */
+/** 保存前清洗 config：无效 contextLength/maxTokens 不写入；非 Anthropic 剔除 maxTokens */
 const normalizeProviderConfig = (config: Record<string, any>, providerType: string) => {
 	const copy: Record<string, any> = { ...config }
 	const ctx = copy.contextLength
 	if (ctx == null || ctx === '' || (typeof ctx === 'number' && ctx <= 0)) {
 		delete copy.contextLength
 	}
-	if (providerType !== 'anthropic') {
-		const maxTok = copy.maxTokens
-		if (maxTok == null || maxTok === '' || (typeof maxTok === 'number' && maxTok <= 0)) {
-			delete copy.maxTokens
-		}
+	const maxTok = copy.maxTokens
+	if (
+		providerType !== 'anthropic' ||
+		maxTok == null ||
+		maxTok === '' ||
+		(typeof maxTok === 'number' && maxTok <= 0)
+	) {
+		delete copy.maxTokens
 	}
 	if (providerType !== 'anthropic' && providerType !== 'ollama' && providerType !== 'lm-studio') {
 		delete copy.thinkingMode
