@@ -39,6 +39,7 @@ export interface KnowledgeRepositoryDto {
 	status?: KnowledgeRepositoryStatus
 	remoteUrl?: string
 	defaultBranch?: string
+	subPaths?: string[]
 	lastRevision?: string
 	lastRevisionMessage?: string
 	lastRevisionAuthor?: string
@@ -67,6 +68,7 @@ export interface KnowledgeRepositoryUpsertDto {
 	updateIntervalMinutes?: number
 	remoteUrl?: string
 	defaultBranch?: string
+	subPaths?: string[]
 	protocolConfig?: Record<string, unknown>
 	displayName?: string
 	collectionName?: string

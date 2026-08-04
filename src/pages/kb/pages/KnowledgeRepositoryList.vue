@@ -181,6 +181,39 @@
 						:placeholder="t('kb.repository.branch.placeholder')"
 					/>
 				</el-form-item>
+				<el-form-item v-if="form.type === 'REMOTE'">
+					<template #label>
+						<span class="label-with-help">
+							{{ t('kb.repository.subPaths') }}
+							<el-tooltip
+								effect="dark"
+								:content="t('kb.repository.subPaths.help')"
+								placement="top"
+							>
+								<el-icon class="help-icon"><InfoFilled /></el-icon>
+							</el-tooltip>
+						</span>
+					</template>
+					<div class="sub-path-list">
+						<div v-for="(_, index) in form.subPaths" :key="index" class="sub-path-row">
+							<el-input
+								v-model="form.subPaths[index]"
+								maxlength="512"
+								autocomplete="off"
+								:placeholder="t('kb.repository.subPaths.placeholder')"
+							/>
+							<el-button
+								:icon="Delete"
+								circle
+								@click="removeSubPath(index)"
+								:aria-label="t('common.delete')"
+							/>
+						</div>
+						<el-button :icon="Plus" @click="addSubPath">
+							{{ t('kb.repository.subPaths.add') }}
+						</el-button>
+					</div>
+				</el-form-item>
 				<el-form-item v-if="form.type === 'REMOTE'" :label="t('kb.repository.username')">
 					<el-input v-model="form.username" autocomplete="username" />
 				</el-form-item>
@@ -360,6 +393,10 @@
 							<span class="field-label">{{ t('kb.repository.filenameAsTitle') }}</span>
 							<span class="field-value">{{ detail.filenameAsTitle ? t('common.yes') : t('common.no') }}</span>
 						</div>
+						<div class="detail-row">
+							<span class="field-label">{{ t('kb.repository.subPaths') }}</span>
+							<span class="field-value">{{ subPathsText(detail) }}</span>
+						</div>
 					</div>
 				</section>
 			</div>
@@ -384,9 +421,11 @@ import {
 	ElSwitch,
 	ElTable,
 	ElTableColumn,
-	ElTag
+	ElTag,
+	ElTooltip,
+	ElIcon
 } from 'element-plus'
-import { Delete, Edit, Plus, Refresh, View } from '@element-plus/icons-vue'
+import { Delete, Edit, InfoFilled, Plus, Refresh, View } from '@element-plus/icons-vue'
 import { formatDateTime, t } from '@ai-system/lib'
 import {
 	createKnowledgeRepository,
@@ -414,6 +453,7 @@ type FormState = {
 	updateIntervalMinutes: number
 	enabled: boolean
 	displayName: string
+	subPaths: string[]
 	collectionName: string
 	partitionNamesInput: string
 	minHeadingLevel: number
@@ -439,6 +479,7 @@ const form = reactive<FormState>({
 	updateIntervalMinutes: 60,
 	enabled: true,
 	displayName: '',
+	subPaths: [],
 	collectionName: '',
 	partitionNamesInput: '',
 	minHeadingLevel: 3,
@@ -480,6 +521,7 @@ const openEditDialog = (row: KnowledgeRepositoryDto) => {
 	form.updateIntervalMinutes = row.updateIntervalMinutes || 60
 	form.enabled = row.enabled !== false
 	form.displayName = row.displayName || ''
+	form.subPaths = [...(row.subPaths || [])]
 	form.collectionName = row.collectionName || row.collections?.[0] || ''
 	form.partitionNamesInput = (row.partitionNames || []).join(', ')
 	form.minHeadingLevel = row.minHeadingLevel || 3
@@ -499,6 +541,7 @@ const resetForm = () => {
 	form.updateIntervalMinutes = 60
 	form.enabled = true
 	form.displayName = ''
+	form.subPaths = []
 	form.collectionName = ''
 	form.partitionNamesInput = ''
 	form.minHeadingLevel = 3
@@ -559,12 +602,18 @@ const buildPayload = (): KnowledgeRepositoryUpsertDto | null => {
 		ElMessage.warning(t('kb.repository.partitionNames.invalid'))
 		return null
 	}
+	const subPaths = form.type === 'REMOTE' ? parseSubPaths(form.subPaths) : []
+	if (!subPaths) {
+		ElMessage.warning(t('kb.repository.subPaths.invalid'))
+		return null
+	}
 	const payload: KnowledgeRepositoryUpsertDto = {
 		type: form.type,
 		protocol: 'GIT',
 		repoCode: form.repoCode.trim() || undefined,
 		remoteUrl: form.type === 'REMOTE' ? form.remoteUrl.trim() : undefined,
 		defaultBranch: form.type === 'REMOTE' ? form.defaultBranch.trim() || undefined : undefined,
+		subPaths: form.type === 'REMOTE' ? subPaths : undefined,
 		updateIntervalMinutes: form.updateIntervalMinutes || 60,
 		enabled: form.enabled,
 		protocolConfig: {},
@@ -651,6 +700,18 @@ const collectionText = (repository: KnowledgeRepositoryDto) => {
 	return repository.collectionName || repository.collections?.[0] || '-'
 }
 
+const subPathsText = (repository: KnowledgeRepositoryDto) => {
+	return (repository.subPaths || []).join(', ') || t('kb.repository.subPaths.all')
+}
+
+const addSubPath = () => {
+	form.subPaths.push('')
+}
+
+const removeSubPath = (index: number) => {
+	form.subPaths.splice(index, 1)
+}
+
 /** 格式化更新周期（分钟）文案 */
 const formatMinutes = (minutes: number) => {
 	return t('kb.repository.minutes', { minutes })
@@ -666,6 +727,39 @@ const parsePartitionNames = (value: string): string[] | null => {
 		return null
 	}
 	return names
+}
+
+const parseSubPaths = (value: string[]): string[] | null => {
+	const paths: string[] = []
+	for (const raw of value) {
+		if (!raw.trim()) {
+			continue
+		}
+		const normalized = raw.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+		if (
+			!normalized ||
+			normalized === '.' ||
+			normalized === '..' ||
+			raw.trim().startsWith('/') ||
+			normalized.includes('//') ||
+			normalized.split('/').some((segment) => !segment || segment === '.' || segment === '..')
+		) {
+			return null
+		}
+		paths.push(normalized)
+	}
+	const unique = Array.from(new Set(paths))
+	if (unique.length !== paths.length) {
+		return null
+	}
+	for (let i = 0; i < unique.length; i += 1) {
+		for (let j = i + 1; j < unique.length; j += 1) {
+			if (unique[i].startsWith(`${unique[j]}/`) || unique[j].startsWith(`${unique[i]}/`)) {
+				return null
+			}
+		}
+	}
+	return unique
 }
 
 const typeLabel = (type?: KnowledgeRepositoryType) => {
@@ -753,6 +847,31 @@ onBeforeUnmount(() => {
 
 .form-control {
 	width: 100%;
+}
+
+.sub-path-list {
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.sub-path-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 32px;
+	gap: 8px;
+	align-items: center;
+}
+
+.label-with-help {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.help-icon {
+	color: var(--n-color-text-secondary);
+	cursor: help;
 }
 
 .form-section-title {
