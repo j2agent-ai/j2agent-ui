@@ -611,7 +611,6 @@ import { chatActivityStore } from '../ts/activity/store'
 import { isContextStreaming } from '../ts/activity/live'
 import { chatSessionRegistry } from '../ts/session/registry'
 import {
-  getRememberedActiveTurnsForAgent,
   isRememberedActiveTurn,
   reconcileRememberedTurnAfterHistoryLoad,
   resumeTurn,
@@ -2769,7 +2768,6 @@ const findRecentHistorySessionForAgent = (
 
 /** 进入智能体：预激活会话优先；否则按 localStorage 缓存自动重入最近会话；再否则新建 */
 const bootstrapAgentSession = async (forceNew = false) => {
-  hydrateRememberedActiveTurnsForAgent(props.agentId)
   try {
     if (forceNew) {
       clearLatestSession()
@@ -2851,16 +2849,6 @@ const resumeRememberedTurnIfNeeded = (
       }
     }
   })
-}
-
-const hydrateRememberedActiveTurnsForAgent = (agentId: string) => {
-  for (const remembered of getRememberedActiveTurnsForAgent(agentId)) {
-    chatActivityStore.markActive(
-      remembered.agentId,
-      remembered.contextId,
-      'THINKING'
-    )
-  }
 }
 
 /** Agent 元数据异步到达后补拉热门问题 */
