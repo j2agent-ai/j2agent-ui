@@ -597,7 +597,6 @@ import {
   ChatRequestDto,
   FileDto,
   formatSrcFileLabel,
-  HistoryContextItem,
   MessageDto
 } from '@/types/ai.types'
 import {
@@ -605,12 +604,7 @@ import {
   resolveMarkdownFileName
 } from '@/utils/repoFileUrl'
 import { t } from '@ai-system/lib'
-import {
-  addMessageFeedback,
-  getHistoryContext,
-  getHistoryContextList,
-  getQaTemplate
-} from '@/api/ai.api'
+import { addMessageFeedback, getHistoryContext, getQaTemplate } from '@/api/ai.api'
 import { getKnowledgeCollections } from '@/api/kb/kb.api'
 import type { KnowledgeCollectionDto } from '@/types/kb.model'
 import { chatActivityStore } from '../ts/activity/store'
@@ -625,6 +619,11 @@ import {
   stopTurn
 } from '../ts/stream/service'
 import { useActiveChatSessionBindings } from '../ts/session/bindings'
+import {
+  clearLatestSession,
+  getLatestSession,
+  recordLatestSession
+} from '../ts/session/browser-session'
 import type { ChatSessionRuntime, PendingChatImage } from '../ts/session/types'
 import { buildSessionKey } from '../ts/session/types'
 import { buildSessionTitle } from '../ts/history/title'
@@ -670,8 +669,6 @@ import {
 
 const showChatManage = ref(false)
 const chatManageRef = ref(null)
-/** 进入智能体时，10 分钟内更新过的最新历史会话自动作为当前会话。 */
-const RECENT_AGENT_SESSION_WINDOW_MS = 10 * 60 * 1000
 /** 聊天主区域根节点，用于写入底部悬浮层高度 CSS 变量 */
 const chatViewRef = ref<HTMLElement>()
 /** 监听消息列表高度变化（图片/iframe/图表异步撑高），跟随态下瞬时贴底 */
@@ -1527,6 +1524,8 @@ const startUserMessageTurn = async (
   if (!activeContextId) {
     return
   }
+  // 每次用户发消息交互时刷新本地记录，保证 localStorage 的 TTL 与会话最后更新时间对齐
+  recordLatestSession(session.agentId, activeContextId)
   session.sendingMessage.value = true
   try {
     const outboundAttachments = pendingImages.length
@@ -2757,38 +2756,30 @@ const copyMessage = async (content?: string) => {
   }
 }
 
-const findRecentHistorySessionForAgent = async (
+/** 读取本浏览器缓存的"下次自动重入"会话，完全以 localStorage 为准，不做时间判断 */
+const findRecentHistorySessionForAgent = (
   agentId: string
-): Promise<HistoryContextItem | null> => {
-  try {
-    const res = await getHistoryContextList(0, 1, agentId)
-    const latest = (res.data?.data ?? [])[0] as HistoryContextItem | undefined
-    if (!latest?.contextId) {
-      return null
-    }
-    const updatedAt = latest.lastUpdateTime ?? latest.lastAccessTime ?? 0
-    if (!updatedAt || Date.now() - updatedAt > RECENT_AGENT_SESSION_WINDOW_MS) {
-      return null
-    }
-    return latest
-  } catch (error) {
-    console.error('[ChatView] resolve recent history session failed', error)
+): { contextId: string } | null => {
+  const record = getLatestSession()
+  if (!record || record.agentId !== agentId) {
     return null
   }
+  return { contextId: record.contextId }
 }
 
-/** 进入智能体：预激活会话优先；否则自动进入 10 分钟内最新历史会话；再否则新建 */
+/** 进入智能体：预激活会话优先；否则按 localStorage 缓存自动重入最近会话；再否则新建 */
 const bootstrapAgentSession = async (forceNew = false) => {
   hydrateRememberedActiveTurnsForAgent(props.agentId)
   try {
     if (forceNew) {
+      clearLatestSession()
       await chatSessionRegistry.createNewSession(props.agentId)
     } else {
       const current = chatSessionRegistry.getActiveSession()
       if (current?.agentId === props.agentId) {
         current.lastAccessedAt = Date.now()
       } else {
-        const recent = await findRecentHistorySessionForAgent(props.agentId)
+        const recent = findRecentHistorySessionForAgent(props.agentId)
         if (recent?.contextId) {
           await showSessionView(recent.contextId)
         } else {
@@ -2811,6 +2802,8 @@ const bootstrapAgentSession = async (forceNew = false) => {
 }
 
 const newChat = async () => {
+  // 点新建对话即清空缓存，下次自动重入不会再进旧对话
+  clearLatestSession()
   try {
     await chatSessionRegistry.createNewSession(props.agentId)
   } catch (error) {
@@ -2835,12 +2828,16 @@ watch(
   }
 )
 
-const resumeRememberedTurnIfNeeded = (session: ChatSessionRuntime) => {
+const resumeRememberedTurnIfNeeded = (
+  session: ChatSessionRuntime,
+  options?: { forceProbe?: boolean }
+) => {
   const targetContextId = session.contextId.value
   if (!targetContextId || session.ws || session.dispatcher.isTerminalState.value) {
     return
   }
   if (
+    !options?.forceProbe &&
     !isRememberedActiveTurn(session.agentId, targetContextId) &&
     !chatActivityStore.isActiveContext(targetContextId)
   ) {
@@ -3093,6 +3090,7 @@ const showSessionView = async (targetContextId: string) => {
   isAtBottom.value = true
   markSessionSwitchGuard()
 
+  let historyLoadFailed = false
   if (
     !session.loadedFromServer.value &&
     session.messageContext.value.length === 0
@@ -3103,6 +3101,7 @@ const showSessionView = async (targetContextId: string) => {
       normalizeMessageAttachmentUrls(session.messageContext.value)
       session.loadedFromServer.value = true
     } catch (error) {
+      historyLoadFailed = true
       console.error('[ChatView] load history failed', error)
       // 非 HTTP 错误（如 res.data 为空时的 JS 异常）不应展示伪造的 TRACE_ID
       if (!isSystemApiError(error)) {
@@ -3111,13 +3110,15 @@ const showSessionView = async (targetContextId: string) => {
           session.loadedFromServer.value = true
         }
         notifyChatRequestError(error, t('ai.connection.failed'))
-        return
+      } else {
+        notifyChatRequestError(error, t('ai.turn.error.generic'))
       }
-      notifyChatRequestError(error, t('ai.turn.error.generic'))
     }
   }
 
-  if (!reconcileRememberedTurnAfterHistoryLoad(session, targetContextId)) {
+  if (historyLoadFailed) {
+    resumeRememberedTurnIfNeeded(session, { forceProbe: true })
+  } else if (!reconcileRememberedTurnAfterHistoryLoad(session, targetContextId)) {
     resumeRememberedTurnIfNeeded(session)
   }
   if (activeSession.value?.pendingScroll.value) {
