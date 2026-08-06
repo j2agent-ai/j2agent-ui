@@ -504,7 +504,6 @@
               </div>
             </div>
             <div class="chat-input-actions">
-              <span class="chat-input-count">{{ inputMessage.length }} / 32768</span>
               <ElButton
                 :type="isBusyByState ? 'danger' : 'primary'"
                 class="chat-button"
@@ -4221,6 +4220,7 @@ defineExpose({
   --chat-input-inset-y: 14px;
   --chat-input-action-size: 32px;
   --chat-input-action-gap: 8px;
+  --chat-input-actions-width: var(--chat-input-action-size);
   --chat-input-toolbar-height: var(--chat-input-action-size);
   --chat-input-toolbar-gap: 6px;
   --chat-input-pad-end: var(--chat-input-inset-x);
@@ -4350,7 +4350,7 @@ defineExpose({
     gap: var(--chat-input-action-gap);
     min-width: 0;
     max-width: calc(
-      100% - var(--chat-input-actions-width, 118px) - var(--chat-input-action-gap)
+      100% - var(--chat-input-actions-width) - var(--chat-input-action-gap)
     );
     pointer-events: auto;
   }
@@ -4363,19 +4363,6 @@ defineExpose({
     gap: var(--chat-input-action-gap);
     min-width: 0;
     pointer-events: auto;
-  }
-
-  .chat-input-count {
-    flex: 0 0 auto;
-    min-width: 68px;
-    padding: 2px 8px;
-    border-radius: 8px;
-    color: var(--n-color-text-muted);
-    font-size: 12px;
-    line-height: 1.4;
-    text-align: center;
-    white-space: nowrap;
-    @include n-glass-surface(1);
   }
 
   .el-button.image-button {
@@ -4577,9 +4564,10 @@ defineExpose({
         border-radius: 15px;
         word-wrap: break-word;
         word-break: break-all;
+        resize: none;
         border: none !important;
         outline: none;
-        box-shadow: 0 0 12px rgba(0, 0, 0, 0.08);
+        box-shadow: 0 0 12px rgba(0, 0, 0, 0.08) !important;
         transition: box-shadow 0.2s ease,
         min-height 0.2s ease,
         height 0.2s ease,
@@ -4591,9 +4579,14 @@ defineExpose({
         color: var(--n-color-text-placeholder);
       }
 
+      :deep(.el-textarea__inner:hover) {
+        border: none !important;
+        box-shadow: 0 0 12px rgba(0, 0, 0, 0.08) !important;
+      }
+
       :deep(.el-textarea__inner:focus) {
         box-shadow: 0 0 10px color-mix(in srgb, var(--el-color-primary) 30%, transparent),
-        0 0 24px color-mix(in srgb, var(--el-color-primary) 14%, transparent);
+        0 0 24px color-mix(in srgb, var(--el-color-primary) 14%, transparent) !important;
       }
     }
   }
@@ -4822,13 +4815,6 @@ defineExpose({
       --chat-input-inset-x: 12px;
       --chat-input-inset-y: 10px;
       --chat-input-action-size: 28px;
-      --chat-input-actions-width: 102px;
-
-      .chat-input-count {
-        min-width: 58px;
-        padding: 2px 6px;
-        font-size: 11px;
-      }
 
       &:not(.is-input-editing) .el-textarea.chat-input {
         :deep(.el-textarea__inner) {
