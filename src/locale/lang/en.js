@@ -116,6 +116,10 @@ export default {
 	'files.batch.delete': 'Batch Delete',
 	'files.delete.confirm':
 		'This removes both the object and its database record. Continue?',
+	'files.delete.referenced':
+		'This file is referenced by business data (e.g. chat images) and cannot be deleted directly. Delete the referencing conversation first, then retry.',
+	'files.delete.batch.failed.referenced':
+		'Some files could not be deleted, possibly because they are referenced by business data (e.g. chat images)',
 	'files.preview': 'Preview/Download',
 	'files.preview.failed': 'Failed to get file URL',
 	'files.load.failed':
