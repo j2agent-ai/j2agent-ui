@@ -504,7 +504,6 @@
               </div>
             </div>
             <div class="chat-input-actions">
-              <span class="chat-input-count">{{ inputMessage.length }} / 32768</span>
               <ElButton
                 :type="isBusyByState ? 'danger' : 'primary'"
                 class="chat-button"
@@ -598,7 +597,6 @@ import {
   ChatRequestDto,
   FileDto,
   formatSrcFileLabel,
-  HistoryContextItem,
   MessageDto
 } from '@/types/ai.types'
 import {
@@ -606,19 +604,13 @@ import {
   resolveMarkdownFileName
 } from '@/utils/repoFileUrl'
 import { t } from '@ai-system/lib'
-import {
-  addMessageFeedback,
-  getHistoryContext,
-  getHistoryContextList,
-  getQaTemplate
-} from '@/api/ai.api'
+import { addMessageFeedback, getHistoryContext, getQaTemplate } from '@/api/ai.api'
 import { getKnowledgeCollections } from '@/api/kb/kb.api'
 import type { KnowledgeCollectionDto } from '@/types/kb.model'
 import { chatActivityStore } from '../ts/activity/store'
 import { isContextStreaming } from '../ts/activity/live'
 import { chatSessionRegistry } from '../ts/session/registry'
 import {
-  getRememberedActiveTurnsForAgent,
   isRememberedActiveTurn,
   reconcileRememberedTurnAfterHistoryLoad,
   resumeTurn,
@@ -626,6 +618,11 @@ import {
   stopTurn
 } from '../ts/stream/service'
 import { useActiveChatSessionBindings } from '../ts/session/bindings'
+import {
+  clearLatestSession,
+  getLatestSession,
+  recordLatestSession
+} from '../ts/session/browser-session'
 import type { ChatSessionRuntime, PendingChatImage } from '../ts/session/types'
 import { buildSessionKey } from '../ts/session/types'
 import { buildSessionTitle } from '../ts/history/title'
@@ -671,8 +668,6 @@ import {
 
 const showChatManage = ref(false)
 const chatManageRef = ref(null)
-/** 进入智能体时，10 分钟内更新过的最新历史会话自动作为当前会话。 */
-const RECENT_AGENT_SESSION_WINDOW_MS = 10 * 60 * 1000
 /** 聊天主区域根节点，用于写入底部悬浮层高度 CSS 变量 */
 const chatViewRef = ref<HTMLElement>()
 /** 监听消息列表高度变化（图片/iframe/图表异步撑高），跟随态下瞬时贴底 */
@@ -714,6 +709,38 @@ const isHiddenAuditMessage = (message: { role?: string; content?: string }) => {
   } catch {
     return false
   }
+}
+
+const getHttpStatus = (error: unknown): number | undefined => {
+  if (typeof error !== 'object' || error === null || !('response' in error)) {
+    return undefined
+  }
+  return (error as { response?: { status?: number } }).response?.status
+}
+
+const isAuthFailure = (error: unknown) => {
+  const status = getHttpStatus(error)
+  return status === 401 || status === 403
+}
+
+const resolveChatRequestErrorMessage = (
+  error: unknown,
+  fallback = t('ai.connection.failed')
+) => {
+  if (isAuthFailure(error)) {
+    return t('ai.session.expired')
+  }
+  return formatApiErrorMessage(error, {
+    fallback,
+    formatSystem: (traceId) => t('ai.error.system', { traceId })
+  })
+}
+
+const notifyChatRequestError = (
+  error: unknown,
+  fallback = t('ai.connection.failed')
+) => {
+  ElMessage.error(resolveChatRequestErrorMessage(error, fallback))
 }
 
 /**
@@ -861,8 +888,8 @@ const ensureContextId = async (): Promise<string | undefined> => {
   try {
     const created = await chatSessionRegistry.createNewSession(props.agentId)
     return created.contextId.value
-  } catch {
-    ElMessage.error(t('ai.image.upload.failed'))
+  } catch (error) {
+    notifyChatRequestError(error, t('ai.session.create.failed'))
     return undefined
   }
 }
@@ -1496,6 +1523,8 @@ const startUserMessageTurn = async (
   if (!activeContextId) {
     return
   }
+  // 每次用户发消息交互时刷新本地记录，保证 localStorage 的 TTL 与会话最后更新时间对齐
+  recordLatestSession(session.agentId, activeContextId)
   session.sendingMessage.value = true
   try {
     const outboundAttachments = pendingImages.length
@@ -1564,7 +1593,12 @@ const ensureKnowledgeCollectionsForRequest = (session: ChatSessionRuntime) => {
 const sendMessage = async (msg?: string) => {
   let session = requireActiveSession()
   if (!session) {
-    session = await chatSessionRegistry.enterAgent(props.agentId)
+    try {
+      session = await chatSessionRegistry.enterAgent(props.agentId)
+    } catch (error) {
+      notifyChatRequestError(error, t('ai.session.create.failed'))
+      return
+    }
   }
   if (msg) {
     session.inputMessage.value = msg
@@ -2721,43 +2755,39 @@ const copyMessage = async (content?: string) => {
   }
 }
 
-const findRecentHistorySessionForAgent = async (
+/** 读取本浏览器缓存的"下次自动重入"会话，完全以 localStorage 为准，不做时间判断 */
+const findRecentHistorySessionForAgent = (
   agentId: string
-): Promise<HistoryContextItem | null> => {
-  try {
-    const res = await getHistoryContextList(0, 1, agentId)
-    const latest = (res.data?.data ?? [])[0] as HistoryContextItem | undefined
-    if (!latest?.contextId) {
-      return null
-    }
-    const updatedAt = latest.lastUpdateTime ?? latest.lastAccessTime ?? 0
-    if (!updatedAt || Date.now() - updatedAt > RECENT_AGENT_SESSION_WINDOW_MS) {
-      return null
-    }
-    return latest
-  } catch (error) {
-    console.error('[ChatView] resolve recent history session failed', error)
+): { contextId: string } | null => {
+  const record = getLatestSession()
+  if (!record || record.agentId !== agentId) {
     return null
   }
+  return { contextId: record.contextId }
 }
 
-/** 进入智能体：预激活会话优先；否则自动进入 10 分钟内最新历史会话；再否则新建 */
+/** 进入智能体：预激活会话优先；否则按 localStorage 缓存自动重入最近会话；再否则新建 */
 const bootstrapAgentSession = async (forceNew = false) => {
-  hydrateRememberedActiveTurnsForAgent(props.agentId)
-  if (forceNew) {
-    await chatSessionRegistry.createNewSession(props.agentId)
-  } else {
-    const current = chatSessionRegistry.getActiveSession()
-    if (current?.agentId === props.agentId) {
-      current.lastAccessedAt = Date.now()
+  try {
+    if (forceNew) {
+      clearLatestSession()
+      await chatSessionRegistry.createNewSession(props.agentId)
     } else {
-      const recent = await findRecentHistorySessionForAgent(props.agentId)
-      if (recent?.contextId) {
-        await showSessionView(recent.contextId)
+      const current = chatSessionRegistry.getActiveSession()
+      if (current?.agentId === props.agentId) {
+        current.lastAccessedAt = Date.now()
       } else {
-        await chatSessionRegistry.createNewSession(props.agentId)
+        const recent = findRecentHistorySessionForAgent(props.agentId)
+        if (recent?.contextId) {
+          await showSessionView(recent.contextId)
+        } else {
+          await chatSessionRegistry.createNewSession(props.agentId)
+        }
       }
     }
+  } catch (error) {
+    notifyChatRequestError(error, t('ai.session.create.failed'))
+    return
   }
   hydrateKnowledgeCollectionSelection()
   await ensureKnowledgeCollectionsLoaded()
@@ -2770,7 +2800,14 @@ const bootstrapAgentSession = async (forceNew = false) => {
 }
 
 const newChat = async () => {
-  await chatSessionRegistry.createNewSession(props.agentId)
+  // 点新建对话即清空缓存，下次自动重入不会再进旧对话
+  clearLatestSession()
+  try {
+    await chatSessionRegistry.createNewSession(props.agentId)
+  } catch (error) {
+    notifyChatRequestError(error, t('ai.session.create.failed'))
+    return
+  }
   hydrateKnowledgeCollectionSelection()
   await ensureKnowledgeCollectionsLoaded()
   isAtBottom.value = true
@@ -2789,12 +2826,16 @@ watch(
   }
 )
 
-const resumeRememberedTurnIfNeeded = (session: ChatSessionRuntime) => {
+const resumeRememberedTurnIfNeeded = (
+  session: ChatSessionRuntime,
+  options?: { forceProbe?: boolean }
+) => {
   const targetContextId = session.contextId.value
   if (!targetContextId || session.ws || session.dispatcher.isTerminalState.value) {
     return
   }
   if (
+    !options?.forceProbe &&
     !isRememberedActiveTurn(session.agentId, targetContextId) &&
     !chatActivityStore.isActiveContext(targetContextId)
   ) {
@@ -2808,16 +2849,6 @@ const resumeRememberedTurnIfNeeded = (session: ChatSessionRuntime) => {
       }
     }
   })
-}
-
-const hydrateRememberedActiveTurnsForAgent = (agentId: string) => {
-  for (const remembered of getRememberedActiveTurnsForAgent(agentId)) {
-    chatActivityStore.markActive(
-      remembered.agentId,
-      remembered.contextId,
-      'THINKING'
-    )
-  }
 }
 
 /** Agent 元数据异步到达后补拉热门问题 */
@@ -3047,6 +3078,7 @@ const showSessionView = async (targetContextId: string) => {
   isAtBottom.value = true
   markSessionSwitchGuard()
 
+  let historyLoadFailed = false
   if (
     !session.loadedFromServer.value &&
     session.messageContext.value.length === 0
@@ -3057,23 +3089,24 @@ const showSessionView = async (targetContextId: string) => {
       normalizeMessageAttachmentUrls(session.messageContext.value)
       session.loadedFromServer.value = true
     } catch (error) {
+      historyLoadFailed = true
       console.error('[ChatView] load history failed', error)
       // 非 HTTP 错误（如 res.data 为空时的 JS 异常）不应展示伪造的 TRACE_ID
       if (!isSystemApiError(error)) {
-        session.messageContext.value = []
-        session.loadedFromServer.value = true
-        return
+        if (getHttpStatus(error) === undefined) {
+          session.messageContext.value = []
+          session.loadedFromServer.value = true
+        }
+        notifyChatRequestError(error, t('ai.connection.failed'))
+      } else {
+        notifyChatRequestError(error, t('ai.turn.error.generic'))
       }
-      ElMessage.error(
-        formatApiErrorMessage(error, {
-          fallback: t('ai.turn.error.generic'),
-          formatSystem: (traceId) => t('ai.error.system', { traceId })
-        })
-      )
     }
   }
 
-  if (!reconcileRememberedTurnAfterHistoryLoad(session, targetContextId)) {
+  if (historyLoadFailed) {
+    resumeRememberedTurnIfNeeded(session, { forceProbe: true })
+  } else if (!reconcileRememberedTurnAfterHistoryLoad(session, targetContextId)) {
     resumeRememberedTurnIfNeeded(session)
   }
   if (activeSession.value?.pendingScroll.value) {
@@ -4176,6 +4209,7 @@ defineExpose({
   --chat-input-inset-y: 14px;
   --chat-input-action-size: 32px;
   --chat-input-action-gap: 8px;
+  --chat-input-actions-width: var(--chat-input-action-size);
   --chat-input-toolbar-height: var(--chat-input-action-size);
   --chat-input-toolbar-gap: 6px;
   --chat-input-pad-end: var(--chat-input-inset-x);
@@ -4305,7 +4339,7 @@ defineExpose({
     gap: var(--chat-input-action-gap);
     min-width: 0;
     max-width: calc(
-      100% - var(--chat-input-actions-width, 118px) - var(--chat-input-action-gap)
+      100% - var(--chat-input-actions-width) - var(--chat-input-action-gap)
     );
     pointer-events: auto;
   }
@@ -4318,19 +4352,6 @@ defineExpose({
     gap: var(--chat-input-action-gap);
     min-width: 0;
     pointer-events: auto;
-  }
-
-  .chat-input-count {
-    flex: 0 0 auto;
-    min-width: 68px;
-    padding: 2px 8px;
-    border-radius: 8px;
-    color: var(--n-color-text-muted);
-    font-size: 12px;
-    line-height: 1.4;
-    text-align: center;
-    white-space: nowrap;
-    @include n-glass-surface(1);
   }
 
   .el-button.image-button {
@@ -4532,9 +4553,10 @@ defineExpose({
         border-radius: 15px;
         word-wrap: break-word;
         word-break: break-all;
+        resize: none;
         border: none !important;
         outline: none;
-        box-shadow: 0 0 12px rgba(0, 0, 0, 0.08);
+        box-shadow: 0 0 12px rgba(0, 0, 0, 0.08) !important;
         transition: box-shadow 0.2s ease,
         min-height 0.2s ease,
         height 0.2s ease,
@@ -4546,9 +4568,14 @@ defineExpose({
         color: var(--n-color-text-placeholder);
       }
 
+      :deep(.el-textarea__inner:hover) {
+        border: none !important;
+        box-shadow: 0 0 12px rgba(0, 0, 0, 0.08) !important;
+      }
+
       :deep(.el-textarea__inner:focus) {
         box-shadow: 0 0 10px color-mix(in srgb, var(--el-color-primary) 30%, transparent),
-        0 0 24px color-mix(in srgb, var(--el-color-primary) 14%, transparent);
+        0 0 24px color-mix(in srgb, var(--el-color-primary) 14%, transparent) !important;
       }
     }
   }
@@ -4777,13 +4804,6 @@ defineExpose({
       --chat-input-inset-x: 12px;
       --chat-input-inset-y: 10px;
       --chat-input-action-size: 28px;
-      --chat-input-actions-width: 102px;
-
-      .chat-input-count {
-        min-width: 58px;
-        padding: 2px 6px;
-        font-size: 11px;
-      }
 
       &:not(.is-input-editing) .el-textarea.chat-input {
         :deep(.el-textarea__inner) {

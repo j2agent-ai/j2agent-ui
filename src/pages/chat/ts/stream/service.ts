@@ -5,7 +5,7 @@
 import { nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { t } from '@ai-system/lib'
-import { chatWebsocketClientApi, stopChatTurn } from '@/api/ai.api'
+import { chatWebsocketClientApi } from '@/api/ai.api'
 import type {
 	AgentState,
 	AgentUiEventEnvelope,
@@ -249,9 +249,6 @@ const onTurnClose = (session: ChatSessionRuntime) => {
 	const contextId = session.contextId.value
 	if (contextId) {
 		forgetActiveTurn(session.agentId, contextId)
-		stopChatTurn(contextId, session.agentId).catch((error) => {
-			console.error('停止后台对话任务失败:', error)
-		})
 	}
 	session.isNewLlmResponse.value = true
 	clearActivity(session)
@@ -321,6 +318,7 @@ export const startTurn = (
 		if (!session.dispatcher.isTerminalState.value) {
 			session.dispatcher.recordTerminalState('FAILED')
 		}
+		session.sendingMessage.value = false
 		forgetActiveTurn(session.agentId, chatRequestDto.contextId)
 		clearActivity(session)
 		ElMessage.error(t('ai.turn.error.handshake'))
@@ -443,11 +441,15 @@ export const resumeTurn = (
 	chatActivityStore.markActive(session.agentId, contextId, 'THINKING')
 	session.isNewLlmResponse.value = false
 
-	let passiveResumeEmpty = false
-	let resumed = false
+	let reconnectAttempt = 0
+	let retryTimer: ReturnType<typeof window.setTimeout> | undefined
 	const isCurrentTurn = () => activeTurnTokens.get(session) === turnToken
 
 	const clearFailedResume = () => {
+		if (retryTimer) {
+			window.clearTimeout(retryTimer)
+			retryTimer = undefined
+		}
 		clearActivityForContext(contextId)
 		session.isNewLlmResponse.value = true
 		session.sendingMessage.value = false
@@ -463,13 +465,11 @@ export const resumeTurn = (
 			resume: true
 		})
 		session.ws = ws
-		let opened = false
 
 		ws.onopen = () => {
 			if (!isCurrentTurn() || session.ws !== ws || session.dispatcher.isTerminalState.value) {
 				return
 			}
-			opened = true
 			session.isNewLlmResponse.value = false
 			session.pendingScroll.value = true
 			options?.onOpen?.()
@@ -484,26 +484,24 @@ export const resumeTurn = (
 				const payload: AgentUiEventEnvelope = JSON.parse(event.data)
 				const resumeEmpty = isResumeEmptyEvent(payload)
 				if (resumeEmpty) {
-					passiveResumeEmpty = true
-				} else if (!isConnectedNoticeEvent(payload)) {
-					resumed = true
+					// 服务端确认没有可恢复回合；不要把探测响应写入状态机，
+					// 否则会把仍可用的页面状态误标为终态。
+					clearFailedResume()
+					return
+				}
+				if (!isConnectedNoticeEvent(payload)) {
+					reconnectAttempt = 0
 				}
 				session.dispatcher.handleAgentEvent(payload)
 				if (session.dispatcher.isTerminalState.value) {
-					if (resumeEmpty) {
-						clearFailedResume()
-					} else {
-						forgetActiveTurn(session.agentId, contextId)
-					}
+					forgetActiveTurn(session.agentId, contextId)
 				}
 				session.pendingScroll.value = true
-				if (!resumeEmpty) {
-					chatActivityStore.updateState(
-						session.agentId,
-						contextId,
-						session.dispatcher.currentAgentState.value
-					)
-				}
+				chatActivityStore.updateState(
+					session.agentId,
+					contextId,
+					session.dispatcher.currentAgentState.value
+				)
 				options?.onScrollRequest?.()
 			} catch (error) {
 				console.error('解析Agent事件失败:', error)
@@ -519,19 +517,18 @@ export const resumeTurn = (
 				return
 			}
 			if (session.dispatcher.isTerminalState.value) {
-				if (passiveResumeEmpty) {
-					clearFailedResume()
-					return
-				}
 				onTurnClose(session)
 				return
 			}
-			if (!opened || !resumed) {
-				clearFailedResume()
-				return
-			}
 			session.ws = undefined
-			connect()
+			const delay = WS_HANDSHAKE_RETRY_DELAYS[
+				Math.min(reconnectAttempt, WS_HANDSHAKE_RETRY_DELAYS.length - 1)
+			]
+			reconnectAttempt += 1
+			retryTimer = window.setTimeout(() => {
+				retryTimer = undefined
+				connect()
+			}, delay)
 		}
 	}
 
