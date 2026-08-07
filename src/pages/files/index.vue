@@ -474,6 +474,7 @@ import {
 } from '@/api/file.api'
 import { resolveObjectFilePreviewUrl } from '@/utils/ossDisplayUrl'
 import { appendAuthTokenToUrl } from '@/utils/authenticatedUrl'
+import { extractApiErrorMessage } from '@/utils/apiError'
 
 const activePanel = ref('files')
 const files = ref<ObjectFileItem[]>([])
@@ -698,6 +699,19 @@ async function preview(row: ObjectFileItem) {
 	}
 }
 
+/** 解析文件删除失败提示：409 为引用保护冲突（如聊天图片），给出明确指引 */
+function deleteErrorMessage(error: unknown): string {
+	const isReferenceConflict =
+		typeof error === 'object' &&
+		error !== null &&
+		'response' in error &&
+		(error as { response?: { status?: number } }).response?.status === 409
+	if (isReferenceConflict) {
+		return t('files.delete.referenced')
+	}
+	return extractApiErrorMessage(error, t('common.fail'))
+}
+
 async function confirmDelete(row: ObjectFileItem) {
 	await ElMessageBox.confirm(
 		t('files.delete.confirm'),
@@ -708,8 +722,8 @@ async function confirmDelete(row: ObjectFileItem) {
 		await deleteObjectFile(row.objectKey)
 		ElMessage.success(t('common.success'))
 		await loadFiles()
-	} catch {
-		ElMessage.error(t('common.fail'))
+	} catch (error) {
+		ElMessage.error(deleteErrorMessage(error))
 	}
 }
 
@@ -724,7 +738,7 @@ async function confirmBatchDelete() {
 	)
 	if (response.data.failedIds?.length) {
 		ElMessage.warning(
-			`${t('common.fail')}: ${response.data.failedIds.join(', ')}`
+			`${t('files.delete.batch.failed.referenced')}: ${response.data.failedIds.join(', ')}`
 		)
 	} else {
 		ElMessage.success(t('common.success'))

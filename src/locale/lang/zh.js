@@ -114,6 +114,10 @@ export default {
 	'files.batch.delete': '批量删除',
 	'files.delete.confirm':
 		'删除后将同时移除对象存储文件和数据库记录，是否继续？',
+	'files.delete.referenced':
+		'该文件正被业务数据引用（如聊天图片），无法直接删除。请先删除引用它的会话，再重试。',
+	'files.delete.batch.failed.referenced':
+		'部分文件删除失败，可能因被业务数据引用（如聊天图片）而无法删除',
 	'files.preview': '预览/下载',
 	'files.preview.failed': '获取文件访问地址失败',
 	'files.load.failed': '加载文件列表失败，请确认对象存储已启用',
