@@ -20,6 +20,10 @@
 								v-if="canEditRole(row)"
 								v-model="row.role"
 								size="small"
+								fit-input-width
+								placement="bottom-end"
+								:fallback-placements="['top-end', 'bottom-start', 'top-start']"
+								popper-class="role-select-popper"
 								@change="() => saveRole(row)"
 							>
 								<el-option
@@ -392,5 +396,9 @@ onMounted(() => {
 .role-label {
 	color: var(--n-color-text-primary);
 	font-weight: 500;
+}
+
+:global(.role-select-popper.el-select-dropdown) {
+	min-width: 160px !important;
 }
 </style>
