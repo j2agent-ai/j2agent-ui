@@ -7,10 +7,8 @@ import { ElMessage } from 'element-plus'
 import { t } from '@ai-system/lib'
 import { chatWebsocketClientApi } from '@/api/ai.api'
 import type {
-	AgentState,
 	AgentUiEventEnvelope,
-	ChatRequestDto,
-	MessageDto
+	ChatRequestDto
 } from '@/types/ai.types'
 import { chatActivityStore } from '../activity/store'
 import type { ChatSessionRuntime } from '../session/types'
@@ -99,11 +97,6 @@ const forgetActiveTurnsByContext = (contextId: string) => {
 export const isRememberedActiveTurn = (agentId: string, contextId: string) =>
 	!!readStoredActiveTurns()[buildStoredActiveTurnKey(agentId, contextId)]
 
-const isRememberedActiveTurnContext = (contextId: string) =>
-	Object.values(readStoredActiveTurns()).some(
-		(item) => item.contextId === contextId
-	)
-
 export const getRememberedActiveTurnsForAgent = (
 	agentId: string
 ): StoredActiveTurn[] =>
@@ -156,9 +149,7 @@ const clearActivityForContext = (contextId: string) => {
 	chatActivityStore.markInactiveByContext(contextId)
 }
 
-const isTerminalState = (state?: AgentState | null) =>
-	state === 'COMPLETED' || state === 'FAILED' || state === 'CANCELLED'
-
+/** 后端 Redis 判定无运行中 turn / snapshot / 队列时下发，是清理本地 running 标记的唯一权威信号 */
 const isResumeEmptyEvent = (event: AgentUiEventEnvelope) => {
 	const payload = event.payload
 	return (
@@ -179,70 +170,6 @@ const isConnectedNoticeEvent = (event: AgentUiEventEnvelope) => {
 		typeof payload === 'object' &&
 		(payload as Record<string, unknown>).notice === 'connected'
 	)
-}
-
-const hasTerminalTurnAfterLatestUser = (messages: MessageDto[]) => {
-	let latestUserIndex = -1
-	for (let i = messages.length - 1; i >= 0; i--) {
-		if (messages[i].role === 'user') {
-			latestUserIndex = i
-			break
-		}
-	}
-	if (latestUserIndex < 0) {
-		return false
-	}
-	for (let i = latestUserIndex + 1; i < messages.length; i++) {
-		const message = messages[i]
-		if (message.role !== 'assistant' || message.displayInChat === false) {
-			continue
-		}
-		if (
-			message.content?.trim() ||
-			message.reasoningContent?.trim() ||
-			(message.actions?.length ?? 0) > 0 ||
-			(message.srcFile?.length ?? 0) > 0
-		) {
-			return true
-		}
-		if (isTerminalState(message.currentState)) {
-			return true
-		}
-		if (message.stateHistory?.some(isTerminalState)) {
-			return true
-		}
-		const steps = message.turnSteps ?? []
-		if (steps.some((step) => isTerminalState(step.state))) {
-			return true
-		}
-		if (steps.length > 0 && steps.every((step) => step.status !== 'running')) {
-			return true
-		}
-	}
-	return false
-}
-
-/**
- * 本地 remembered active 可能比后端历史滞后：点进会话并加载历史后，
- * 如果最后一轮已经有 assistant 结果，则以历史为准清理运行中标记。
- */
-export const reconcileRememberedTurnAfterHistoryLoad = (
-	session: ChatSessionRuntime,
-	contextId: string
-) => {
-	if (
-		!isRememberedActiveTurnContext(contextId) &&
-		!chatActivityStore.isActiveContext(contextId)
-	) {
-		return false
-	}
-	if (!hasTerminalTurnAfterLatestUser(session.messageContext.value)) {
-		return false
-	}
-	clearActivityForContext(contextId)
-	session.sendingMessage.value = false
-	session.isNewLlmResponse.value = true
-	return true
 }
 
 const onTurnClose = (session: ChatSessionRuntime) => {
