@@ -612,7 +612,6 @@ import { isContextStreaming } from '../ts/activity/live'
 import { chatSessionRegistry } from '../ts/session/registry'
 import {
   isRememberedActiveTurn,
-  reconcileRememberedTurnAfterHistoryLoad,
   resumeTurn,
   startTurn,
   stopTurn
@@ -2774,8 +2773,10 @@ const bootstrapAgentSession = async (forceNew = false) => {
       await chatSessionRegistry.createNewSession(props.agentId)
     } else {
       const current = chatSessionRegistry.getActiveSession()
-      if (current?.agentId === props.agentId) {
+      if (current?.agentId === props.agentId && current.contextId.value) {
+        // 同 agent 内存会话仍在：必须走 showSessionView，以便 WS 已断时 resume
         current.lastAccessedAt = Date.now()
+        await showSessionView(current.contextId.value)
       } else {
         const recent = findRecentHistorySessionForAgent(props.agentId)
         if (recent?.contextId) {
@@ -2831,8 +2832,19 @@ const resumeRememberedTurnIfNeeded = (
   options?: { forceProbe?: boolean }
 ) => {
   const targetContextId = session.contextId.value
-  if (!targetContextId || session.ws || session.dispatcher.isTerminalState.value) {
+  if (!targetContextId || session.dispatcher.isTerminalState.value) {
     return
+  }
+  // 已关闭的 WS 仍占着引用时不能挡 resume
+  const ws = session.ws
+  if (
+    ws &&
+    (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
+  ) {
+    return
+  }
+  if (ws) {
+    session.ws = undefined
   }
   if (
     !options?.forceProbe &&
@@ -3104,11 +3116,10 @@ const showSessionView = async (targetContextId: string) => {
     }
   }
 
-  if (historyLoadFailed) {
-    resumeRememberedTurnIfNeeded(session, { forceProbe: true })
-  } else if (!reconcileRememberedTurnAfterHistoryLoad(session, targetContextId)) {
-    resumeRememberedTurnIfNeeded(session)
-  }
+  // 是否仍在跑：只信后端 Redis（resume-empty / snapshot / active）；禁止用历史正文猜终态
+  resumeRememberedTurnIfNeeded(session, {
+    forceProbe: historyLoadFailed
+  })
   if (activeSession.value?.pendingScroll.value) {
     activeSession.value.pendingScroll.value = false
   }

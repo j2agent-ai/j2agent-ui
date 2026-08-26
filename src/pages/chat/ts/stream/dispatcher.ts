@@ -154,11 +154,15 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 			: lastTurnStates.value
 	)
 
+	/** 与 ChatView.visibleMessageContext 口径一致：隐藏审计行不得作为本轮锚点。 */
+	const isRenderableAssistant = (msg: MessageDto | undefined) =>
+		msg?.role === 'assistant' && msg.displayInChat !== false
+
 	const isTurnStepsOnlyAssistant = (msg: MessageDto | undefined) =>
-		msg?.role === 'assistant' &&
-		!msg.content?.trim() &&
-		!msg.reasoningContent?.trim() &&
-		(msg.turnSteps?.length ?? 0) > 0
+		isRenderableAssistant(msg) &&
+		!msg!.content?.trim() &&
+		!msg!.reasoningContent?.trim() &&
+		(msg!.turnSteps?.length ?? 0) > 0
 
 	const findLastUserIndex = () => {
 		for (let i = messageContext.value.length - 1; i >= 0; i--) {
@@ -169,12 +173,16 @@ export const createAgentEventDispatcher = (options: DispatcherOptions) => {
 		return -1
 	}
 
-	/** 复用最后一条 user 之后、正文为空的 assistant（含 optimistic turnSteps 占位）。 */
+	/** 复用最后一条 user 之后、正文为空的可见 assistant（含 optimistic turnSteps 占位）。 */
 	const findReusableEmptyAssistantIndex = () => {
 		const lastUserIdx = findLastUserIndex()
 		for (let i = messageContext.value.length - 1; i > lastUserIdx; i--) {
 			const msg = messageContext.value[i]
-			if (msg.role === 'assistant' && !msg.content?.trim() && !msg.reasoningContent?.trim()) {
+			if (
+				isRenderableAssistant(msg) &&
+				!msg.content?.trim() &&
+				!msg.reasoningContent?.trim()
+			) {
 				return i
 			}
 		}
