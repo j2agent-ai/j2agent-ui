@@ -32,6 +32,13 @@ export const getAuditTokenRecords = (params: {
 	limit: number
 }) => http.get<AuditTokenRecordList>(`${baseUrl}/token/records`, { params })
 
+export const deleteAuditTokenRecords = (ids: string[]) =>
+	http.delete<void>(`${baseUrl}/token/records`, { data: { ids } })
+
+/** 删除某个总览用户的全部 Token 明细。 */
+export const deleteAuditTokenUsers = (userIds: string[]) =>
+	http.delete<void>(`${baseUrl}/token/users`, { data: { userIds } })
+
 /** 按条件查询聊天会话列表（user-id 可选） */
 export const getAuditContexts = (params: {
 	'user-id'?: string
@@ -42,6 +49,10 @@ export const getAuditContexts = (params: {
 	offset: number
 	limit: number
 }) => http.get<AuditContextList>(`${baseUrl}/contexts`, { params })
+
+export const deleteAuditContexts = (
+	items: Array<{ contextId: string; agentId: string }>
+) => http.delete<void>(`${baseUrl}/contexts`, { data: { items } })
 
 /** 审计专用会话消息详情（按 context-id + agent-id，不传 user-id） */
 export const getAuditContext = (params: {

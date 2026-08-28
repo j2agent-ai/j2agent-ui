@@ -72,9 +72,9 @@
 						@click="selectUser(user)"
 					>
 						<div class="picker-item__main">
-							<div class="picker-item__name">{{ user.username }}</div>
+							<div class="picker-item__name">{{ userDisplayName(user) }}</div>
 							<div class="picker-item__meta">
-								<span>{{ roleLabel(user.role) }}</span>
+								<span>{{ user.deleted ? t('audit.user.deleted.account') : roleLabel(user.role) }}</span>
 								<span v-if="user.email" class="dot">·</span>
 								<span v-if="user.email" class="email">{{ user.email }}</span>
 							</div>
@@ -121,7 +121,7 @@ import {
 	ElPagination
 } from 'element-plus'
 import { t } from '@ai-system/lib'
-import { getUserList, type UserDto } from '@/api/user.api'
+import { getAuditUserList, type UserDto } from '@/api/user.api'
 import { ROLE_ADMIN, ROLE_KB_ADMIN } from '@/utils/role'
 
 const props = withDefaults(
@@ -132,12 +132,15 @@ const props = withDefaults(
 		username?: string
 		placeholder?: string
 		clearable?: boolean
+		/** 仅加载当前审计面板有数据的用户。 */
+		source: 'token' | 'context'
 	}>(),
 	{
 		modelValue: undefined,
 		username: undefined,
 		placeholder: undefined,
-		clearable: false
+		clearable: false,
+		source: 'context'
 	}
 )
 
@@ -169,7 +172,7 @@ const filteredUsers = computed(() => {
 		return users.value
 	}
 	return users.value.filter((u) => {
-		const name = (u.username || '').toLowerCase()
+		const name = userDisplayName(u).toLowerCase()
 		const email = (u.email || '').toLowerCase()
 		const id = (u.userId || '').toLowerCase()
 		return name.includes(q) || email.includes(q) || id.includes(q)
@@ -198,6 +201,10 @@ function roleLabel(role: number) {
 	return t('user.management.role.user')
 }
 
+function userDisplayName(user: UserDto) {
+	return user.deleted || !user.username ? t('audit.user.deleted') : user.username
+}
+
 /** 回车 / 点击搜索：提交关键字并回到第一页 */
 function applySearch() {
 	appliedKeyword.value = keywordInput.value.trim()
@@ -214,7 +221,7 @@ function clearSearch() {
 async function loadUsers() {
 	loading.value = true
 	try {
-		const res = await getUserList()
+		const res = await getAuditUserList(props.source)
 		users.value = res.data?.data || []
 	} catch {
 		ElMessage.error(t('audit.load.users.failed'))
@@ -247,7 +254,7 @@ onDeactivated(() => {
 /** 单击条目即选中并关闭 */
 function selectUser(user: UserDto) {
 	emit('update:modelValue', user.userId)
-	emit('update:username', user.username)
+	emit('update:username', userDisplayName(user))
 	emit('change', user)
 	visible.value = false
 }

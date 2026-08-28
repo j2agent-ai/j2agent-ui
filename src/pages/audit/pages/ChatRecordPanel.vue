@@ -2,8 +2,16 @@
 	<section class="audit-panel">
 		<div class="toolbar">
 			<div class="toolbar__group">
-				<el-button @click="loadData">
+				<el-button @click="refreshData">
 					{{ t('common.refresh') }}
+				</el-button>
+				<el-button
+					type="danger"
+					:disabled="selectedContextKeys.size === 0"
+					:loading="deleting"
+					@click="deleteSelectedContexts"
+				>
+					{{ t('audit.delete.selected', { count: selectedContextKeys.size }) }}
 				</el-button>
 			</div>
 			<div class="toolbar__group toolbar__filters">
@@ -11,6 +19,7 @@
 					v-model="selectedUserId"
 					v-model:username="selectedUsername"
 					clearable
+					source="context"
 					:placeholder="t('audit.filter.user')"
 					@change="onUserPicked"
 				/>
@@ -36,7 +45,15 @@
 		</div>
 
 		<div class="table-wrap">
-			<el-table v-loading="loading" :data="sessions" height="100%">
+			<el-table
+				v-loading="loading"
+				:data="sessions"
+				ref="contextTableRef"
+				height="100%"
+				:row-key="contextKey"
+				@selection-change="onContextSelectionChange"
+			>
+				<el-table-column type="selection" width="46" reserve-selection />
 				<el-table-column :label="t('common.action')" width="100" fixed="left">
 					<template #default="{ row }">
 						<el-button link type="primary" @click="openMessages(row)">
@@ -57,11 +74,12 @@
 					show-overflow-tooltip
 				/>
 				<el-table-column
-					prop="username"
 					:label="t('audit.col.username')"
 					min-width="120"
 					show-overflow-tooltip
-				/>
+				>
+					<template #default="{ row }">{{ auditUsername(row.username) }}</template>
+				</el-table-column>
 				<el-table-column
 					prop="agentId"
 					:label="t('audit.col.agentId')"
@@ -186,12 +204,17 @@ import {
 	ElDrawer,
 	ElInput,
 	ElMessage,
+	ElMessageBox,
 	ElPagination,
 	ElTable,
 	ElTableColumn
 } from 'element-plus'
 import { t } from '@ai-system/lib'
-import { getAuditContext, getAuditContexts } from '@/api/audit.api'
+import {
+	deleteAuditContexts,
+	getAuditContext,
+	getAuditContexts
+} from '@/api/audit.api'
 import type { AuditContextItem, AuditMessage } from '@/types/audit.types'
 import type { UserDto } from '@/api/user.api'
 import GlassTimeRangePicker from '@/components/GlassTimeRangePicker/GlassTimeRangePicker.vue'
@@ -215,6 +238,13 @@ const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const sessions = ref<AuditContextItem[]>([])
+const selectedContextKeys = ref(new Set<string>())
+const deleting = ref(false)
+const contextTableRef = ref<{
+	clearSelection: () => void
+	toggleRowSelection: (row: AuditContextItem, selected?: boolean) => void
+} | null>(null)
+let syncingContextSelection = false
 
 const drawerVisible = ref(false)
 const drawerLoading = ref(false)
@@ -264,14 +294,98 @@ function formatTime(value?: number) {
 	return value ? new Date(value).toLocaleString() : '-'
 }
 
+function auditUsername(username?: string) {
+	return username || t('audit.user.deleted')
+}
+
+function contextKey(row: AuditContextItem) {
+	return `${row.contextId}\u0000${row.agentId}`
+}
+
 function resetAndLoad() {
+	clearContextSelection()
 	page.value = 1
+	loadData()
+}
+
+function refreshData() {
+	clearContextSelection()
 	loadData()
 }
 
 /** 用户选择弹窗确认后刷新会话列表 */
 function onUserPicked(_user: UserDto | null) {
 	resetAndLoad()
+}
+
+function onContextSelectionChange(rows: AuditContextItem[]) {
+	if (syncingContextSelection) {
+		return
+	}
+	const currentKeys = sessions.value.map(contextKey)
+	for (const key of currentKeys) {
+		selectedContextKeys.value.delete(key)
+	}
+	for (const row of rows) {
+		selectedContextKeys.value.add(contextKey(row))
+	}
+}
+
+function clearContextSelection() {
+	selectedContextKeys.value.clear()
+	syncingContextSelection = true
+	contextTableRef.value?.clearSelection()
+	syncingContextSelection = false
+}
+
+async function syncContextSelection() {
+	await nextTick()
+	const table = contextTableRef.value
+	if (!table) {
+		return
+	}
+	syncingContextSelection = true
+	table.clearSelection()
+	for (const row of sessions.value) {
+		if (selectedContextKeys.value.has(contextKey(row))) {
+			table.toggleRowSelection(row, true)
+		}
+	}
+	syncingContextSelection = false
+}
+
+async function deleteSelectedContexts() {
+	const keys = Array.from(selectedContextKeys.value)
+	const items = keys.map((key) => {
+		const [contextId, agentId] = key.split('\u0000')
+		return { contextId, agentId }
+	})
+	try {
+		await ElMessageBox.confirm(
+			t('audit.delete.context.confirm', { count: items.length }),
+			t('common.delete'),
+			{
+				type: 'warning',
+				confirmButtonText: t('common.ok'),
+				cancelButtonText: t('common.cancel')
+			}
+		)
+		deleting.value = true
+		await deleteAuditContexts(items)
+		const openKey = `${drawerContextId.value}\u0000${drawerAgentId.value}`
+		if (selectedContextKeys.value.has(openKey)) {
+			drawerVisible.value = false
+		}
+		clearContextSelection()
+		ElMessage.success(t('audit.delete.success'))
+		await loadData()
+	} catch (error) {
+		if (error !== 'cancel' && error !== 'close') {
+			ElMessage.error(t('audit.delete.failed'))
+		}
+	} finally {
+		deleting.value = false
+	}
 }
 
 async function loadData() {
@@ -285,8 +399,9 @@ async function loadData() {
 			offset: (page.value - 1) * pageSize.value,
 			limit: pageSize.value
 		})
-		sessions.value = res.data?.data || []
-		total.value = Number(res.data?.total || 0)
+			sessions.value = res.data?.data || []
+			total.value = Number(res.data?.total || 0)
+			await syncContextSelection()
 	} catch {
 		ElMessage.error(t('audit.load.failed'))
 	} finally {
@@ -376,6 +491,8 @@ async function openMessages(row: AuditContextItem) {
 	contentViewMode.value = 'markdown'
 	if (row.username) {
 		selectedUsername.value = row.username
+	} else {
+		selectedUsername.value = auditUsername(row.username)
 	}
 	try {
 		const res = await getAuditContext({
@@ -387,6 +504,8 @@ async function openMessages(row: AuditContextItem) {
 		}
 		if (res.data?.username) {
 			selectedUsername.value = res.data.username
+		} else {
+			selectedUsername.value = auditUsername(res.data?.username)
 		}
 		const list = res.data?.messages || []
 		// 审计页展示会话气泡；隐藏纯工具/审计行
