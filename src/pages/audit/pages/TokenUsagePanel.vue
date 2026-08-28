@@ -5,13 +5,23 @@
 				<el-button v-if="viewMode === 'detail'" @click="backToOverview">
 					{{ t('audit.token.back.overview') }}
 				</el-button>
-				<el-button @click="loadData">{{ t('common.refresh') }}</el-button>
+				<el-button @click="refreshData">{{ t('common.refresh') }}</el-button>
+				<el-button
+					v-if="viewMode === 'detail'"
+					type="danger"
+					:disabled="selectedRecordIds.size === 0"
+					:loading="deleting"
+					@click="deleteSelectedRecords"
+				>
+					{{ t('audit.delete.selected', { count: selectedRecordIds.size }) }}
+				</el-button>
 			</div>
 			<div class="toolbar__group toolbar__filters">
 				<AuditUserPicker
 					v-model="selectedUserId"
 					v-model:username="detailUsername"
 					clearable
+					source="token"
 					:placeholder="t('audit.filter.user')"
 					@change="onUserPicked"
 				/>
@@ -84,10 +94,11 @@
 				height="100%"
 			>
 				<el-table-column
-					prop="username"
 					:label="t('audit.col.username')"
 					min-width="140"
-				/>
+				>
+					<template #default="{ row }">{{ auditUsername(row.username) }}</template>
+				</el-table-column>
 				<el-table-column
 					prop="userId"
 					:label="t('audit.col.userId')"
@@ -114,16 +125,28 @@
 					:label="t('audit.col.billableTokens')"
 					width="130"
 				/>
-				<el-table-column :label="t('common.action')" width="100" fixed="right">
+				<el-table-column :label="t('common.action')" width="140" fixed="right">
 					<template #default="{ row }">
 						<el-button link type="primary" @click="openDetail(row)">
 							{{ t('audit.token.view.detail') }}
+						</el-button>
+						<el-button link type="danger" :loading="deleting" @click="deleteSummaryUser(row)">
+							{{ t('common.delete') }}
 						</el-button>
 					</template>
 				</el-table-column>
 			</el-table>
 
-			<el-table v-else v-loading="loading" :data="recordRows" height="100%">
+			<el-table
+				v-else
+				v-loading="loading"
+				:data="recordRows"
+				ref="recordTableRef"
+				height="100%"
+				row-key="id"
+				@selection-change="onRecordSelectionChange"
+			>
+				<el-table-column type="selection" width="46" reserve-selection />
 				<el-table-column
 					prop="createTime"
 					:label="t('audit.col.createTime')"
@@ -188,11 +211,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 import {
 	ElButton,
 	ElInput,
 	ElMessage,
+	ElMessageBox,
 	ElOption,
 	ElPagination,
 	ElSelect,
@@ -201,7 +225,12 @@ import {
 } from 'element-plus'
 import { t } from '@ai-system/lib'
 import type { UserDto } from '@/api/user.api'
-import { getAuditTokenRecords, getAuditTokenSummary } from '@/api/audit.api'
+import {
+	deleteAuditTokenRecords,
+	deleteAuditTokenUsers,
+	getAuditTokenRecords,
+	getAuditTokenSummary
+} from '@/api/audit.api'
 import type {
 	AuditTokenRecord,
 	AuditTokenSummaryItem
@@ -226,6 +255,13 @@ const total = ref(0)
 const summaryRows = ref<AuditTokenSummaryItem[]>([])
 const recordRows = ref<AuditTokenRecord[]>([])
 const detailUsername = ref('')
+const selectedRecordIds = ref(new Set<string>())
+const deleting = ref(false)
+const recordTableRef = ref<{
+	clearSelection: () => void
+	toggleRowSelection: (row: AuditTokenRecord, selected?: boolean) => void
+} | null>(null)
+let syncingRecordSelection = false
 
 const globalCallCount = ref(0)
 const globalInputTokens = ref(0)
@@ -247,11 +283,15 @@ function formatTime(value?: number) {
 	return value ? new Date(value).toLocaleString() : '-'
 }
 
+function auditUsername(username?: string) {
+	return username || t('audit.user.deleted')
+}
+
 /** 用户选择弹窗：有用户则进明细，清空则回总览 */
 function onUserPicked(user: UserDto | null) {
 	if (user) {
 		viewMode.value = 'detail'
-		detailUsername.value = user.username || ''
+		detailUsername.value = auditUsername(user.username)
 	} else {
 		viewMode.value = 'overview'
 		detailUsername.value = ''
@@ -263,6 +303,7 @@ function openDetail(row: AuditTokenSummaryItem) {
 	selectedUserId.value = row.userId
 	detailUsername.value = row.username || ''
 	viewMode.value = 'detail'
+	selectedRecordIds.value.clear()
 	resetAndLoad()
 }
 
@@ -274,11 +315,117 @@ function backToOverview() {
 	modelName.value = ''
 	callKind.value = undefined
 	usageStatus.value = undefined
+	selectedRecordIds.value.clear()
 	resetAndLoad()
 }
 
+function onRecordSelectionChange(rows: AuditTokenRecord[]) {
+	if (syncingRecordSelection) {
+		return
+	}
+	const currentIds = recordRows.value
+		.map((row) => row.id)
+		.filter((id): id is string => Boolean(id))
+	for (const id of currentIds) {
+		selectedRecordIds.value.delete(id)
+	}
+	for (const row of rows) {
+		if (row.id) {
+			selectedRecordIds.value.add(row.id)
+		}
+	}
+}
+
+function clearRecordSelection() {
+	selectedRecordIds.value.clear()
+	syncingRecordSelection = true
+	recordTableRef.value?.clearSelection()
+	syncingRecordSelection = false
+}
+
+async function syncRecordSelection() {
+	if (viewMode.value !== 'detail') {
+		return
+	}
+	await nextTick()
+	const table = recordTableRef.value
+	if (!table) {
+		return
+	}
+	syncingRecordSelection = true
+	table.clearSelection()
+	for (const row of recordRows.value) {
+		if (row.id && selectedRecordIds.value.has(row.id)) {
+			table.toggleRowSelection(row, true)
+		}
+	}
+	syncingRecordSelection = false
+}
+
+async function deleteSelectedRecords() {
+	const ids = Array.from(selectedRecordIds.value)
+	if (!ids.length) {
+		return
+	}
+	try {
+		await ElMessageBox.confirm(
+			t('audit.delete.token.confirm', { count: ids.length }),
+			t('common.delete'),
+			{
+				type: 'warning',
+				confirmButtonText: t('common.ok'),
+				cancelButtonText: t('common.cancel')
+			}
+		)
+		deleting.value = true
+		await deleteAuditTokenRecords(ids)
+		clearRecordSelection()
+		ElMessage.success(t('audit.delete.success'))
+		await loadData()
+	} catch (error) {
+		if (error !== 'cancel' && error !== 'close') {
+			ElMessage.error(t('audit.delete.failed'))
+		}
+	} finally {
+		deleting.value = false
+	}
+}
+
+async function deleteSummaryUser(row: AuditTokenSummaryItem) {
+	if (!row.userId) {
+		return
+	}
+	try {
+		await ElMessageBox.confirm(
+			t('audit.delete.token.user.confirm'),
+			t('common.delete'),
+			{
+				type: 'warning',
+				confirmButtonText: t('common.ok'),
+				cancelButtonText: t('common.cancel')
+			}
+		)
+		deleting.value = true
+		await deleteAuditTokenUsers([row.userId])
+		ElMessage.success(t('audit.delete.success'))
+		await loadData()
+	} catch (error) {
+		if (error !== 'cancel' && error !== 'close') {
+			ElMessage.error(t('audit.delete.failed'))
+		}
+	} finally {
+		deleting.value = false
+	}
+}
+
 function resetAndLoad() {
+	clearRecordSelection()
 	page.value = 1
+	loadData()
+}
+
+function refreshData() {
+	clearRecordSelection()
 	loadData()
 }
 
@@ -316,6 +463,7 @@ async function loadData() {
 			const body = res.data
 			recordRows.value = body?.data || []
 			total.value = Number(body?.total || 0)
+			await syncRecordSelection()
 		}
 	} catch {
 		ElMessage.error(t('audit.load.failed'))

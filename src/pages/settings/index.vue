@@ -28,6 +28,9 @@
 				<el-tab-pane v-if="canManageUsers" :label="t('user.management.title')" name="user">
 					<UserManagementPanel v-if="activeTab === 'user'" />
 				</el-tab-pane>
+				<el-tab-pane v-if="canManageUsers" :label="t('apiKey.title')" name="api-key">
+					<ApiKeyManagementPanel v-if="activeTab === 'api-key'" />
+				</el-tab-pane>
 			</el-tabs>
 		</div>
 	</div>
@@ -44,6 +47,7 @@ import RagSettingsPanel from './components/RagSettingsPanel.vue'
 import AgentPluginSettingsPanel from './components/AgentPluginSettingsPanel.vue'
 import AgentGlobalConfigSettingsPanel from './components/AgentGlobalConfigSettingsPanel.vue'
 import UserManagementPanel from './components/UserManagementPanel.vue'
+import ApiKeyManagementPanel from './components/ApiKeyManagementPanel.vue'
 import { getProperties, putProperties } from '@/api/property.api'
 import { hasRoleAccess, ROLE_ADMIN } from '@/utils/role'
 

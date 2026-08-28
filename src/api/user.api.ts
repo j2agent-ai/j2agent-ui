@@ -7,6 +7,8 @@ export interface UserDto {
 	role: number
 	createTime?: number
 	email?: string
+	/** 审计历史中反查出的已删除用户，不对应可管理账户。 */
+	deleted?: boolean
 }
 
 export interface UserListDto {
@@ -31,6 +33,13 @@ export interface UserPasswordUpdateRequestDto {
 
 export const getUserList = () => {
 	return http.get<UserListDto>(`/v1${globalUrlPrefix}rest/${programTag}/users`)
+}
+
+/** 审计筛选使用：包含 API 专用用户，常规用户管理不使用该接口。 */
+export const getAuditUserList = (source: 'token' | 'context') => {
+	return http.get<UserListDto>(`/v1${globalUrlPrefix}rest/${programTag}/audit-users`, {
+		params: { source }
+	})
 }
 
 export const createUser = (payload: UserCreateRequestDto) => {
