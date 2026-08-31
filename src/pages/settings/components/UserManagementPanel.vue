@@ -1,7 +1,7 @@
 <template>
 	<div class="user-management">
 		<el-tabs v-model="activeSubTab" class="user-sub-tabs">
-			<el-tab-pane label="用户列表" name="list">
+			<el-tab-pane :label="t('user.management.list')" name="list">
 				<div class="user-management-toolbar">
 					<el-button type="primary" size="small" @click="openCreateDialog">
 						{{ t('user.management.create') }}
@@ -59,7 +59,7 @@
 					</el-table-column>
 				</el-table>
 			</el-tab-pane>
-			<el-tab-pane label="邮箱自助注册" name="email-register">
+			<el-tab-pane :label="t('user.emailRegister.title')" name="email-register">
 				<EmailRegisterSettingsPanel />
 			</el-tab-pane>
 		</el-tabs>

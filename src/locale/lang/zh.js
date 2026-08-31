@@ -390,6 +390,7 @@ export default {
 	'settings.rag.weight.dense': '稠密向量（语义）',
 	'settings.rag.weight.sparse': '稀疏向量（关键词）',
 	'user.management.title': '用户管理',
+	'user.management.list': '用户列表',
 	'user.management.create': '新增用户',
 	'user.management.username': '用户名',
 	'user.management.password': '密码',

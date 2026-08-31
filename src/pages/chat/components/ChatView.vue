@@ -1522,7 +1522,7 @@ const startUserMessageTurn = async (
   if (!activeContextId) {
     return
   }
-  // 每次用户发消息交互时刷新本地记录，保证 localStorage 的 TTL 与会话最后更新时间对齐
+  // 每次用户发消息交互时刷新本地记录的 10 分钟有效期
   recordLatestSession(session.agentId, activeContextId)
   session.sendingMessage.value = true
   try {
@@ -2754,7 +2754,7 @@ const copyMessage = async (content?: string) => {
   }
 }
 
-/** 读取本浏览器缓存的"下次自动重入"会话，完全以 localStorage 为准，不做时间判断 */
+/** 读取本浏览器缓存的 10 分钟内"下次自动重入"会话 */
 const findRecentHistorySessionForAgent = (
   agentId: string
 ): { contextId: string } | null => {
