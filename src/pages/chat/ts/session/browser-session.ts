@@ -1,17 +1,18 @@
 /**
  * 浏览器本地会话记录。
- * 仅缓存一个"下次自动重入的对话 id"，完全以 localStorage 为准，不做任何时间判断。
+ * 仅缓存一个"下次自动重入的对话 id"，有效期为 10 分钟。
  *
  * 记录的生命值由 UI 交互维护：
  * - 每次发消息交互时调用 recordLatestSession 刷新（充值生命值）；
  * - 点新建对话时调用 clearLatestSession 清空。
  */
 const STORAGE_KEY = 'ai.chat.browserLatestSession.v1'
+const LATEST_SESSION_TTL_MS = 10 * 60 * 1000
 
 type BrowserLatestSessionRecord = {
   agentId: string
   contextId: string
-  /** 生命值：最近一次交互的时间戳，仅作元数据保留，不参与自动进入判断 */
+  /** 最近一次交互时间，用于判断自动重入记录是否过期 */
   recordedAt: number
 }
 
@@ -20,8 +21,13 @@ const readStoredRecord = (): BrowserLatestSessionRecord | null => {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const record = JSON.parse(raw) as BrowserLatestSessionRecord
-    if (!record?.agentId || !record?.contextId) {
-      // 数据无效，清理
+    if (
+      !record?.agentId ||
+      !record?.contextId ||
+      !Number.isFinite(record.recordedAt) ||
+      Date.now() - record.recordedAt > LATEST_SESSION_TTL_MS
+    ) {
+      // 数据无效或已过期，清理
       window.localStorage.removeItem(STORAGE_KEY)
       return null
     }
@@ -31,7 +37,7 @@ const readStoredRecord = (): BrowserLatestSessionRecord | null => {
   }
 }
 
-/** 读取缓存的下次自动重入会话；无记录或数据无效时返回 null */
+/** 读取 10 分钟内缓存的下次自动重入会话；无记录、数据无效或过期时返回 null */
 export const getLatestSession = (): { agentId: string; contextId: string } | null => {
   const record = readStoredRecord()
   if (!record) return null

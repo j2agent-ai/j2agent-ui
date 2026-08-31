@@ -396,6 +396,7 @@ export default {
 	'settings.rag.weight.dense': 'Dense vector (semantic)',
 	'settings.rag.weight.sparse': 'Sparse vector (keyword)',
 	'user.management.title': 'User Management',
+	'user.management.list': 'User List',
 	'user.management.create': 'Create User',
 	'user.management.username': 'Username',
 	'user.management.password': 'Password',
