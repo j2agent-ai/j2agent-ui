@@ -86,6 +86,7 @@ export type ChatRequestDto = {
 	manualOrchestrateAgentId?: string
 	// 通用知识库问答助手本轮选择的知识库 collection 列表
 	knowledgeCollections?: string[]
+	knowledgeRepositoryIds?: string[]
 }
 
 export type MessageFeedbackRequest = {

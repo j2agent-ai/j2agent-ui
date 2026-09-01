@@ -181,14 +181,14 @@ const passwordForm = ref({
 })
 
 const roleOptions = computed(() => {
-	const options = [
+	if (!isAdmin.value) {
+		return [{ value: ROLE_USER, label: t('user.management.role.user') }]
+	}
+	return [
+		{ value: ROLE_ADMIN, label: t('user.management.role.admin') },
 		{ value: ROLE_KB_ADMIN, label: t('user.management.role.kbAdmin') },
 		{ value: ROLE_USER, label: t('user.management.role.user') }
 	]
-	if (isAdmin.value) {
-		options.unshift({ value: ROLE_ADMIN, label: t('user.management.role.admin') })
-	}
-	return options
 })
 
 const isAdmin = computed(() => hasRoleAccess(ROLE_ADMIN))

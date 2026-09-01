@@ -23,7 +23,11 @@
 					<el-button type="primary" :icon="Refresh" @click="handleRefresh">
 						{{ t('common.refresh') }}
 					</el-button>
-					<el-button type="warning" @click="handleRebuild">
+					<el-button
+						v-if="canAccessAdmin"
+						type="warning"
+						@click="handleRebuild"
+					>
 						{{ rebuildButtonLabel }}
 					</el-button>
 				</div>
@@ -42,7 +46,11 @@
 				</el-button>
 			</div>
 		</div>
-		<el-tabs v-model="activeTab" class="kb-tabs">
+		<el-tabs
+			v-model="activeTab"
+			class="kb-tabs"
+			:class="{ 'kb-tabs--data-only': !canAccessAdmin }"
+		>
 			<el-tab-pane :label="t('kb.knowledge.data')" name="knowledge">
 				<div class="knowledge-pane">
 					<div class="table-wrapper">
@@ -169,7 +177,7 @@
 					</div>
 				</div>
 			</el-tab-pane>
-			<el-tab-pane name="maintenance">
+			<el-tab-pane v-if="canAccessAdmin" name="maintenance">
 				<template #label>
 					<span class="tab-label">
 						{{ t('kb.sync.status') }}
@@ -186,6 +194,7 @@
 			</el-tab-pane>
 		</el-tabs>
 		<el-dialog
+			v-if="canAccessAdmin"
 			v-model="rebuildDialogVisible"
 			:title="t('kb.knowledge.rebuild.confirm.title')"
 			class="rebuild-dialog n-dialog--danger"
@@ -263,6 +272,7 @@ import type { KnowledgeCollectionDto, KnowledgeSyncResult } from '@/types/kb.mod
 import { formatDateTime, getOutlineDisplay, isTableCellEmpty, t } from '@ai-system/lib'
 import { KnowledgeDto } from '@/types/kb.model'
 import KnowledgeMaintenanceStatusPanel from '@/pages/kb/components/KnowledgeMaintenanceStatusPanel.vue'
+import { hasRoleAccess, ROLE_KB_ADMIN } from '@/utils/role'
 
 // 状态定义
 const knowledgeList = ref<KnowledgeDto[]>([])
@@ -280,6 +290,7 @@ const rebuildDialogVisible = ref(false)
 const fullRebuildEnabled = ref(false)
 const fullRebuildConfirmText = ref('')
 const activeTab = ref('knowledge')
+const canAccessAdmin = computed(() => hasRoleAccess(ROLE_KB_ADMIN))
 const fullRebuildConfirmExpectedText = computed(() =>
 	t('kb.knowledge.rebuild.full.confirm.text')
 )
@@ -571,6 +582,12 @@ onMounted(() => {
 		min-height: 0;
 		min-width: 0;
 		overflow: hidden;
+	}
+
+	&.kb-tabs--data-only {
+		:deep(.el-tabs__header) {
+			display: none;
+		}
 	}
 }
 

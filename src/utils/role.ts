@@ -66,3 +66,8 @@ export const getSessionInfo = () => {
 export const isAdminUser = () => {
 	return hasRoleAccess(ROLE_ADMIN)
 }
+
+/** 是否为知识库管理员（含系统管理员）。 */
+export const isKnowledgeAdminUser = () => {
+	return hasRoleAccess(ROLE_KB_ADMIN)
+}

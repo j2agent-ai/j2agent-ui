@@ -108,13 +108,7 @@ import {
 	AI_HUB_CHAT_PATH,
 	KNOWLEDGE_QA_CHAT_PATH
 } from '@/pages/chat/ts/agent/universal-assistant'
-import {
-	getUserRole,
-	hasRoleAccess,
-	ROLE_ADMIN,
-	ROLE_KB_ADMIN,
-	ROLE_USER
-} from '@/utils/role'
+import { getUserRole, hasRoleAccess, isKnowledgeAdminUser, ROLE_ADMIN, ROLE_KB_ADMIN, ROLE_USER } from '@/utils/role'
 
 defineExpose({
 	show,
@@ -139,7 +133,7 @@ const menuCardRef = ref<HTMLElement | null>(null)
 const isClickOutsideEnabled = ref(false)
 const canAccessChat = computed(() => hasRoleAccess(ROLE_USER))
 const canAccessAdmin = computed(() => hasRoleAccess(ROLE_ADMIN))
-const canAccessKbAdmin = computed(() => hasRoleAccess(ROLE_KB_ADMIN))
+const canAccessKbAdmin = computed(() => isKnowledgeAdminUser())
 const menuTitle = computed(() => props.title || t('common.system.options'))
 const currentRoleLabel = computed(() => {
 	const role = getUserRole()

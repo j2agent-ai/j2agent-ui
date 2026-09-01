@@ -68,7 +68,11 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 const keys = ref<ApiKeyDto[]>([]); const loading = ref(false); const saving = ref(false)
 const createVisible = ref(false); const resultVisible = ref(false); const createdKey = ref(''); const contextId = ref('')
 const form = ref({ keyName: '', username: '', role: ROLE_USER })
-const roles = computed(() => [{ value: ROLE_ADMIN, label: t('user.management.role.admin') }, { value: ROLE_KB_ADMIN, label: t('user.management.role.kbAdmin') }, { value: ROLE_USER, label: t('user.management.role.user') }])
+const roles = computed(() => [
+	{ value: ROLE_ADMIN, label: t('user.management.role.admin') },
+	{ value: ROLE_KB_ADMIN, label: t('user.management.role.kbAdmin') },
+	{ value: ROLE_USER, label: t('user.management.role.user') }
+])
 const websocketTestCommand = computed(() => [
 	`BASE_URL='${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}'`,
 	`API_KEY='${createdKey.value}'`,

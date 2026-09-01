@@ -7,6 +7,7 @@ export interface KnowledgeCollectionListDto {
 }
 
 export interface KnowledgeCollectionDto {
+	repositoryId?: string
 	collection?: string
 	selectionValue?: string
 	name?: string
@@ -17,7 +18,7 @@ export interface KnowledgeCollectionDto {
 
 export type KnowledgeRepositoryType = 'LOCAL_FILE' | 'REMOTE'
 export type KnowledgeRepositoryProtocol = 'GIT'
-export type KnowledgeRepositoryStatus = 'IDLE' | 'SYNCING' | 'SYNCED' | 'FAILED' | 'DIRECTORY_MISSING'
+export type KnowledgeRepositoryStatus = 'IDLE' | 'SYNCING' | 'SYNCED' | 'FAILED' | 'DIRECTORY_MISSING' | 'REBUILDING' | 'REBUILD_FAILED' | 'DELETING' | 'GLOBAL_REBUILDING'
 
 export interface KnowledgeRepositoryCredentialConfig {
 	username?: string
@@ -28,6 +29,10 @@ export interface KnowledgeRepositoryCredentialConfig {
 }
 
 export interface KnowledgeRepositoryDto {
+	creatorUserId?: string
+	isPublic?: boolean
+	canManage?: boolean
+	canShare?: boolean
 	id?: string
 	repoCode?: string
 	type?: KnowledgeRepositoryType
@@ -79,6 +84,7 @@ export interface KnowledgeRepositoryUpsertDto {
 }
 
 export interface KnowledgeRepositorySyncResult {
+	taskId?: string
 	success?: boolean
 	message?: string
 }

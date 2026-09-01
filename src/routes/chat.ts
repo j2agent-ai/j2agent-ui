@@ -2,6 +2,12 @@ import { ROLE_ADMIN, ROLE_USER } from '@/utils/role'
 
 export default [
 	{
+		path: '/agent-management',
+		name: 'AgentManagement',
+		component: () => import('@/pages/agents/AgentManagementPage.vue'),
+		meta: { requiredRole: ROLE_ADMIN }
+	},
+	{
 		path: '/agents',
 		name: 'AgentList',
 		component: () => import('@/pages/agents/AgentListPage.vue'),
