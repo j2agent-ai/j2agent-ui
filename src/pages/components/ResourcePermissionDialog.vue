@@ -79,10 +79,10 @@
 					:disabled="busy || loadError || visibilitySaving"
 					@submit.prevent
 				>
-					<el-form-item :label="t('resource.permission.userId')"
+                    <el-form-item :label="t('resource.permission.username')"
 						><el-input
-							v-model="userId"
-							:placeholder="t('resource.permission.userId.placeholder')"
+                            v-model="username"
+                            :placeholder="t('resource.permission.username.placeholder')"
 							:readonly="editing"
 					/></el-form-item>
 					<el-form-item :label="t('resource.permission.level')">
@@ -120,7 +120,7 @@
 						<el-button
 							type="primary"
 							:loading="busy"
-							:disabled="!userId.trim() || loadError"
+							:disabled="!username.trim() || loadError"
 							@click="save"
 							>{{
 								editing
@@ -148,8 +148,8 @@
 					max-height="300"
 				>
 					<el-table-column
-						prop="userId"
-						:label="t('resource.permission.userId')"
+						prop="username"
+						:label="t('resource.permission.username')"
 						min-width="160"
 					/>
 					<el-table-column :label="t('resource.permission.level')" width="100">
@@ -193,7 +193,7 @@
 								link
 								type="danger"
 								:disabled="busy"
-								@click="revoke(row.userId)"
+								@click="revoke(row.username)"
 								>{{ t('resource.permission.revoke') }}</el-button
 							>
 						</template>
@@ -221,10 +221,10 @@
 					/>
 					<article
 						v-for="row in grants"
-						:key="row.userId"
+						:key="row.username"
 						class="grant-mobile-item"
 					>
-						<code>{{ row.userId }}</code>
+						<code>{{ row.username }}</code>
 						<div class="grant-mobile-tags">
 							<el-tag
 								size="small"
@@ -256,7 +256,7 @@
 								link
 								type="danger"
 								:disabled="busy"
-								@click="revoke(row.userId)"
+								@click="revoke(row.username)"
 								>{{ t('resource.permission.revoke') }}</el-button
 							>
 						</div>
@@ -297,13 +297,13 @@ const root = computed(
 		}/${encodeURIComponent(props.resourceId)}`
 )
 interface Grant {
-	userId: string
+	username: string
 	permissionLevel: number
 	expiresAt: number | null
 	expired: boolean
 }
 const grants = ref<Grant[]>([]),
-	userId = ref(''),
+	username = ref(''),
 	level = ref(2),
 	expiresAt = ref<string | null>(null),
 	isPublic = ref(false),
@@ -322,7 +322,7 @@ const grantLevelLabel = (level: number) =>
 			? t('resource.permission.level.use')
 			: t('resource.permission.level.read')
 function resetForm() {
-	userId.value = ''
+	username.value = ''
 	level.value = 2
 	expiresAt.value = null
 	editing.value = false
@@ -358,7 +358,7 @@ async function save() {
 		busy.value ||
 		visibilitySaving.value ||
 		loadError.value ||
-		!userId.value.trim()
+		!username.value.trim()
 	)
 		return
 	if (expiresAt.value && Number(expiresAt.value) <= Date.now()) {
@@ -368,7 +368,7 @@ async function save() {
 	busy.value = true
 	try {
 		await http.put(
-			root.value + '/permissions/' + encodeURIComponent(userId.value.trim()),
+			root.value + '/permissions/' + encodeURIComponent(username.value.trim()),
 			{
 				permissionLevel: level.value,
 				expiresAt: expiresAt.value ? Number(expiresAt.value) : null
@@ -406,7 +406,7 @@ async function saveVisibility() {
 	}
 }
 function editGrant(row: Grant) {
-	userId.value = row.userId
+	username.value = row.username
 	level.value = row.permissionLevel
 	expiresAt.value = row.expiresAt ? String(row.expiresAt) : null
 	editing.value = true
@@ -414,13 +414,13 @@ function editGrant(row: Grant) {
 		() => grantFormSection.value?.scrollIntoView({ block: 'nearest' })
 	)
 }
-async function revoke(id: string) {
+async function revoke(username: string) {
 	try {
 		await ElMessageBox.confirm(
 			t('resource.permission.revoke.confirm'),
 			t('resource.permission.revoke.title')
 		)
-		await http.delete(root.value + '/permissions/' + encodeURIComponent(id))
+		await http.delete(root.value + '/permissions/' + encodeURIComponent(username))
 		await load()
 		emit('changed')
 	} catch (e) {
