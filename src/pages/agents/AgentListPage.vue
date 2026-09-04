@@ -2,6 +2,7 @@
 	<div class="agent-list-page" :class="{ 'full-page': isFullscreen, 'mobile-page': isMobile }">
 		<top-bar/>
 		<div class="agent-list-inner">
+			<div v-if="isAdminUser()" class="management-entry"><el-button @click="goTo('/agent-management')">{{ t('ai.agent.management.title') }}</el-button></div>
 			<h2 class="page-title">{{ t('ai.agent.list.title') }}</h2>
 			<div v-if="loading" class="loading-hint">{{ t('ai.agent.list.loading') }}…</div>
 			<div v-else-if="loadError" class="error-hint">{{ t('ai.agent.list.load.failed') }}</div>
@@ -33,6 +34,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { isAdminUser } from '@/utils/role'
 import { debounce, t } from '@ai-system/lib'
 import { ElMessage } from 'element-plus'
 import topBar from '@/pages/components/topBar.vue'
@@ -109,6 +111,7 @@ onUnmounted(() => {
 </script>
 
 <style lang="scss" scoped>
+.management-entry { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 .agent-list-page {
 	height: 100%;
 	padding-top: 50px;

@@ -68,7 +68,7 @@ import {
 	AI_HUB_CHAT_PATH,
 	KNOWLEDGE_QA_CHAT_PATH
 } from '@/pages/chat/ts/agent/universal-assistant'
-import { hasRoleAccess, ROLE_ADMIN, ROLE_KB_ADMIN, ROLE_USER } from '@/utils/role'
+import { hasRoleAccess, ROLE_ADMIN, ROLE_USER, isKnowledgeAdminUser } from '@/utils/role'
 import { scheduleDiagramPrefetch } from '@/utils/scheduleDiagramPrefetch'
 
 const route = useRoute()
@@ -76,7 +76,7 @@ const isFullscreen = ref(true)
 const isMobile = ref(false)
 const canAccessChat = computed(() => hasRoleAccess(ROLE_USER))
 const canAccessAdmin = computed(() => hasRoleAccess(ROLE_ADMIN))
-const canAccessKbAdmin = computed(() => hasRoleAccess(ROLE_KB_ADMIN))
+const canAccessKbAdmin = computed(() => isKnowledgeAdminUser())
 
 const onWindowResize = debounce(() => {
 	resize()

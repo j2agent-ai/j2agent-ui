@@ -1190,9 +1190,9 @@ const syncSelectedKnowledgeCollections = () => {
   }
 }
 
-/** 解析前端选择值：优先 selectionValue，否则回退 collection */
+/** 解析前端选择值：优先 selectionValue（repoCode + collection），避免误用 repositoryId */
 const knowledgeCollectionSelectionValue = (item: KnowledgeCollectionDto) =>
-  item.selectionValue?.trim() || item.collection?.trim() || ''
+  item.selectionValue?.trim() || item.collection?.trim() || item.repositoryId?.trim() || ''
 
 /** 兼容历史存储中带分隔符的 selection 值 */
 const decodeKnowledgeCollectionSelection = (selection: string) => {
@@ -1236,6 +1236,10 @@ const applyKnowledgeCollectionOptions = (items: KnowledgeCollectionDto[]) => {
     }
     if (!nextValues[collection].includes(selection)) {
       nextValues[collection].push(selection)
+    }
+    const repositoryId = item.repositoryId?.trim()
+    if (repositoryId) {
+      nextValues[repositoryId] = [selection]
     }
   }
   knowledgeCollectionLabelMap.value = nextLabels
@@ -1664,7 +1668,7 @@ const appendPendingAskQuestionAnswerBubble = (
     questionMessageIndex,
     userMessageIndex: message.index,
     answer,
-    knowledgeCollections: knowledgeCollectionsForRequest
+    knowledgeRepositoryIds: knowledgeCollectionsForRequest
   }
   isAtBottom.value = true
   scrollToBottomAfterMessageFlush()

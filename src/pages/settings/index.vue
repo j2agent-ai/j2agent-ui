@@ -2,7 +2,7 @@
 	<div class="settings-page">
 		<top-bar />
 		<div class="settings-content" v-loading="loading">
-			<el-tabs v-model="activeTab" class="settings-tabs">
+			<el-tabs v-model="activeTab" class="settings-tabs" :before-leave="navigateAgentManagement">
 				<el-tab-pane :label="t('settings.llm.section')" name="llm">
 					<!-- 仅激活 Tab 时挂载面板组件，避免进入设置页就预打接口 -->
 					<LlmSettingsPanel v-if="activeTab === 'llm'" />
@@ -19,12 +19,7 @@
 						@save="saveSettings"
 					/>
 				</el-tab-pane>
-				<el-tab-pane :label="t('settings.agentPlugin.section')" name="agent-plugin">
-					<AgentPluginSettingsPanel v-if="activeTab === 'agent-plugin'" />
-				</el-tab-pane>
-				<el-tab-pane :label="t('settings.agentGlobalConfig.section')" name="agent-global-config">
-					<AgentGlobalConfigSettingsPanel v-if="activeTab === 'agent-global-config'" />
-				</el-tab-pane>
+				<el-tab-pane :label="t('settings.agent.section')" name="agent-settings" />
 				<el-tab-pane v-if="canManageUsers" :label="t('user.management.title')" name="user">
 					<UserManagementPanel v-if="activeTab === 'user'" />
 				</el-tab-pane>
@@ -38,14 +33,13 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElTabPane, ElTabs, ElMessage, ElMessageBox } from 'element-plus'
 import { t } from '@ai-system/lib'
 import topBar from '@/pages/components/topBar.vue'
 import EmbeddingSettingsPanel from './components/EmbeddingSettingsPanel.vue'
 import LlmSettingsPanel from './components/LlmSettingsPanel.vue'
 import RagSettingsPanel from './components/RagSettingsPanel.vue'
-import AgentPluginSettingsPanel from './components/AgentPluginSettingsPanel.vue'
-import AgentGlobalConfigSettingsPanel from './components/AgentGlobalConfigSettingsPanel.vue'
 import UserManagementPanel from './components/UserManagementPanel.vue'
 import ApiKeyManagementPanel from './components/ApiKeyManagementPanel.vue'
 import { getProperties, putProperties } from '@/api/property.api'
@@ -57,6 +51,21 @@ const KEY_RETRIEVE_METRIC_SCORE_COMPARE_EXPR = 'RETRIEVE_METRIC_SCORE_COMPARE_EX
 const KEY_RETRIEVE_DENSE_WEIGHT = 'RETRIEVE_DENSE_WEIGHT'
 const KEY_RETRIEVE_SPARSE_WEIGHT = 'RETRIEVE_SPARSE_WEIGHT'
 
+const route = useRoute()
+const router = useRouter()
+const navigateAgentManagement = (tab: string | number) => {
+  if (tab === 'agent-settings') {
+    void router.push('/agent-management')
+    return false
+  }
+  return true
+}
+// Preserve links created before agent management became a separate page.
+watch(() => route.query.tab, tab => {
+  if (tab === 'agent-plugin' || tab === 'agent-global-config') {
+    void router.replace({ path: '/agent-management', query: { tab } })
+  }
+}, { immediate: true })
 const activeTab = ref('llm')
 const loading = ref(false)
 const saving = ref(false)

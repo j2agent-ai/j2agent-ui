@@ -122,7 +122,7 @@ import {
 } from 'element-plus'
 import { t } from '@ai-system/lib'
 import { getAuditUserList, type UserDto } from '@/api/user.api'
-import { ROLE_ADMIN, ROLE_KB_ADMIN } from '@/utils/role'
+import { ROLE_ADMIN, ROLE_KB_ADMIN, ROLE_USER } from '@/utils/role'
 
 const props = withDefaults(
 	defineProps<{
