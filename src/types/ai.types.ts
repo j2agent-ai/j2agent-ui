@@ -82,6 +82,8 @@ export type ChatRequestDto = {
 	retrievalKb: boolean;
 	// 系统提示词
 	systemPrompt: 'GENERAL_ASSISTANT' | 'TOOL_USE';
+	// 仅 JSON 布尔 true 时允许断线后继续执行
+	background?: boolean
 	// 通用助手手动直连子智能体；传入后跳过编排决策
 	manualOrchestrateAgentId?: string
 	// 通用知识库问答助手本轮选择的知识库 collection 列表
