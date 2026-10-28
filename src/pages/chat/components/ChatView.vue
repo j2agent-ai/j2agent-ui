@@ -1555,7 +1555,9 @@ const startUserMessageTurn = async (
         }
       ],
       retrievalKb: true,
-      systemPrompt: 'GENERAL_ASSISTANT'
+      systemPrompt: 'GENERAL_ASSISTANT',
+      // 断线后任务继续执行
+      background: true
     }
     if (manualOrchestrateAgentId) {
       chatRequestDto.manualOrchestrateAgentId = manualOrchestrateAgentId
